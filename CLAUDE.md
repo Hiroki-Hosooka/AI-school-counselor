@@ -39,7 +39,7 @@ Supabase は Postgres(データ)としてのみ残っている。
    │  fetch("/api/chat")  ※同一オリジンなのでCORSの仕組みは無い
    ▼
 Next.js Route Handler  src/app/api/chat/route.ts(Vercelにデプロイ)
-   │  ・ANTHROPIC_API_KEY を保持
+   │  ・GEMINI_API_KEY を保持
    │  ・DB からナレッジを読んでプロンプトを組む
    │  ・入力フィルタ → 生成 → 出力チェック
    │  ・会話 / 見立て / 安全判定を保存
@@ -217,7 +217,7 @@ AIが同じ問いを投げると**方法を語らせる会話**になりかね�
 ### 5.7 APIキーをクライアントに置かない
 
 `src/app/page.tsx`(クライアントコンポーネント)に API キーを書かない。環境変数に `NEXT_PUBLIC_` を付けない
-(付けた瞬間ブラウザに埋め込まれる)。`ANTHROPIC_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は
+(付けた瞬間ブラウザに埋め込まれる)。`GEMINI_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は
 `src/app/api/chat/route.ts`(サーバ側)からしか読まない。
 
 旧構成にあった `ALLOWED_ORIGIN`(CORS)は、フロントとバックエンドが同一オリジンになったため廃止した。

@@ -75,15 +75,20 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 
 | 名前 | 必須 | 内容 |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | ○ | `sk-ant-...` |
+| `GEMINI_API_KEY` | ○ | [Google AI Studio](https://aistudio.google.com/apikey) で発行したキー(`AIza...`) |
 | `SUPABASE_URL` | ○ | Supabaseダッシュボード → Project Settings → API に表示されるURL |
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | 同上。`service_role` の方(anon keyではない) |
-| `MODEL` | | 既定 `claude-sonnet-4-6` |
+| `MODEL` | | 既定 `gemini-2.5-flash` |
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
 | `RATE_LIMIT_PER_HOUR` | | 既定 60 |
 
 > これらの値を絶対に `NEXT_PUBLIC_` で始まる名前にしないでください。付けた瞬間ブラウザに埋め込まれ、
-> 誰でも見られる状態になります(`ANTHROPIC_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は特に注意)。
+> 誰でも見られる状態になります(`GEMINI_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は特に注意)。
+
+生成モデルは2026年9月に Anthropic Claude から Google Gemini に切り替えました。プロンプトの内容や
+出力JSONスキーマ、安全層(`OUTPUT_NG`/`CRISIS_WORDS`)は変更していませんが、モデルが変わると
+応答の質やトーンが変わることがあります。**切り替え後は必ず実際に会話して、同調していないか・
+まどろっこしくないかなどを確認してください。**
 
 環境変数を追加・変更したら、Vercelのデプロイを1回やり直す(Redeploy)まで反映されません。
 

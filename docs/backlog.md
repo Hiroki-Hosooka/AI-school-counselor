@@ -16,7 +16,7 @@
 - `select src, count(*) from knowledge group by src;` が `理 54 / 石 42 / 嶋 37 / 嶋石 5 / 設 2` = 140件
 - ブラウザから1往復できる
 - `messages` にユーザー発言とAI応答の両方が入っている
-- `ANTHROPIC_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` が `NEXT_PUBLIC_` 接頭辞なしでVercelに設定され、
+- `GEMINI_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` が `NEXT_PUBLIC_` 接頭辞なしでVercelに設定され、
   ブラウザの開発者ツール(ソース・通信内容)からは見えないことを確認した
 
 ---

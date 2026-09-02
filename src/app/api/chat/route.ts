@@ -3,7 +3,7 @@
 //  src/app/api/chat/route.ts
 //
 //  役割
-//   1. Anthropic の API キーをサーバ側に隠す(ブラウザには絶対に置かない)
+//   1. Gemini の API キーをサーバ側に隠す(ブラウザには絶対に置かない)
 //   2. ナレッジを DB(Supabase Postgres)から読む(クライアントには知識を持たせない)
 //   3. 入力フィルタ → 生成 → 出力チェック の安全層をすべてここで通す
 //   4. 会話・見立て・安全判定を DB に保存する
@@ -16,11 +16,16 @@
 //     同一オリジン構成ではその脅威自体が成立しないため
 //   ・Supabase は Postgres(データ)としてのみ利用する
 //
+//  生成モデルを Anthropic Claude から Google Gemini に変更(2026年9月)。
+//  安全層(CRISIS_WORDS/OUTPUT_NG)はモデルの出力テキストに対する後段チェックなので、
+//  どちらのモデルでも同じように効く。プロンプトの内容・出力JSONスキーマは変更していないが、
+//  モデルが変わったことで実際の応答の質・トーンが変わっていないか、必ず会話して確認すること。
+//
 //  必要な環境変数(Vercelダッシュボード > Project Settings > Environment Variables)
-//   ANTHROPIC_API_KEY        必須
+//   GEMINI_API_KEY           必須  Google AI Studio で発行したキー
 //   SUPABASE_URL             必須
 //   SUPABASE_SERVICE_ROLE_KEY 必須(RLSを迂回してDBを読み書きするため。絶対にNEXT_PUBLIC_を付けない)
-//   MODEL                    任意  既定 claude-sonnet-4-6
+//   MODEL                    任意  既定 gemini-2.5-flash
 //   CRISIS_WEBHOOK_URL       任意  Slack / Discord などの Incoming Webhook
 //   RATE_LIMIT_PER_HOUR      任意  既定 60
 // ============================================================================
@@ -28,7 +33,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { CRISIS_WORDS, OUTPUT_NG } from "@/safety.mjs";
 
-const MODEL = process.env.MODEL ?? "claude-sonnet-4-6";
+const MODEL = process.env.MODEL ?? "gemini-2.5-flash";
 const WEBHOOK = process.env.CRISIS_WEBHOOK_URL ?? "";
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_HOUR ?? "60");
 
@@ -130,7 +135,7 @@ function buildSystem(rows: Know[], chunks: Know[], weight: string, notes: unknow
     ? "★ しばらく区切りがありません。この辺りで「今までの話、一回まとめてみようか」と提案し、出てきたことを並べ直すターンを取ることを検討してください。ズレを直す機会です。"
     : "いまはまだ区切りのタイミングではありません。";
 
-  return `あなたは Claude です。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
+  return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
 拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、
 カウンセリング理論の文献調査(出典:理/JILPT資料シリーズNo.165)、
 およびそれをAI向けに読み替えた設計判断(出典:設)です。
@@ -230,22 +235,31 @@ notes には氏名・学校名・住所などの識別情報を書かないこ�
 }
 
 // ============================================================================
-//  Anthropic 呼び出し
+//  Gemini 呼び出し
+//  contents は Gemini の形式 { role: "user"|"model", parts: [{ text }] }[] で渡す。
+//  responseMimeType を application/json にして、後述の出力形式(JSONのみ)を守らせやすくしている
+//  (それでも念のため parseJSON() で本文からJSON部分を取り出す形は残す)。
 // ============================================================================
-async function callClaude(system: string, messages: unknown[], maxTokens = 1000) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
+async function callGemini(systemInstruction: string, contents: unknown[], maxOutputTokens = 1000) {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": process.env.GEMINI_API_KEY!,
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents,
+        generationConfig: { maxOutputTokens, responseMimeType: "application/json" },
+      }),
     },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }),
-  });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  );
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const d = await res.json();
-  return (d.content ?? []).filter((c: { type: string }) => c.type === "text")
-    .map((c: { text: string }) => c.text).join("");
+  const parts = d.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
 function parseJSON(raw: string) {
@@ -258,7 +272,7 @@ async function classify(text: string) {
   const keywords = CRISIS_WORDS.filter((w: string) => text.includes(w));
   let model = { risk: "none", reason: "判定なし" };
   try {
-    model = parseJSON(await callClaude(CLASSIFIER_PROMPT, [{ role: "user", content: text }], 200));
+    model = parseJSON(await callGemini(CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200));
   } catch {
     model = { risk: keywords.length ? "crisis" : "none", reason: "判定器エラー" };
   }
@@ -395,10 +409,10 @@ export async function POST(req: Request) {
         .select("role,body,crisis").eq("session_id", sessionId).order("seq");
       const messages = (hist ?? [])
         .filter((h) => !h.crisis)
-        .map((h) => ({ role: h.role === "user" ? "user" : "assistant", content: h.body }));
+        .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.body }] }));
 
       const system = buildSystem(rows, chunks, sess.weight, sess.notes, sess.turns_since_summary);
-      let out = parseJSON(await callClaude(system, messages));
+      let out = parseJSON(await callGemini(system, messages));
 
       // ---- 出力チェック ----
       let flags = checkOutput(out.reply ?? "");
@@ -406,7 +420,7 @@ export async function POST(req: Request) {
         const fix = system +
           "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
         try {
-          const retry = parseJSON(await callClaude(fix, messages));
+          const retry = parseJSON(await callGemini(fix, messages));
           if (checkOutput(retry.reply ?? "").length === 0) {
             out = retry; flags = ["1回目に検知→再生成で解消"];
           }
