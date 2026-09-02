@@ -1,20 +1,23 @@
-# スクールカウンセリングAI — サーバ構成版 セットアップ
+# スクールカウンセリングAI — Next.js(Vercel)版 セットアップ
 
-複数の端末から、それぞれの人が使える構成です。
-ナレッジと会話記録は DB にあり、HTML には知識も API キーも入っていません。
+フロントエンド(React)とバックエンド(API Route)を Next.js 1つにまとめ、Vercel にデプロイする構成です。
+ナレッジと会話記録は DB(Supabase Postgres)にあり、クライアントに知識も API キーも入っていません。
+
+**2026年9月に単一HTML + Supabase Edge Function構成から移行しました。** DBはSupabaseのまま、
+実行環境だけVercelに変わっています。
 
 ```
-ブラウザ（表示のみ）
-   │  fetch
+ブラウザ(page.tsx・表示のみ)
+   │  fetch("/api/chat")  ※同一オリジンなのでCORS設定は不要
    ▼
-Edge Function（Supabase）
+Next.js Route Handler(Vercel)
    │  ・APIキーを保持して Claude を呼ぶ
    │  ・DB からナレッジを読んでプロンプトを組む
    │  ・入力フィルタ → 生成 → 出力チェック
    │  ・会話 / 見立て / 安全判定を保存
    │  ・危機判定なら人へ通知
    ▼
-Postgres（Supabase）
+Postgres(Supabase。データベースとしてのみ利用)
    knowledge / sessions / messages / safety_events
 ```
 
@@ -22,21 +25,23 @@ Postgres（Supabase）
 
 ## ファイル
 
-| ファイル | 置き場所 |
+| ファイル | 役割 |
 |---|---|
 | `db/schema.sql` | Supabase の SQL Editor に貼って実行 |
-| `db/seed_knowledge.sql` | 同上（schema.sql の後） |
+| `db/seed_knowledge.sql` | 同上(schema.sql の後) |
 | `db/knowledge.json` | バックアップ用。DB を作り直すとき用 |
-| `supabase/functions/chat/index.ts` | Edge Function としてデプロイ |
-| `index.html` | GitHub Pages などに配置 |
+| `src/safety.mjs` | 安全層(CRISIS_WORDS/OUTPUT_NG)の共通モジュール |
+| `src/app/api/chat/route.ts` | バックエンド本体。Vercelにデプロイされる |
+| `src/app/page.tsx` / `layout.tsx` / `globals.css` | フロントエンド(表示のみ) |
 
 ---
 
 ## 手順
 
-### 1. Supabase プロジェクトを作る
+### 1. Supabase プロジェクトを作る(DBとして)
 
 <https://supabase.com> で新規プロジェクトを作成。リージョンは Tokyo を選んでください。
+Edge Function は使わないので、作るのはプロジェクトとテーブルだけです。
 
 ### 2. テーブルを作る
 
@@ -50,43 +55,37 @@ select src, count(*) from knowledge group by src order by 2 desc;
 
 `理 54 / 石 42 / 嶋 37 / 嶋石 5 / 設 2` の計 140 件になっていれば成功です。
 
-### 3. Edge Function を置く
+### 3. Vercelにデプロイする
+
+GitHubにpushしたこのリポジトリを、Vercelのダッシュボードから「Add New... → Project」で
+Importしてください。Next.jsプロジェクトなので自動検出され、ビルド設定は変更不要です。
+
+CLIを使う場合:
 
 ```bash
-npm install -g supabase
-supabase login
-supabase link --project-ref <あなたのプロジェクトID>
-supabase functions deploy chat --no-verify-jwt
+npm install -g vercel
+vercel login
+vercel link
+vercel deploy --prod
 ```
-
-`--no-verify-jwt` は、生徒にログインを求めない設計のために必要です。
-代わりに Edge Function の中でレート制限をかけています。
 
 ### 4. 環境変数を設定する
 
-ダッシュボード → Edge Functions → chat → Secrets
+Vercelダッシュボード → Project → Settings → Environment Variables
 
 | 名前 | 必須 | 内容 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | ○ | `sk-ant-...` |
-| `ALLOWED_ORIGIN` | ○ | 例 `https://ayayume0206.github.io` |
+| `SUPABASE_URL` | ○ | Supabaseダッシュボード → Project Settings → API に表示されるURL |
+| `SUPABASE_SERVICE_ROLE_KEY` | ○ | 同上。`service_role` の方(anon keyではない) |
 | `MODEL` | | 既定 `claude-sonnet-4-6` |
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
 | `RATE_LIMIT_PER_HOUR` | | 既定 60 |
 
-`SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` は自動で入るので設定不要です。
+> これらの値を絶対に `NEXT_PUBLIC_` で始まる名前にしないでください。付けた瞬間ブラウザに埋め込まれ、
+> 誰でも見られる状態になります(`ANTHROPIC_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は特に注意)。
 
-> **`ALLOWED_ORIGIN` を `*` のままにしないでください。** 誰でも自分のサイトから呼べてしまい、API 課金が他人に使われます。
-
-### 5. index.html をつなぐ
-
-`index.html` の先頭にある
-
-```js
-const DEFAULT_ENDPOINT = "https://YOUR-PROJECT.supabase.co/functions/v1/chat";
-```
-
-を自分の URL に書き換えて配置します。書き換えなくても、設定パネルから入力できます。
+環境変数を追加・変更したら、Vercelのデプロイを1回やり直す(Redeploy)まで反映されません。
 
 ---
 
@@ -129,7 +128,9 @@ Webhook にはセッションIDと時刻だけを送り、**相談の本文は�
 ## ナレッジの編集
 
 Supabase の Table Editor で `knowledge` テーブルを直接編集できます。
-Edge Function は 60 秒キャッシュなので、**1分待てば反映されます。**
+Route Handler は60秒キャッシュなので、**だいたい1分待てば反映されます。**
+(Vercelはサーバーレスのため複数インスタンスが同時に動くことがあり、旧Edge Function構成より
+反映タイミングにばらつきが出ることがあります。急ぎのときは1〜2分見ておくと安心です)
 
 - 消したいときは削除せず `active` を `false` に
 - 変更はすべて `knowledge_history` に自動で残ります

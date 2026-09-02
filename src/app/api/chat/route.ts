@@ -1,47 +1,56 @@
 // ============================================================================
-//  スクールカウンセリングAI  Edge Function
-//  supabase/functions/chat/index.ts
+//  スクールカウンセリングAI  API Route(旧 supabase/functions/chat/index.ts)
+//  src/app/api/chat/route.ts
 //
 //  役割
-//   1. Anthropic の API キーをサーバ側に隠す（ブラウザには絶対に置かない）
-//   2. ナレッジを DB から読む（HTML には知識を持たせない）
+//   1. Anthropic の API キーをサーバ側に隠す(ブラウザには絶対に置かない)
+//   2. ナレッジを DB(Supabase Postgres)から読む(クライアントには知識を持たせない)
 //   3. 入力フィルタ → 生成 → 出力チェック の安全層をすべてここで通す
 //   4. 会話・見立て・安全判定を DB に保存する
 //   5. 危機判定時に人へ通知する
 //
-//  必要な環境変数（Supabase ダッシュボード > Edge Functions > Secrets）
-//   ANTHROPIC_API_KEY   必須
-//   ALLOWED_ORIGIN      必須  例: https://ayayume0206.github.io
-//   MODEL               任意  既定 claude-sonnet-4-6
-//   CRISIS_WEBHOOK_URL  任意  Slack / Discord などの Incoming Webhook
-//   RATE_LIMIT_PER_HOUR 任意  既定 60
-//  SUPABASE_URL と SUPABASE_SERVICE_ROLE_KEY は Supabase が自動で入れます
+//  Next.js + Vercel 移行に伴う変更点(ロジック自体は変更していない)
+//   ・Supabase Edge Function(Deno)ではなく Next.js の Route Handler(Node.js)として動く
+//   ・フロントエンドと同一オリジンになったため、CORS(ALLOWED_ORIGIN)の仕組みは廃止した。
+//     ブラウザの Origin チェックはそもそも別サイトの埋め込みJSからの無断利用を防ぐためのもので、
+//     同一オリジン構成ではその脅威自体が成立しないため
+//   ・Supabase は Postgres(データ)としてのみ利用する
+//
+//  必要な環境変数(Vercelダッシュボード > Project Settings > Environment Variables)
+//   ANTHROPIC_API_KEY        必須
+//   SUPABASE_URL             必須
+//   SUPABASE_SERVICE_ROLE_KEY 必須(RLSを迂回してDBを読み書きするため。絶対にNEXT_PUBLIC_を付けない)
+//   MODEL                    任意  既定 claude-sonnet-4-6
+//   CRISIS_WEBHOOK_URL       任意  Slack / Discord などの Incoming Webhook
+//   RATE_LIMIT_PER_HOUR      任意  既定 60
 // ============================================================================
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CRISIS_WORDS, OUTPUT_NG } from "../../../src/safety.mjs";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { CRISIS_WORDS, OUTPUT_NG } from "@/safety.mjs";
 
-const db = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  { auth: { persistSession: false } },
-);
+const MODEL = process.env.MODEL ?? "claude-sonnet-4-6";
+const WEBHOOK = process.env.CRISIS_WEBHOOK_URL ?? "";
+const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_HOUR ?? "60");
 
-const API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
-const MODEL = Deno.env.get("MODEL") ?? "claude-sonnet-4-6";
-const ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
-const WEBHOOK = Deno.env.get("CRISIS_WEBHOOK_URL") ?? "";
-const RATE_LIMIT = Number(Deno.env.get("RATE_LIMIT_PER_HOUR") ?? "60");
+// DBクライアントは初回呼び出し時に作る(モジュール読み込み時に環境変数が
+// 無くても next build が壊れないように遅延初期化にしている)
+let _db: SupabaseClient | null = null;
+function getDb(): SupabaseClient {
+  if (!_db) {
+    _db = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } },
+    );
+  }
+  return _db;
+}
 
-const cors = {
-  "Access-Control-Allow-Origin": ORIGIN,
-  "Access-Control-Allow-Headers": "content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Content-Type": "application/json; charset=utf-8",
-};
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: cors });
+const json = (body: unknown, status = 200) => Response.json(body, { status });
 
+// ============================================================================
+//  安全層(クライアントには置かない。CRISIS_WORDS/OUTPUT_NG は src/safety.mjs)
+// ============================================================================
 const CRISIS_REPLY =
   "よく、ここで言えたね。誰にも言えないと思っていたことを書くのは、すごく力が要ったと思う。\n\n" +
   "どうしてここでなら言えると思ったのか、あとで聞かせてもらえたら嬉しい。\n\n" +
@@ -57,7 +66,8 @@ none  : 通常の相談。
 迷ったら重いほうを選ぶこと。見逃しのほうが害が大きい。`;
 
 // ============================================================================
-//  ナレッジ（DB から読む。60秒キャッシュ）
+//  ナレッジ(DB から読む。60秒キャッシュ)
+//  ※サーバーレス環境ではインスタンスがウォームな間だけ効く簡易キャッシュ
 // ============================================================================
 type Know = {
   id: string; src: string; school: string | null; cat: string;
@@ -68,7 +78,7 @@ let cache: { at: number; rows: Know[] } | null = null;
 
 async function loadKnowledge(): Promise<Know[]> {
   if (cache && Date.now() - cache.at < 60_000) return cache.rows;
-  const { data, error } = await db
+  const { data, error } = await getDb()
     .from("knowledge")
     .select("id,src,school,cat,lv,weight,tags,body,updated_at")
     .eq("active", true);
@@ -110,7 +120,7 @@ function retrieve(rows: Know[], text: string, weight: string, relation: string, 
 // ============================================================================
 function buildSystem(rows: Know[], chunks: Know[], weight: string, notes: unknown, sinceSummary: number) {
   const principles = rows.filter((k) => k.cat === "principle")
-    .map((k) => `・${k.body}（${k.src}）`).join("\n");
+    .map((k) => `・${k.body}(${k.src})`).join("\n");
   const ngAt = (lv: number) =>
     rows.filter((k) => k.cat === "ng" && k.lv === lv).map((k) => "・" + k.body).join("\n");
   const know = chunks
@@ -121,21 +131,21 @@ function buildSystem(rows: Know[], chunks: Know[], weight: string, notes: unknow
     : "いまはまだ区切りのタイミングではありません。";
 
   return `あなたは Claude です。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
-拠りどころは、現役スクールカウンセラー二人へのインタビュー（出典：嶋／石）と、
-カウンセリング理論の文献調査（出典：理／JILPT資料シリーズNo.165）、
-およびそれをAI向けに読み替えた設計判断（出典：設）です。
+拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、
+カウンセリング理論の文献調査(出典:理/JILPT資料シリーズNo.165)、
+およびそれをAI向けに読み替えた設計判断(出典:設)です。
 自分がAIであることを隠しません。聞かれたら率直に認めます。
 
 # 守る原則
 ${principles}
 
-# 受け止めることと、同調することの区別（最重要）
+# 受け止めることと、同調することの区別(最重要)
 相手の感じ方は受け止めます。しかし、相手が誰かを悪者にしているとき、一緒になって断じることはしません。
 「あの人ひどいね」「あなたは悪くないよ」と返すのは同調であり、相手の視野を狭めます。
 何も考えずに同調するのは、都合のいい言葉だけが返ってくる場所を作ることであり、
 カウンセリングが目指しているのはその逆、視野を広げてもらうことです。
 同調したくなったら、代わりに出来事を聞くか、本人の願いに角度を変えてください。
-（例：「そう感じるエピソードがあったの？」「その時、どうしてほしかったの？」）
+(例:「そう感じるエピソードがあったの?」「その時、どうしてほしかったの?」)
 
 # してはいけないこと
 ## 絶対にしない
@@ -144,10 +154,10 @@ ${ngAt(3)}
 ## 避ける
 ${ngAt(2)}
 
-## 好ましくない（間違いではないが、できれば選ばない）
+## 好ましくない(間違いではないが、できれば選ばない)
 ${ngAt(1)}
 
-そのほか：
+そのほか:
 ・診断や病名を告げない。医療的判断をしない。
 ・複数の質問を一度に投げない。問いは多くても1つ。
 ・相手が話していないことを事実として決めつけない。
@@ -160,15 +170,15 @@ ${ngAt(1)}
 これは順序ではなく重なり合うものです。行き来してかまいません。
 
 毎ターン、次を自分で判断してください。
-1. 関わりの型（relation）
-   visitor: 問題を表明しない／解決を期待していない。→ 解決へ急がず、来てくれたこと自体をねぎらう。行動を求めない。雑談に逃げてもよい。
+1. 関わりの型(relation)
+   visitor: 問題を表明しない/解決を期待していない。→ 解決へ急がず、来てくれたこと自体をねぎらう。行動を求めない。雑談に逃げてもよい。
    complainant: 不満はあるが、自分は変えられない・相手が悪いと感じている。→ 不満に共感するが同調はしない。本人に行動を求めない。
    customer: 自分の問題として動く用意がある。→ ここで初めて具体的な行動の話が生きる。
-2. 問いの層（question_level）— none / data / diagnostic / confrontational。
+2. 問いの層(question_level)— none / data / diagnostic / confrontational。
    層が上がるほど関係のできぐあいが要ります。迷ったら下の層に留めるか、問わずに受け止めだけにする。
-3. 役割（role）— listen / assess / inform。inform は慎重に。
-4. 重心（weight）— rapport / main / goal / plan。
-   plan（作戦会議）は、本人が実際に動く気になったときだけ。
+3. 役割(role)— listen / assess / inform。inform は慎重に。
+4. 重心(weight)— rapport / main / goal / plan。
+   plan(作戦会議)は、本人が実際に動く気になったときだけ。
    「誰に」「いつ」「どう切り出すか」を一緒に具体化する段階です。
    いきなりドーンと話すことはしないもの。やれそうなイメージを持ってもらうのが目的で、
    手法を並べ立てる場ではありません。
@@ -199,7 +209,7 @@ ${know}
 ・2〜4文程度。中高生が読みやすい、やわらかい話し言葉。敬語は堅くしすぎない。
 ・絵文字を使わない。箇条書きにしない。
 
-# 出力形式（JSONのみ。前後に説明や記号を付けない）
+# 出力形式(JSONのみ。前後に説明や記号を付けない)
 {
   "reply": "相談者への返答本文",
   "weight": "rapport|main|goal|plan",
@@ -227,7 +237,7 @@ async function callClaude(system: string, messages: unknown[], maxTokens = 1000)
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": API_KEY,
+      "x-api-key": process.env.ANTHROPIC_API_KEY!,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages }),
@@ -245,20 +255,20 @@ function parseJSON(raw: string) {
 }
 
 async function classify(text: string) {
-  const keywords = CRISIS_WORDS.filter((w) => text.includes(w));
+  const keywords = CRISIS_WORDS.filter((w: string) => text.includes(w));
   let model = { risk: "none", reason: "判定なし" };
   try {
     model = parseJSON(await callClaude(CLASSIFIER_PROMPT, [{ role: "user", content: text }], 200));
   } catch {
     model = { risk: keywords.length ? "crisis" : "none", reason: "判定器エラー" };
   }
-  // キーワードが当たったら判定器の結果によらず crisis 扱い（見逃しを避ける）
+  // キーワードが当たったら判定器の結果によらず crisis 扱い(見逃しを避ける)
   const risk = keywords.length ? "crisis" : model.risk;
   return { risk, keywords, model };
 }
 
 const checkOutput = (t: string) =>
-  OUTPUT_NG.filter((re) => re.test(t)).map((re) => String(re).slice(0, 42));
+  OUTPUT_NG.filter((re: RegExp) => re.test(t)).map((re: RegExp) => String(re).slice(0, 42));
 
 // 危機通知。本文は送らない。
 // 未成年の相談内容を Slack 等のチャンネルに流すのは避け、
@@ -270,7 +280,7 @@ async function notifyCrisis(sessionId: string) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        text: `【要確認】相談AIで危機判定が出ました\nセッション: ${sessionId}\n時刻: ${new Date().toISOString()}\n内容は管理画面（pending_safety）で確認してください。`,
+        text: `【要確認】相談AIで危機判定が出ました\nセッション: ${sessionId}\n時刻: ${new Date().toISOString()}\n内容は管理画面(pending_safety)で確認してください。`,
       }),
     });
     return true;
@@ -282,15 +292,13 @@ async function notifyCrisis(sessionId: string) {
 // ============================================================================
 //  ハンドラ
 // ============================================================================
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "POST のみ受け付けます" }, 405);
-
+export async function POST(req: Request) {
   let payload: Record<string, unknown>;
   try { payload = await req.json(); } catch { return json({ error: "JSONが不正です" }, 400); }
   const action = String(payload.action ?? "chat");
 
   try {
+    const db = getDb();
     // ------------------------------------------------------------------
     // 評価の記録
     // ------------------------------------------------------------------
@@ -316,7 +324,7 @@ Deno.serve(async (req) => {
     }
 
     // ------------------------------------------------------------------
-    // 直前のセッションを取り出す（端末をまたいだ引き継ぎにも使う）
+    // 直前のセッションを取り出す(端末をまたいだ引き継ぎにも使う)
     // ------------------------------------------------------------------
     if (action === "resume") {
       const clientId = String(payload.client_id ?? "").trim();
@@ -405,7 +413,7 @@ Deno.serve(async (req) => {
         } catch { /* 再生成に失敗したら1回目を使い、フラグを残す */ }
       }
 
-      // ---- 記憶フィルタ：許可した項目だけ残す ----
+      // ---- 記憶フィルタ:許可した項目だけ残す ----
       const ALLOWED = ["主訴の候補","言葉にならない言葉","これまでの解決努力",
         "例外・うまくいっている時","本人のリソース","触れない領域","サポート資源"];
       const notes = { ...(sess.notes as Record<string, string>) };
@@ -428,7 +436,7 @@ Deno.serve(async (req) => {
         last_at: new Date().toISOString(),
       }).eq("id", sessionId);
 
-      // 参照したナレッジは本文も返す（管理画面で見せるため）
+      // 参照したナレッジは本文も返す(管理画面で見せるため)
       const usedIds: string[] = out.used ?? chunks.map((c) => c.id);
       const usedRows = rows.filter((k) => usedIds.includes(k.id))
         .map((k) => ({ id: k.id, src: k.src, cat: k.cat, body: k.body }));
@@ -450,4 +458,4 @@ Deno.serve(async (req) => {
     console.error(e);
     return json({ error: "サーバ側で問題が起きました", detail: String(e).slice(0, 300) }, 500);
   }
-});
+}

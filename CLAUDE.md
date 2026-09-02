@@ -29,18 +29,23 @@ AIが問題を解決するのではなく、**人につなぐバトンを渡す�
 
 ## 2. 構成
 
+**2026年9月に、単一HTML + Supabase Edge Function構成から Next.js(Vercel)構成に移行した。**
+判断ロジック・プロンプト・安全層をサーバ側に置く原則、DBの構造(RLS含む)、ログインなしの設計は変えていない。
+変わったのは実行場所だけ:Edge Function(Deno)→ Route Handler(Next.js/Node)、GitHub Pages → Vercel。
+Supabase は Postgres(データ)としてのみ残っている。
+
 ```
-ブラウザ（表示のみ）
-   │  fetch（JSON）
+ブラウザ(Next.jsのpage.tsx・表示のみ)
+   │  fetch("/api/chat")  ※同一オリジンなのでCORSの仕組みは無い
    ▼
-Supabase Edge Function  supabase/functions/chat/index.ts
+Next.js Route Handler  src/app/api/chat/route.ts(Vercelにデプロイ)
    │  ・ANTHROPIC_API_KEY を保持
    │  ・DB からナレッジを読んでプロンプトを組む
    │  ・入力フィルタ → 生成 → 出力チェック
    │  ・会話 / 見立て / 安全判定を保存
    │  ・危機判定なら人へ通知
    ▼
-Postgres（Supabase）
+Postgres(Supabase。データベースとしてのみ使う)
    knowledge / knowledge_history / sessions / messages / safety_events
 ```
 
@@ -48,22 +53,30 @@ Postgres（Supabase）
 .
 ├── CLAUDE.md              このファイル
 ├── README.md              セットアップ手順
-├── index.html             クライアント（表示のみ・GitHub Pages）
+├── package.json / tsconfig.json / next.config.ts / eslint.config.mjs / .gitignore
+├── src/
+│   ├── safety.mjs         CRISIS_WORDS / OUTPUT_NG(route.tsとテストスクリプトの共通モジュール)
+│   └── app/
+│       ├── layout.tsx     フォント・メタデータ
+│       ├── page.tsx       クライアント(表示のみ)
+│       ├── globals.css
+│       └── api/chat/route.ts   判断ロジック・プロンプト・安全層・DB読み書き
 ├── db/
 │   ├── schema.sql         テーブル定義・トリガ・ビュー
 │   ├── seed_knowledge.sql ナレッジ初期データ 140件
 │   └── knowledge.json     バックアップ
-├── supabase/functions/chat/index.ts
+├── scripts/
+│   └── test-output-check.mjs
 └── docs/
     ├── backlog.md         優先順位つきタスク
-    └── interviews/        逐語（マスキング済み）
+    └── interviews/        逐語(マスキング済み)
 ```
 
 ### 技術選択の理由
 
-- **Supabase 単体**（FastAPI を使わない）— 4人・卒業までという条件で、デプロイ先を増やすと負債になる。Edge Function で足りる
-- **ログインなし** — 敷居を下げることが目的。端末ごとの匿名UUIDを「引き継ぎコード」として使う
-- **RLS はポリシーを一つも作らない** — ブラウザはDBに直接触らない。anon から完全に見えない状態が最も安全。Edge Function は service_role で迂回する
+- **Next.js(Vercel)+ Supabase(DBのみ)** — フロントとバックエンドを1つのデプロイ先(Vercel)にまとめ、DBだけSupabaseに残す構成。旧構成にあった「デプロイ先を増やさない」という制約は、この移行によって「Vercel + Supabase の2つより増やさない」という形に変わったものとして運用する
+- **ログインなし** — 敷居を下げることが目的。端末ごとの匿名UUIDを「引き継ぎコード」として使う。移行後も変えていない
+- **RLS はポリシーを一つも作らない** — クライアントはDBに直接触らない。anon から完全に見えない状態が最も安全。Route Handler は service_role で迂回する(以前はEdge Functionが迂回していたのと同じ仕組み)
 
 ---
 
@@ -203,8 +216,12 @@ AIが同じ問いを投げると**方法を語らせる会話**になりかね�
 
 ### 5.7 APIキーをクライアントに置かない
 
-`index.html` に API キーを書かない。`ALLOWED_ORIGIN` を `*` にしない。
-両方とも、やった瞬間に課金が他人に使われます。
+`src/app/page.tsx`(クライアントコンポーネント)に API キーを書かない。環境変数に `NEXT_PUBLIC_` を付けない
+(付けた瞬間ブラウザに埋め込まれる)。`ANTHROPIC_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は
+`src/app/api/chat/route.ts`(サーバ側)からしか読まない。
+
+旧構成にあった `ALLOWED_ORIGIN`(CORS)は、フロントとバックエンドが同一オリジンになったため廃止した。
+別サイトからの無断利用という脅威モデル自体が成立しなくなったための削除であり、緩めたわけではない。
 
 ---
 
@@ -213,9 +230,9 @@ AIが同じ問いを投げると**方法を語らせる会話**になりかね�
 - **日本語のコメントで書く**。チームメンバーとカウンセラーが読みます
 - クライアントは**表示だけ**。判断ロジック・プロンプト・安全層をブラウザに戻さない
 - ナレッジをコードにハードコードしない(DBが唯一の情報源)
-- 依存パッケージを増やさない。現状 Edge Function は supabase-js のみ
-- `index.html` は単一ファイルのまま。ビルド工程を増やさない
-- 秘密情報を絶対にコミットしない(`.env`、APIキー、逐語の未マスキング版)
+- Next.js標準構成(next, react, react-dom, @supabase/supabase-js, eslint, typescript)以外の
+  依存パッケージを不用意に増やさない。追加するときは何のためかをコミットメッセージに書く
+- 秘密情報を絶対にコミットしない(`.env`、APIキー、逐語の未マスキング版)。`.gitignore` の `.env*` を外さない
 
 ### 変更時に必ず確認すること
 

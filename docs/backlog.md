@@ -9,20 +9,22 @@
 
 ### 0-1. デプロイして疎通させる
 
-`README.md` の手順どおりに Supabase を立て、SQL を流し、Edge Function をデプロイする。
+`README.md` の手順どおりに Supabase(DBとして)を立て、SQL を流し、Vercelにデプロイする。
+(2026年9月にSupabase Edge Function構成からNext.js/Vercel構成へ移行済み)
 
 **完了の条件**
 - `select src, count(*) from knowledge group by src;` が `理 54 / 石 42 / 嶋 37 / 嶋石 5 / 設 2` = 140件
 - ブラウザから1往復できる
 - `messages` にユーザー発言とAI応答の両方が入っている
-- `ALLOWED_ORIGIN` が `*` ではなく、実際のオリジンになっている
+- `ANTHROPIC_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` が `NEXT_PUBLIC_` 接頭辞なしでVercelに設定され、
+  ブラウザの開発者ツール(ソース・通信内容)からは見えないことを確認した
 
 ---
 
 ### 0-2. 安全層のテストを書く
 
 `scripts/test-output-check.mjs` を作る。
-`OUTPUT_NG` と `CRISIS_WORDS` を Edge Function から import して（または共通モジュールに切り出して）検証する。
+`OUTPUT_NG` と `CRISIS_WORDS` を API Route(`src/app/api/chat/route.ts`)から import して(共通モジュール `src/safety.mjs` に切り出し済み)検証する。
 
 **最低限のケース**
 
@@ -172,5 +174,5 @@ CLAUDE.md の第8節参照。特に:
 | ログイン機能 | 敷居を下げることが目的。登録を求めた時点で構造が壊れる |
 | 危機時のリスクアセスメント | 対面・訓練・接続先があって初めて成立する。AIがやると方法を語らせる会話になる |
 | 通知への本文添付 | 未成年の相談内容をチャットツールに流さない |
-| FastAPI の追加 | Edge Function で足りる。デプロイ先を増やさない |
-| ビルド工程の導入 | 単一HTMLのまま。4人・卒業までという条件で複雑さを増やさない |
+| FastAPI・別サーバーの追加 | Next.js の Route Handler で足りる。デプロイ先を Vercel + Supabase の2つより増やさない |
+| ビルド工程の導入 | **撤回(2026年9月)**。単一HTML構成だったが、VercelへのフルデプロイのためNext.jsに全面移行し、ビルド工程を前提にした。理由つきで残すのは、この撤回自体を蒸し返さないため |
