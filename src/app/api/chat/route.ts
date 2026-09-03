@@ -239,6 +239,11 @@ notes には氏名・学校名・住所などの識別情報を書かないこ�
 //  contents は Gemini の形式 { role: "user"|"model", parts: [{ text }] }[] で渡す。
 //  responseMimeType を application/json にして、後述の出力形式(JSONのみ)を守らせやすくしている
 //  (それでも念のため parseJSON() で本文からJSON部分を取り出す形は残す)。
+//
+//  safetySettings: いじめ・孤立・希死念慮などをそのまま話題にするのがこのアプリの前提だが、
+//  Geminiの既定の安全フィルタ(BLOCK_MEDIUM_AND_ABOVE)は支援的な文脈でもこうした話題を
+//  ブロックし、応答が空になることがある。相手を傷つける内容の生成を防ぐ目的は保ったまま、
+//  高確度で有害と判定されたものだけを止めるBLOCK_ONLY_HIGHに緩めている。
 // ============================================================================
 async function callGemini(systemInstruction: string, contents: unknown[], maxOutputTokens = 1000) {
   const res = await fetch(
@@ -253,13 +258,25 @@ async function callGemini(systemInstruction: string, contents: unknown[], maxOut
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents,
         generationConfig: { maxOutputTokens, responseMimeType: "application/json" },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+        ],
       }),
     },
   );
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const d = await res.json();
-  const parts = d.candidates?.[0]?.content?.parts ?? [];
-  return parts.map((p: { text?: string }) => p.text ?? "").join("");
+  const candidate = d.candidates?.[0];
+  const text = (candidate?.content?.parts ?? [])
+    .map((p: { text?: string }) => p.text ?? "").join("");
+  if (!text) {
+    const reason = d.promptFeedback?.blockReason || candidate?.finishReason || "unknown";
+    throw new Error(`Geminiの応答が空でした(理由: ${reason})`);
+  }
+  return text;
 }
 
 function parseJSON(raw: string) {
@@ -412,11 +429,29 @@ export async function POST(req: Request) {
         .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.body }] }));
 
       const system = buildSystem(rows, chunks, sess.weight, sess.notes, sess.turns_since_summary);
-      let out = parseJSON(await callGemini(system, messages));
+
+      // Geminiの安全フィルタ等で応答が得られない/JSONとして読めないことがある。
+      // その場合も技術的なエラーを生徒にそのまま見せず、受け止めだけの返答で会話を続ける。
+      // 見逃さないよう flags に記録し、心理士のレビュー画面で頻度を確認できるようにしておく。
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let out: any;
+      let generationFailed = false;
+      try {
+        out = parseJSON(await callGemini(system, messages));
+      } catch (e) {
+        console.error("生成に失敗しました:", e);
+        generationFailed = true;
+        out = {
+          reply: "ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?",
+          used: [],
+          why: "生成に失敗したため受け止めのみ",
+        };
+      }
 
       // ---- 出力チェック ----
       let flags = checkOutput(out.reply ?? "");
-      if (flags.length) {
+      if (generationFailed) flags = ["生成失敗→固定応答で継続", ...flags];
+      if (flags.length && !generationFailed) {
         const fix = system +
           "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
         try {
