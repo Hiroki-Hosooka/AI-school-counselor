@@ -267,14 +267,20 @@ async function callGemini(systemInstruction: string, contents: unknown[], maxOut
       }),
     },
   );
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const body = (await res.text()).slice(0, 200);
+    // レート制限(無料枠は10RPMしかなく、1ターンでclassify+本生成の2回呼ぶため
+    // テスト中の連投だけでも超えうる)と、それ以外のエラーを区別できるようにしておく。
+    const tag = res.status === 429 ? "[RATE_LIMIT]" : `[HTTP_${res.status}]`;
+    throw new Error(`${tag} Gemini ${res.status}: ${body}`);
+  }
   const d = await res.json();
   const candidate = d.candidates?.[0];
   const text = (candidate?.content?.parts ?? [])
     .map((p: { text?: string }) => p.text ?? "").join("");
   if (!text) {
     const reason = d.promptFeedback?.blockReason || candidate?.finishReason || "unknown";
-    throw new Error(`Geminiの応答が空でした(理由: ${reason})`);
+    throw new Error(`[BLOCKED] Geminiの応答が空でした(理由: ${reason})`);
   }
   return text;
 }
@@ -436,21 +442,26 @@ export async function POST(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let out: any;
       let generationFailed = false;
+      let failureCause = "";
       try {
         out = parseJSON(await callGemini(system, messages));
       } catch (e) {
         console.error("生成に失敗しました:", e);
         generationFailed = true;
+        const msg = e instanceof Error ? e.message : String(e);
+        failureCause = msg.includes("[RATE_LIMIT]") ? "レート制限(429)"
+          : msg.includes("[BLOCKED]") ? "安全フィルタ等で応答が空"
+          : "不明なエラー";
         out = {
           reply: "ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?",
           used: [],
-          why: "生成に失敗したため受け止めのみ",
+          why: `生成失敗(${failureCause})`,
         };
       }
 
       // ---- 出力チェック ----
       let flags = checkOutput(out.reply ?? "");
-      if (generationFailed) flags = ["生成失敗→固定応答で継続", ...flags];
+      if (generationFailed) flags = [`生成失敗→固定応答で継続(${failureCause})`, ...flags];
       if (flags.length && !generationFailed) {
         const fix = system +
           "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
