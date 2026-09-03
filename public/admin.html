@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>相談ログ レビュー画面</title>
+<style>
+:root{
+  --paper:#FBFAF7; --ink:#232A2E; --ink-soft:#5C6A70; --ink-faint:#8B979C;
+  --indigo:#2F4858; --moss:#6E8B74; --plum:#7A6480; --amber:#A8794A;
+  --sand:#E4E0D6; --sand-deep:#D3CDBF;
+  --alert:#A8443A; --alert-bg:#FBF1EF;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;
+  font-size:14.5px;line-height:1.75}
+header{border-bottom:1px solid var(--sand);padding:14px 20px;background:var(--paper);
+  position:sticky;top:0;z-index:5}
+.head-row{display:flex;align-items:baseline;gap:12px;max-width:920px;margin:0 auto;width:100%}
+.mark{font-size:17px;font-weight:600;color:var(--indigo)}
+.sub{font-size:11.5px;color:var(--ink-faint)}
+.spacer{flex:1}
+button{font-family:inherit;cursor:pointer}
+.icon-btn{background:none;border:1px solid var(--sand);border-radius:999px;color:var(--ink-soft);
+  font-size:11.5px;padding:5px 13px}
+.icon-btn:hover{border-color:var(--ink-faint);color:var(--ink)}
+main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
+
+.notice{border:1px solid var(--sand-deep);background:#fff;border-radius:9px;padding:14px 16px;
+  font-size:13px;line-height:1.85;margin-bottom:16px;color:var(--ink-soft)}
+.notice.warn{border-color:#E8CFC9;background:var(--alert-bg);color:var(--alert)}
+.notice code{background:#F6F5F1;border:1px solid var(--sand);border-radius:5px;padding:1px 6px;font-size:12px}
+
+.toolbar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.sort-tabs{display:flex;gap:6px}
+.sort-tab{border:1px solid var(--sand);background:#fff;border-radius:999px;padding:6px 14px;
+  font-size:12.5px;color:var(--ink-soft)}
+.sort-tab.on{border-color:var(--indigo);color:var(--indigo);font-weight:600}
+.count{font-size:12px;color:var(--ink-faint)}
+
+.s-list{display:flex;flex-direction:column;gap:10px}
+.s-card{border:1px solid var(--sand);background:#fff;border-radius:10px;padding:13px 16px;cursor:pointer}
+.s-card:hover{border-color:var(--ink-faint)}
+.s-card.crisis{border-color:var(--alert);background:var(--alert-bg)}
+.s-card-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.s-id{font-family:ui-monospace,monospace;font-size:12.5px;color:var(--ink-soft)}
+.s-card-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.s-card-time{font-size:11.5px;color:var(--ink-faint)}
+.empty{text-align:center;color:var(--ink-faint);padding:40px 0;font-size:13.5px}
+
+.badge{display:inline-block;font-size:10.5px;letter-spacing:.03em;padding:2px 9px;border-radius:999px;
+  background:var(--sand);color:var(--ink-soft)}
+.badge.warn{background:var(--alert);color:#fff}
+.badge.open{background:var(--indigo);color:#fff}
+
+.tag{display:inline-block;font-size:11px;letter-spacing:.03em;padding:2px 9px;border-radius:999px;
+  border:1px solid var(--sand-deep);color:var(--ink-faint)}
+.tag.warn{border-color:var(--alert);color:var(--alert)}
+.tag.amber{border-color:var(--amber);color:var(--amber)}
+
+#detailView .s-header{margin:14px 0 6px}
+#detailView .s-header h3{margin:0 0 6px;font-size:16px;color:var(--indigo)}
+.notes-block{border-top:1px solid var(--sand);border-bottom:1px solid var(--sand);
+  padding:10px 0;margin:10px 0 18px}
+.notes-block h5{margin:0 0 8px;font-size:11px;letter-spacing:.06em;color:var(--ink-faint);font-weight:600}
+.notes-block dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12.5px}
+.notes-block dt{color:var(--ink-faint)}
+.notes-block dd{margin:0;color:var(--ink-soft)}
+
+.thread{display:flex;flex-direction:column;gap:20px}
+.msg.user{display:flex;justify-content:flex-end}
+.msg.user .bubble{background:var(--indigo);color:#F4F6F5;border-radius:12px 12px 2px 12px;
+  padding:9px 14px;font-size:13.5px;max-width:80%;white-space:pre-wrap}
+.msg.ai{border-left:2px solid var(--sand-deep);padding-left:14px}
+.msg.ai.crisis{border-left-color:var(--alert)}
+.msg.ai .bubble{font-size:14.5px;line-height:1.9;white-space:pre-wrap;margin-bottom:8px}
+.meta{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.hint{font-size:12px;color:var(--ink-soft);margin-bottom:4px}
+.hint b{color:var(--ink-faint);font-weight:600}
+.flags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+
+.know-list{margin:6px 0;display:flex;flex-direction:column;gap:6px}
+.know-item{font-size:11.5px;line-height:1.7;color:var(--ink-soft);border-left:2px solid var(--sand);
+  padding:2px 0 2px 10px}
+.know-item code{display:block;font-size:10.5px;color:var(--plum);letter-spacing:.02em;margin-bottom:1px}
+
+.rate-row{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap}
+.rate-row>span:first-child{font-size:11px;color:var(--ink-faint);margin-right:2px}
+.rate-btn{width:24px;height:24px;border-radius:50%;border:1px solid var(--sand-deep);background:#fff;
+  color:var(--ink-faint);font-size:11.5px;padding:0}
+.rate-btn.on{background:var(--moss);border-color:var(--moss);color:#fff}
+.rate-comment{border:1px solid var(--sand-deep);border-radius:7px;padding:5px 9px;font-size:12px;
+  font-family:inherit;min-width:180px;flex:1}
+.rate-save{border:1px solid var(--indigo);background:var(--indigo);color:#fff;border-radius:7px;
+  padding:5px 13px;font-size:12px}
+.rate-save:disabled{opacity:.5;cursor:default}
+.rate-saved{font-size:11.5px;color:var(--moss)}
+
+.foot-note{max-width:920px;margin:26px auto 0;font-size:11px;color:var(--ink-faint);
+  border-top:1px solid var(--sand);padding-top:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-row">
+    <span class="mark">相談ログ レビュー</span>
+    <span class="sub">心理士専用・このページのURLを共有しないでください</span>
+    <span class="spacer"></span>
+    <button id="refreshBtn" class="icon-btn">更新</button>
+  </div>
+</header>
+<main>
+  <div id="noToken" class="notice" hidden>
+    このページを開くには、URLの末尾に <code>?token=（合言葉）</code> を付けてください。
+    合言葉は <code>ADMIN_TOKEN</code> として管理者がVercelに設定した値です。
+  </div>
+  <div id="authError" class="notice warn" hidden>
+    合言葉が違います。URLの <code>?token=...</code> の値を確認してください。
+  </div>
+  <div id="loadError" class="notice warn" hidden></div>
+
+  <section id="listView" hidden>
+    <div class="toolbar">
+      <div class="sort-tabs">
+        <button type="button" class="sort-tab on" data-sort="new">新しい順</button>
+        <button type="button" class="sort-tab" data-sort="unrated">未評価が多い順</button>
+      </div>
+      <span id="listCount" class="count"></span>
+    </div>
+    <div id="sessionList" class="s-list"></div>
+    <div id="listEmpty" class="empty" hidden>まだセッションがありません。</div>
+  </section>
+
+  <section id="detailView" hidden>
+    <button type="button" id="backBtn" class="icon-btn">← 一覧へ</button>
+    <div id="sessionHeader" class="s-header"></div>
+    <div id="notesBlock" class="notes-block" hidden></div>
+    <div id="thread" class="thread"></div>
+  </section>
+
+  <div class="foot-note">
+    このページのURLには合言葉がそのまま含まれています。スクリーンショットやチャットへの貼り付けでも
+    共有しないでください。相談内容は要配慮個人情報です。
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+
+  var token = new URLSearchParams(location.search).get("token") || "";
+
+  var $ = function (sel) { return document.querySelector(sel); };
+  var noToken = $("#noToken");
+  var authError = $("#authError");
+  var loadError = $("#loadError");
+  var listView = $("#listView");
+  var detailView = $("#detailView");
+  var sessionListEl = $("#sessionList");
+  var listEmpty = $("#listEmpty");
+  var listCount = $("#listCount");
+  var sessionHeaderEl = $("#sessionHeader");
+  var notesBlockEl = $("#notesBlock");
+  var threadEl = $("#thread");
+
+  var WEIGHT_JA = { rapport: "関係をつくる", main: "主訴を見極める", goal: "目標を立てる", plan: "作戦会議" };
+  var REL_JA = { visitor: "ビジター", complainant: "コンプレイナント", customer: "カスタマー" };
+  var QL_JA = { none: "問わず受け止めのみ", data: "第1層・事実を聞く", diagnostic: "第2層・仮説を確かめる", confrontational: "第3層・見立てで介入" };
+  var RL_JA = { listen: "相談を受ける", assess: "査定する", inform: "情報を提供する" };
+
+  function esc(v) {
+    return String(v === undefined || v === null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString("ja-JP", {
+        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      });
+    } catch (e) { return iso; }
+  }
+
+  function showLoadError(msg) {
+    loadError.hidden = false;
+    loadError.textContent = "読み込みに失敗しました: " + msg;
+  }
+
+  function api(action, extra) {
+    var payload = Object.assign({ action: action, admin_token: token }, extra || {});
+    return fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (body) {
+        if (res.status === 401) {
+          authError.hidden = false;
+          listView.hidden = true;
+          detailView.hidden = true;
+          throw new Error("unauthorized");
+        }
+        if (!res.ok) {
+          throw new Error((body && body.error) || ("HTTP " + res.status));
+        }
+        return body;
+      });
+    });
+  }
+
+  var sessions = [];
+  var sortMode = "new";
+
+  function renderList() {
+    var sorted = sessions.slice().sort(function (a, b) {
+      if (sortMode === "unrated") return (b.unrated_count || 0) - (a.unrated_count || 0);
+      return new Date(b.started_at) - new Date(a.started_at);
+    });
+    listCount.textContent = sessions.length ? sessions.length + "件" : "";
+    listEmpty.hidden = sorted.length !== 0;
+    sessionListEl.innerHTML = sorted.map(function (s) {
+      var badges = "";
+      if (s.has_crisis) badges += '<span class="badge warn">危機</span>';
+      if (!s.closed_at) badges += '<span class="badge open">進行中</span>';
+      if (s.unrated_count > 0) badges += '<span class="badge">未評価 ' + esc(s.unrated_count) + '</span>';
+      return (
+        '<div class="s-card' + (s.has_crisis ? " crisis" : "") + '" data-id="' + esc(s.id) + '">' +
+          '<div class="s-card-top"><span class="s-id">#' + esc(s.client_id_short) + '</span>' + badges + '</div>' +
+          '<div class="s-card-tags">' +
+            '<span class="tag">' + esc(REL_JA[s.relation] || s.relation || "—") + '</span>' +
+            '<span class="tag">' + esc(WEIGHT_JA[s.weight] || s.weight || "—") + '</span>' +
+            '<span class="tag">' + esc(s.turn_count || 0) + '往復</span>' +
+          '</div>' +
+          '<div class="s-card-time">' + esc(fmtDate(s.started_at)) + ' 〜 ' +
+            (s.closed_at ? esc(fmtDate(s.closed_at)) : "(継続中)") + '</div>' +
+        '</div>'
+      );
+    }).join("");
+  }
+
+  sessionListEl.addEventListener("click", function (e) {
+    var card = e.target.closest(".s-card");
+    if (!card) return;
+    openSession(card.dataset.id);
+  });
+
+  document.querySelectorAll(".sort-tab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".sort-tab").forEach(function (b) { b.classList.remove("on"); });
+      btn.classList.add("on");
+      sortMode = btn.dataset.sort;
+      renderList();
+    });
+  });
+
+  function loadSessions() {
+    loadError.hidden = true;
+    return api("admin_sessions", {}).then(function (body) {
+      sessions = (body && body.sessions) || [];
+      listView.hidden = false;
+      renderList();
+    }, function (e) {
+      if (e.message !== "unauthorized") showLoadError(e.message);
+    });
+  }
+
+  function renderNotes(notes) {
+    var entries = Object.entries(notes || {}).filter(function (kv) {
+      return kv[1] && String(kv[1]).trim();
+    });
+    if (!entries.length) { notesBlockEl.hidden = true; notesBlockEl.innerHTML = ""; return; }
+    notesBlockEl.hidden = false;
+    notesBlockEl.innerHTML = "<h5>現在の見立てメモ</h5><dl>" + entries.map(function (kv) {
+      return "<dt>" + esc(kv[0]) + "</dt><dd>" + esc(kv[1]) + "</dd>";
+    }).join("") + "</dl>";
+  }
+
+  function knowledgeHtml(used) {
+    if (!used || !used.length) return "";
+    return '<div class="know-list">' + used.map(function (k) {
+      return (
+        '<div class="know-item"><code>' + esc(k.id) + ' · ' + esc(k.src) +
+          (k.cat === "verbatim" ? " · 逐語" : "") + '</code>' + esc(k.body) + '</div>'
+      );
+    }).join("") + '</div>';
+  }
+
+  function metaHtml(m) {
+    var parts = [];
+    if (m.relation) parts.push('<span class="tag">型 ' + esc(REL_JA[m.relation] || m.relation) + '</span>');
+    if (m.weight) parts.push('<span class="tag">重心 ' + esc(WEIGHT_JA[m.weight] || m.weight) + '</span>');
+    if (m.question_level) parts.push('<span class="tag">' + esc(QL_JA[m.question_level] || m.question_level) + '</span>');
+    if (m.role_kind) parts.push('<span class="tag">役割 ' + esc(RL_JA[m.role_kind] || m.role_kind) + '</span>');
+    if (m.summarized) parts.push('<span class="tag amber">区切り</span>');
+    return parts.join("");
+  }
+
+  function ratingHtml(m) {
+    if (m.crisis) return '<div class="hint">危機対応のため、この応答の評価は表示していません。</div>';
+    var n = m.rating || 0;
+    var btns = [1, 2, 3, 4, 5].map(function (i) {
+      return '<button type="button" class="rate-btn' + (i <= n ? " on" : "") + '" data-n="' + i + '">' + i + '</button>';
+    }).join("");
+    return (
+      '<div class="rate-row" data-seq="' + esc(m.seq) + '" data-pending="' + n + '">' +
+        '<span>評価</span>' + btns +
+        '<input type="text" class="rate-comment" placeholder="コメント(任意)" value="' + esc(m.rating_comment || "") + '">' +
+        '<button type="button" class="rate-save">保存</button>' +
+        '<span class="rate-saved" hidden>保存しました</span>' +
+      '</div>'
+    );
+  }
+
+  function renderMessages(messages) {
+    threadEl.innerHTML = messages.map(function (m) {
+      if (m.role === "user") {
+        return '<div class="msg user"><div class="bubble">' + esc(m.body) + '</div></div>';
+      }
+      var flags = (m.flags && m.flags.length)
+        ? '<div class="flags">' + m.flags.map(function (f) { return '<span class="tag warn">' + esc(f) + '</span>'; }).join("") + '</div>'
+        : "";
+      return (
+        '<div class="msg ai' + (m.crisis ? " crisis" : "") + '">' +
+          '<div class="bubble">' + esc(m.body) + '</div>' +
+          '<div class="meta">' + metaHtml(m) + '</div>' +
+          (m.hypothesis ? '<div class="hint"><b>仮説:</b> ' + esc(m.hypothesis) + '</div>' : "") +
+          (m.why ? '<div class="hint"><b>理由:</b> ' + esc(m.why) + '</div>' : "") +
+          flags +
+          knowledgeHtml(m.used) +
+          ratingHtml(m) +
+        '</div>'
+      );
+    }).join("");
+  }
+
+  threadEl.addEventListener("click", function (e) {
+    var row = e.target.closest(".rate-row");
+    if (!row) return;
+    if (e.target.classList.contains("rate-btn")) {
+      var n = Number(e.target.dataset.n);
+      row.dataset.pending = String(n);
+      row.querySelectorAll(".rate-btn").forEach(function (b) {
+        b.classList.toggle("on", Number(b.dataset.n) <= n);
+      });
+      return;
+    }
+    if (e.target.classList.contains("rate-save")) {
+      var seq = Number(row.dataset.seq);
+      var rating = Number(row.dataset.pending || 0);
+      if (!rating) { alert("評価(1〜5)を選んでください"); return; }
+      var comment = row.querySelector(".rate-comment").value;
+      e.target.disabled = true;
+      api("rate", { seq: seq, rating: rating, comment: comment }).then(function () {
+        var saved = row.querySelector(".rate-saved");
+        saved.hidden = false;
+        setTimeout(function () { saved.hidden = true; }, 1500);
+      }, function (err) {
+        alert("保存に失敗しました: " + err.message);
+      }).then(function () {
+        e.target.disabled = false;
+      });
+    }
+  });
+
+  function renderSessionHeader(s) {
+    sessionHeaderEl.innerHTML = (
+      '<h3>#' + esc(s.client_id_short) + '</h3>' +
+      '<div class="s-card-tags">' +
+        '<span class="tag">' + esc(REL_JA[s.relation] || s.relation || "—") + '</span>' +
+        '<span class="tag">' + esc(WEIGHT_JA[s.weight] || s.weight || "—") + '</span>' +
+      '</div>' +
+      '<div class="s-card-time">' + esc(fmtDate(s.started_at)) + ' 〜 ' +
+        (s.closed_at ? esc(fmtDate(s.closed_at)) : "(継続中)") + '</div>'
+    );
+  }
+
+  function openSession(id) {
+    loadError.hidden = true;
+    return api("admin_session_detail", { session_id: id }).then(function (body) {
+      renderSessionHeader(body.session);
+      renderNotes(body.session.notes);
+      renderMessages(body.messages || []);
+      listView.hidden = true;
+      detailView.hidden = false;
+      window.scrollTo(0, 0);
+    }, function (e) {
+      if (e.message !== "unauthorized") showLoadError(e.message);
+    });
+  }
+
+  $("#backBtn").addEventListener("click", function () {
+    detailView.hidden = true;
+    listView.hidden = false;
+    loadError.hidden = true;
+  });
+
+  $("#refreshBtn").addEventListener("click", function () {
+    if (!detailView.hidden) return;
+    loadSessions();
+  });
+
+  if (!token) {
+    noToken.hidden = false;
+  } else {
+    loadSessions();
+  }
+})();
+</script>
+</body>
+</html>

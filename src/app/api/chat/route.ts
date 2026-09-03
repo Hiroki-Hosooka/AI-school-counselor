@@ -36,6 +36,9 @@
 //   SUPABASE_SERVICE_ROLE_KEY 必須(RLSを迂回してDBを読み書きするため。絶対にNEXT_PUBLIC_を付けない)
 //   CRISIS_WEBHOOK_URL       任意  Slack / Discord などの Incoming Webhook
 //   RATE_LIMIT_PER_HOUR      任意  既定 60
+//   ADMIN_TOKEN              任意  管理画面(public/admin.html)用の合言葉。
+//                                  admin_sessions/admin_session_detail はこれと
+//                                  一致しないと401を返す(docs/backlog.md 1-2)
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -70,6 +73,14 @@ function getDb(): SupabaseClient {
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+
+// 管理画面(admin.html)用の合言葉チェック。ログイン画面は作らず、
+// admin.html が自分のURLのクエリ文字列(?token=...)から読んで
+// リクエストボディに admin_token として載せてくる想定(docs/backlog.md 1-2)。
+function checkAdminToken(payload: Record<string, unknown>): boolean {
+  const token = String(payload.admin_token ?? "");
+  return token.length > 0 && token === process.env.ADMIN_TOKEN;
+}
 
 // ============================================================================
 //  安全層(クライアントには置かない。CRISIS_WORDS/OUTPUT_NG は src/safety.mjs)
@@ -457,6 +468,58 @@ export async function POST(req: Request) {
       if (!seq || !(rating >= 1 && rating <= 5)) return json({ error: "パラメータが不正です" }, 400);
       await db.from("messages").update({ rating, rating_comment: comment ?? null }).eq("seq", seq);
       return json({ ok: true });
+    }
+
+    // ------------------------------------------------------------------
+    // 管理画面(admin.html)
+    // ログイン画面は作らず、admin.html が自分のURLのクエリ文字列から
+    // token を読んで毎回のリクエストに含める(docs/backlog.md 1-2)。
+    // ------------------------------------------------------------------
+    if (action === "admin_sessions") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const { data, error } = await db.from("session_overview")
+        .select("id,client_id,started_at,last_at,closed_at,relation,weight,turn_count,unrated_count,has_crisis")
+        .order("started_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      const sessions = (data ?? []).map((s) => ({
+        id: s.id,
+        client_id_short: String(s.client_id).slice(0, 8),
+        started_at: s.started_at, last_at: s.last_at, closed_at: s.closed_at,
+        relation: s.relation, weight: s.weight,
+        turn_count: s.turn_count, unrated_count: s.unrated_count, has_crisis: s.has_crisis,
+      }));
+      return json({ sessions });
+    }
+
+    if (action === "admin_session_detail") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const sessionId = String(payload.session_id ?? "").trim();
+      if (!sessionId) return json({ error: "session_id が必要です" }, 400);
+      const { data: s } = await db.from("sessions")
+        .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes")
+        .eq("id", sessionId).maybeSingle();
+      if (!s) return json({ error: "セッションが見つかりません" }, 404);
+      const { data: msgs } = await db.from("messages")
+        .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at")
+        .eq("session_id", sessionId).order("seq");
+      const allUsedIds = Array.from(new Set((msgs ?? []).flatMap((m) => m.used ?? [])));
+      let knowledgeMap: Record<string, { id: string; src: string; cat: string; body: string }> = {};
+      if (allUsedIds.length) {
+        const { data: kn } = await db.from("knowledge").select("id,src,cat,body").in("id", allUsedIds);
+        for (const k of kn ?? []) knowledgeMap[k.id] = k;
+      }
+      const messages = (msgs ?? []).map((m) => ({
+        ...m,
+        used: (m.used ?? []).map((id: string) => knowledgeMap[id] ?? { id, src: "", cat: "", body: "(削除済み)" }),
+      }));
+      return json({
+        session: {
+          id: s.id, client_id_short: String(s.client_id).slice(0, 8),
+          started_at: s.started_at, last_at: s.last_at, closed_at: s.closed_at,
+          relation: s.relation, weight: s.weight, notes: s.notes,
+        },
+        messages,
+      });
     }
 
     // ------------------------------------------------------------------

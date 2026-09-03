@@ -237,3 +237,15 @@ create or replace view flag_summary as
 select unnest(flags) as flag, count(*) as n
 from messages where array_length(flags,1) > 0
 group by 1 order by n desc;
+
+-- 管理画面(admin.html)用:セッションごとの集計。
+-- ターン数(AI発言数)・未評価件数(危機対応を除く未評価のAI発言数)・危機の有無。
+create or replace view session_overview as
+select
+  s.id, s.client_id, s.started_at, s.last_at, s.closed_at, s.relation, s.weight,
+  count(m.seq) filter (where m.role = 'ai')                                   as turn_count,
+  count(m.seq) filter (where m.role = 'ai' and not m.crisis and m.rating is null) as unrated_count,
+  coalesce(bool_or(m.crisis), false)                                          as has_crisis
+from sessions s
+left join messages m on m.session_id = s.id
+group by s.id;

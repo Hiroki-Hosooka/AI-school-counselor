@@ -80,6 +80,7 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | 同上。`service_role` の方(anon keyではない) |
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
 | `RATE_LIMIT_PER_HOUR` | | 既定 60 |
+| `ADMIN_TOKEN` | | 管理画面(`/admin.html`)の合言葉。未設定だと管理画面は常に401になり閲覧できない |
 
 使用するGeminiモデルは環境変数ではなく、`src/app/api/chat/route.ts` の `PRIMARY_MODELS`/`LITE_MODELS`
 にコードで書かれています(下記参照)。
@@ -139,6 +140,37 @@ Google AI Studioで発行したキーをそのまま使う場合、**無料枠�
 生の会話ログではなく、セッションが閉じるたび(または30分以上間があいたとき)に**上書きで再生成**
 される要約だけです。AIは自分からこれを詳しく語らないよう指示されています(CLAUDE.md 5.8)。
 「もっと詳しく覚えさせる」方向の変更は、依存を強める懸念があるため確認が必要です。
+
+---
+
+## 管理画面(admin.html) — 心理士向け会話ログレビュー
+
+生徒が使う画面(`page.tsx`)とは別に、`/admin.html` という心理士専用の静的ページがあります(`public/admin.html`)。
+ビルド不要・外部パッケージ不要の単一HTMLファイルで、`/api/chat` の管理者用アクション
+(`admin_sessions` / `admin_session_detail`)だけを呼び出します。
+
+**ログイン画面は作っていません(プロトタイプのため)。** 代わりに、URLのクエリ文字列に
+合言葉を付けてアクセスします。
+
+```
+https://(デプロイ先のドメイン)/admin.html?token=(ADMIN_TOKEN に設定した値)
+```
+
+- `token` が空、または `ADMIN_TOKEN` と一致しない場合、サーバ側(`route.ts`)が401を返し、
+  一覧・詳細のどちらも表示されません
+- `ADMIN_TOKEN` を設定していない場合、この画面は誰の合言葉でも開けません(常に401)
+- `noindex,nofollow` と `robots.txt` で検索エンジンからは隠していますが、**URLに合言葉が
+  そのまま含まれるため、リンクやスクリーンショットを共有しないでください**
+
+画面でできること:
+
+- セッション一覧(新しい順 / 未評価が多い順に並べ替え、危機セッションは赤く強調表示)
+- セッション詳細で会話を再生し、各AI応答について `relation`(関わりの型) / `weight`(重心) /
+  `question_level`(問いの層) / `role`(役割) / `hypothesis`(仮説) / `why`(理由) /
+  参照したナレッジの本文を表示
+- 1〜5の評価とコメントを入力(`messages.rating` / `rating_comment`。生徒側の評価UIと同じ
+  `rate` アクションを使うため、この保存自体には合言葉は不要です)
+- 危機対応のターンは評価UIを表示しません(評価になじまないため)
 
 ---
 

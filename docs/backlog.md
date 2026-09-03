@@ -97,7 +97,7 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
 
 ---
 
-### 1-2. 会話ログのレビュー画面
+### 1-2. 会話ログのレビュー画面 ✅ 完了(実装済み・要ユーザー確認)
 
 心理士との検討会で、印刷ではなく画面で1行ずつ潰せるようにする。
 
@@ -109,6 +109,17 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
 **完了の条件**
 - 「なぜこの返答になったか」が画面上で追える
 - 評価が保存され、`knowledge_score` ビューに反映される
+
+**実装内容**
+- `public/admin.html`(単一HTML・ビルド/外部パッケージ不要)を新規作成。生徒側の `page.tsx` は未改変
+- `src/app/api/chat/route.ts` に `admin_sessions`(一覧。`db/schema.sql` の `session_overview` ビューを利用)と
+  `admin_session_detail`(詳細。メッセージ+参照ナレッジ本文を結合)を追加
+- 認証はログイン画面ではなく `ADMIN_TOKEN` とのURLクエリトークン照合(プロトタイプ判断。README参照)
+- 評価保存は生徒側と同じ既存の `rate` アクションをそのまま利用(変更なし)
+
+**ユーザー側でまだ確認できていないこと**
+- Vercelに `ADMIN_TOKEN` を設定し、実際のデータで一覧・詳細・評価保存が動くこと
+- `db/schema.sql` を再実行し `session_overview` ビューが作成されていること(0-1 のSQL再実行に含まれる)
 
 ---
 
