@@ -78,9 +78,11 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 | `GEMINI_API_KEY` | ○ | [Google AI Studio](https://aistudio.google.com/apikey) で発行したキー(`AIza...`) |
 | `SUPABASE_URL` | ○ | Supabaseダッシュボード → Project Settings → API に表示されるURL |
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | 同上。`service_role` の方(anon keyではない) |
-| `MODEL` | | 既定 `gemini-2.5-flash` |
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
 | `RATE_LIMIT_PER_HOUR` | | 既定 60 |
+
+使用するGeminiモデルは環境変数ではなく、`src/app/api/chat/route.ts` の `PRIMARY_MODELS`/`LITE_MODELS`
+にコードで書かれています(下記参照)。
 
 > これらの値を絶対に `NEXT_PUBLIC_` で始まる名前にしないでください。付けた瞬間ブラウザに埋め込まれ、
 > 誰でも見られる状態になります(`GEMINI_API_KEY` と `SUPABASE_SERVICE_ROLE_KEY` は特に注意)。
@@ -105,6 +107,20 @@ Google AI Studioで発行したキーをそのまま使う場合、**無料枠�
 
 環境変数を追加・変更したら、Vercelのデプロイを1回やり直す(Redeploy)まで反映されません。
 
+### モデルのフォールバックと、Googleのモデル退役への対応(重要・期限あり)
+
+`route.ts` は単一モデルではなく、モデルのリストを上から順に試すようになっています(2026年9月〜)。
+
+- `PRIMARY_MODELS`(本生成用・品質優先): `gemini-3.5-flash` → `gemini-2.5-flash`
+- `LITE_MODELS`(安全判定・人単位の記憶の要約用・軽量タスク向け): `gemini-3.5-flash-lite` → `gemini-2.5-flash-lite`
+
+レート制限だけでなく、Googleのモデル退役(Gemini 2.0系は2026年6月1日に退役済み)にも対応するためです。
+
+**`gemini-2.5-flash` は2026年10月16日(Vertex AI表記では10月20日)に退役予定です。** それまでに
+`PRIMARY_MODELS`/`LITE_MODELS` の該当行を削除し、後継モデルに置き換えてください。全滅すると
+「うまく応答できませんでした」しか返らなくなります。どのモデルが実在するかは
+<https://ai.google.dev/gemini-api/docs/models> で確認してください。
+
 ---
 
 ## 端末をまたいで使う
@@ -116,6 +132,13 @@ Google AI Studioで発行したキーをそのまま使う場合、**無料枠�
 
 - 何も入力しなければ、その端末だけの匿名利用になります
 - コードは名前と紐づいていないので、コードを知らない限り誰の会話かはわかりません
+
+### 人単位の記憶(person_memory)
+
+同じ引き継ぎコードで再訪すると、前回までの要点が短い要約(最大600字)として引き継がれます。
+生の会話ログではなく、セッションが閉じるたび(または30分以上間があいたとき)に**上書きで再生成**
+される要約だけです。AIは自分からこれを詳しく語らないよう指示されています(CLAUDE.md 5.8)。
+「もっと詳しく覚えさせる」方向の変更は、依存を強める懸念があるため確認が必要です。
 
 ---
 

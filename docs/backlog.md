@@ -10,7 +10,9 @@
 ### 0-1. デプロイして疎通させる
 
 `README.md` の手順どおりに Supabase(DBとして)を立て、SQL を流し、Vercelにデプロイする。
-(2026年9月にSupabase Edge Function構成からNext.js/Vercel構成へ移行済み)
+(2026年9月にSupabase Edge Function構成からNext.js/Vercel構成へ移行済み。同時期に
+`person_memory` テーブルを追加したので、`db/schema.sql` を再実行すること。`create table if not exists`
+なので既存データに影響なし)
 
 **完了の条件**
 - `select src, count(*) from knowledge group by src;` が `理 54 / 石 42 / 嶋 37 / 嶋石 5 / 設 2` = 140件
@@ -18,6 +20,8 @@
 - `messages` にユーザー発言とAI応答の両方が入っている
 - `GEMINI_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` が `NEXT_PUBLIC_` 接頭辞なしでVercelに設定され、
   ブラウザの開発者ツール(ソース・通信内容)からは見えないことを確認した
+- 同じ引き継ぎコードで一度会話を終え、30分以上待ってから再訪すると、`person_memory.summary` が
+  生成され、次の会話にそれとなく反映されることを確認した
 
 ---
 

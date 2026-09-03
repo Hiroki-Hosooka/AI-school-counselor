@@ -21,11 +21,19 @@
 //  どちらのモデルでも同じように効く。プロンプトの内容・出力JSONスキーマは変更していないが、
 //  モデルが変わったことで実際の応答の質・トーンが変わっていないか、必ず会話して確認すること。
 //
+//  モデルは単一指定ではなく、PRIMARY_MODELS/LITE_MODELS(下記)を上から順に試す
+//  フォールバック方式にしている(2026年9月)。理由は2つ:
+//   ・レート制限対策 ― 無料枠は1モデルあたりRPMが低く、1ターンで複数回Geminiを呼ぶ
+//     この実装だと単一モデルではすぐ詰まる。モデルIDが違えば別の割当枠になる。
+//   ・Googleのモデル退役対策 ― Gemini 2.0系は2026年6月に退役済み、
+//     2.5-flashも2026年10月16日に退役予定など、モデルの入れ替わりが速い。
+//  MODEL環境変数は廃止した。一覧は環境変数ではなくコード(下記)で管理する。
+//  古いモデルが退役して1件も繋がらなくなった場合はリストの見直しが必要。
+//
 //  必要な環境変数(Vercelダッシュボード > Project Settings > Environment Variables)
 //   GEMINI_API_KEY           必須  Google AI Studio で発行したキー
 //   SUPABASE_URL             必須
 //   SUPABASE_SERVICE_ROLE_KEY 必須(RLSを迂回してDBを読み書きするため。絶対にNEXT_PUBLIC_を付けない)
-//   MODEL                    任意  既定 gemini-2.5-flash
 //   CRISIS_WEBHOOK_URL       任意  Slack / Discord などの Incoming Webhook
 //   RATE_LIMIT_PER_HOUR      任意  既定 60
 // ============================================================================
@@ -33,9 +41,19 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { CRISIS_WORDS, OUTPUT_NG } from "@/safety.mjs";
 
-const MODEL = process.env.MODEL ?? "gemini-2.5-flash";
+// 本生成用(品質優先)。上から順に試す。2.5-flashは2026年10月16日に退役予定なので、
+// その前に後継モデルを先頭に追加し、退役後はこの行を削除すること。
+const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash"];
+// 安全判定(classify)・人単位の記憶の要約用。軽いタスクなので lite モデルで十分。
+// PRIMARY_MODELSと別モデルにすることで、レート制限の枠も分散させている。
+const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"];
+
 const WEBHOOK = process.env.CRISIS_WEBHOOK_URL ?? "";
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_HOUR ?? "60");
+// 人単位の記憶(person_memory)の上限。DB側の check 制約(person_memory_len_check)とも一致させること。
+const MEMORY_MAX_CHARS = 600;
+// これだけ会話が途切れたら「今回は一区切り」とみなし、要約を更新する。
+const SESSION_GAP_MINUTES = 30;
 
 // DBクライアントは初回呼び出し時に作る(モジュール読み込み時に環境変数が
 // 無くても next build が壊れないように遅延初期化にしている)
@@ -61,6 +79,65 @@ const CRISIS_REPLY =
   "どうしてここでなら言えると思ったのか、あとで聞かせてもらえたら嬉しい。\n\n" +
   "そのうえで正直に言うと、いま書いてくれたことは、わたしだけで受け止めるには重い内容です。あなたを軽く扱いたくないので、はっきり言います。心配だから、ここから先はあなたの声が届く人につながってほしい。\n\n" +
   "学校の先生でも、保健室でも、スクールカウンセラーでも、家の人でも、下の窓口でもかまいません。あなたが一番話せそうなところで大丈夫です。";
+
+// ============================================================================
+//  人単位の記憶(永続・要約のみ)
+//
+//  設計原則(CLAUDE.md 5.8と同じ考え方をここにも書く。安全層と同格で守ること):
+//   ・生ログは絶対に summary に入れない。要約AIには「短く」を強制する。
+//   ・氏名・学校名などの識別情報を書かせない(session notes と同じ制約)。
+//   ・「枠組み」を壊さないため、この記憶をAIに詳しく語らせない。
+//     buildSystem 側で「聞かれたら答える程度に留め、自分から詳細を持ち出さない」
+//     という指示を必ず添える。
+// ============================================================================
+
+const SUMMARY_PROMPT =
+`あなたは、ある相談者についての「引き継ぎメモ」を更新する係です。
+学校のカウンセリングAIが、次にこの人が来たときに参照します。
+
+以下を渡します。
+1. これまでの引き継ぎメモ(無ければ空)
+2. 今回のセッションで積み上がった見立て(notes)
+
+これらを踏まえて、新しい引き継ぎメモを日本語で書いてください。
+
+厳守事項:
+・${MEMORY_MAX_CHARS}字を絶対に超えない。超えるくらいなら削る。
+・氏名・学校名・住所など、個人を特定できる情報は書かない。
+・具体的な出来事の羅列ではなく、継続して意味を持ちそうな要点だけを残す。
+　(例:抱えている大きなテーマ、繰り返し出てくるパターン、これまで試して
+　　効かなかった対処、本人のリソース、触れると閉じてしまう話題)
+・一度きりの雑談や、その場限りの感情の起伏は残さない。
+・前回のメモと今回の内容が矛盾するなら、より新しい方を採用してよい。
+・出力はメモ本文のみ。前置きや見出しを付けない。`;
+
+async function updatePersonMemory(clientId: string, sessionNotes: Record<string, unknown>) {
+  const hasContent = Object.values(sessionNotes ?? {}).some((v) => v && String(v).trim());
+  if (!hasContent) return; // 何も積み上がっていないセッションは要約を更新しない
+
+  const db = getDb();
+  const { data: existing } = await db.from("person_memory")
+    .select("summary,session_count").eq("client_id", clientId).maybeSingle();
+
+  const prompt = `# 前回までの引き継ぎメモ\n${existing?.summary || "(まだ無い)"}\n\n` +
+    `# 今回のセッションの見立て\n${JSON.stringify(sessionNotes)}`;
+
+  let newSummary = existing?.summary ?? "";
+  try {
+    newSummary = (await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 400)).trim();
+  } catch (e) {
+    console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);
+    return; // 要約生成に失敗しても本体の会話は止めない。次回の更新に任せる。
+  }
+  if (newSummary.length > MEMORY_MAX_CHARS) newSummary = newSummary.slice(0, MEMORY_MAX_CHARS);
+
+  await db.from("person_memory").upsert({
+    client_id: clientId,
+    summary: newSummary,
+    session_count: (existing?.session_count ?? 0) + 1,
+    last_seen: new Date().toISOString(),
+  });
+}
 
 const CLASSIFIER_PROMPT =
 `あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
@@ -123,7 +200,10 @@ function retrieve(rows: Know[], text: string, weight: string, relation: string, 
 // ============================================================================
 //  プロンプト
 // ============================================================================
-function buildSystem(rows: Know[], chunks: Know[], weight: string, notes: unknown, sinceSummary: number) {
+function buildSystem(
+  rows: Know[], chunks: Know[], weight: string, notes: unknown, sinceSummary: number,
+  personSummary?: string | null,
+) {
   const principles = rows.filter((k) => k.cat === "principle")
     .map((k) => `・${k.body}(${k.src})`).join("\n");
   const ngAt = (lv: number) =>
@@ -199,6 +279,17 @@ ${sum}
 # いまの重心
 ${weight}
 
+# この人についての引き継ぎメモ(前回までの要約。無ければ「初めて」)
+${personSummary ? personSummary : "初めて来た人として接してください。"}
+
+このメモの扱い方(重要):
+・参考にはしますが、目の前の発言を最優先してください。人は変わります。
+・自分からこのメモの内容を詳しく話し出さないでください。
+　「前回はこうでしたね」と精度高く再生するのは、本人が自分で振り返る機会を奪います。
+・聞かれたら、覚えていること自体は隠さず認めてよいですが、要点程度に留めます。
+・「ここでの時間には限りがある」という枠組みの感覚を壊さないこと。
+　何でも覚えている万能な相手に見せないでください。
+
 # これまでの見立て
 ${JSON.stringify(notes ?? {})}
 
@@ -245,9 +336,11 @@ notes には氏名・学校名・住所などの識別情報を書かないこ�
 //  ブロックし、応答が空になることがある。相手を傷つける内容の生成を防ぐ目的は保ったまま、
 //  高確度で有害と判定されたものだけを止めるBLOCK_ONLY_HIGHに緩めている。
 // ============================================================================
-async function callGemini(systemInstruction: string, contents: unknown[], maxOutputTokens = 1000) {
+async function callGeminiOnce(
+  model: string, systemInstruction: string, contents: unknown[], maxOutputTokens: number,
+) {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       headers: {
@@ -269,10 +362,11 @@ async function callGemini(systemInstruction: string, contents: unknown[], maxOut
   );
   if (!res.ok) {
     const body = (await res.text()).slice(0, 200);
-    // レート制限(無料枠は10RPMしかなく、1ターンでclassify+本生成の2回呼ぶため
-    // テスト中の連投だけでも超えうる)と、それ以外のエラーを区別できるようにしておく。
+    // レート制限(無料枠は1モデルあたりのRPMが低く、1ターンでclassify+本生成の
+    // 複数回呼ぶため連投だけでも超えうる)と、それ以外のエラーを区別できるようにしておく。
+    // 404はモデルが退役・存在しない場合もここに来るので、フォールバックの対象にする。
     const tag = res.status === 429 ? "[RATE_LIMIT]" : `[HTTP_${res.status}]`;
-    throw new Error(`${tag} Gemini ${res.status}: ${body}`);
+    throw new Error(`${tag} Gemini(${model}) ${res.status}: ${body}`);
   }
   const d = await res.json();
   const candidate = d.candidates?.[0];
@@ -280,9 +374,28 @@ async function callGemini(systemInstruction: string, contents: unknown[], maxOut
     .map((p: { text?: string }) => p.text ?? "").join("");
   if (!text) {
     const reason = d.promptFeedback?.blockReason || candidate?.finishReason || "unknown";
-    throw new Error(`[BLOCKED] Geminiの応答が空でした(理由: ${reason})`);
+    throw new Error(`[BLOCKED] Gemini(${model})の応答が空でした(理由: ${reason})`);
   }
   return text;
+}
+
+// models を上から順に試し、最初に成功したものを返す。
+// レート制限・モデル退役・安全フィルタ等、理由を問わず失敗したら次のモデルに移る。
+// 全滅したら最後のエラーを投げる(呼び出し側は従来どおり [RATE_LIMIT]/[BLOCKED]/[HTTP_xxx]
+// のタグで原因を判別できる)。
+async function callGemini(
+  models: string[], systemInstruction: string, contents: unknown[], maxOutputTokens = 1000,
+) {
+  let lastError: unknown;
+  for (const model of models) {
+    try {
+      return await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens);
+    } catch (e) {
+      lastError = e;
+      console.error(`モデル ${model} が失敗、次のモデルにフォールバックします:`, e);
+    }
+  }
+  throw lastError;
 }
 
 function parseJSON(raw: string) {
@@ -295,7 +408,7 @@ async function classify(text: string) {
   const keywords = CRISIS_WORDS.filter((w: string) => text.includes(w));
   let model = { risk: "none", reason: "判定なし" };
   try {
-    model = parseJSON(await callGemini(CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200));
+    model = parseJSON(await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200));
   } catch {
     model = { risk: keywords.length ? "crisis" : "none", reason: "判定器エラー" };
   }
@@ -352,6 +465,18 @@ export async function POST(req: Request) {
     if (action === "start") {
       const clientId = String(payload.client_id ?? "").trim();
       if (!clientId) return json({ error: "client_id が必要です" }, 400);
+
+      // 前回、開いたままのセッションが残っていれば閉じて、
+      // その内容を人単位の記憶(要約)に畳み込む。
+      // ここでしか要約は更新しない = トークンが際限なく増える経路がそもそも無い。
+      const { data: open } = await db.from("sessions")
+        .select("id,notes").eq("client_id", clientId).is("closed_at", null)
+        .order("last_at", { ascending: false }).limit(1).maybeSingle();
+      if (open) {
+        await db.from("sessions").update({ closed_at: new Date().toISOString() }).eq("id", open.id);
+        await updatePersonMemory(clientId, (open.notes ?? {}) as Record<string, unknown>);
+      }
+
       const rows = await loadKnowledge();
       const { data, error } = await db.from("sessions")
         .insert({ client_id: clientId, knowledge_version: knowledgeVersion(rows) })
@@ -366,10 +491,19 @@ export async function POST(req: Request) {
     if (action === "resume") {
       const clientId = String(payload.client_id ?? "").trim();
       const { data: s } = await db.from("sessions")
-        .select("id,weight,relation,turns_since_summary,notes")
+        .select("id,weight,relation,turns_since_summary,notes,last_at")
         .eq("client_id", clientId).is("closed_at", null)
         .order("last_at", { ascending: false }).limit(1).maybeSingle();
       if (!s) return json({ session: null, messages: [] });
+
+      // 前回のやり取りから十分に間があいていたら、続きではなく新しい来訪として扱う。
+      // 「待つ時間」を経て戻ってきた、という区切りを技術的にも尊重する。
+      const idleMinutes = (Date.now() - new Date(s.last_at).getTime()) / 60000;
+      if (idleMinutes > SESSION_GAP_MINUTES) {
+        await db.from("sessions").update({ closed_at: new Date().toISOString() }).eq("id", s.id);
+        await updatePersonMemory(clientId, (s.notes ?? {}) as Record<string, unknown>);
+        return json({ session: null, messages: [] }); // クライアント側が start を呼び直す
+      }
       const { data: msgs } = await db.from("messages")
         .select("seq,role,body,used,flags,crisis,rating")
         .eq("session_id", s.id).order("seq");
@@ -434,7 +568,11 @@ export async function POST(req: Request) {
         .filter((h) => !h.crisis)
         .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.body }] }));
 
-      const system = buildSystem(rows, chunks, sess.weight, sess.notes, sess.turns_since_summary);
+      const { data: memory } = await db.from("person_memory")
+        .select("summary").eq("client_id", clientId).maybeSingle();
+      const system = buildSystem(
+        rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
+      );
 
       // Geminiの安全フィルタ等で応答が得られない/JSONとして読めないことがある。
       // その場合も技術的なエラーを生徒にそのまま見せず、受け止めだけの返答で会話を続ける。
@@ -444,7 +582,7 @@ export async function POST(req: Request) {
       let generationFailed = false;
       let failureCause = "";
       try {
-        out = parseJSON(await callGemini(system, messages));
+        out = parseJSON(await callGemini(PRIMARY_MODELS, system, messages));
       } catch (e) {
         console.error("生成に失敗しました:", e);
         generationFailed = true;
@@ -466,7 +604,7 @@ export async function POST(req: Request) {
         const fix = system +
           "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
         try {
-          const retry = parseJSON(await callGemini(fix, messages));
+          const retry = parseJSON(await callGemini(PRIMARY_MODELS, fix, messages));
           if (checkOutput(retry.reply ?? "").length === 0) {
             out = retry; flags = ["1回目に検知→再生成で解消"];
           }

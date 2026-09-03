@@ -3,9 +3,9 @@
 --  Supabase の SQL Editor にそのまま貼って実行してください
 --
 --  設計方針
---   ・ブラウザは DB に直接触らない。すべて Edge Function 経由。
+--   ・ブラウザは DB に直接触らない。すべて Next.js の Route Handler 経由。
 --     したがって全テーブルで RLS を有効化し、anon 向けポリシーは作らない。
---     （service_role は RLS を迂回するので Edge Function からは読み書きできる）
+--     （service_role は RLS を迂回するので Route Handler からは読み書きできる）
 --   ・未成年の相談内容は要配慮個人情報。保存期間と削除手順を決めてから運用すること。
 -- ============================================================================
 
@@ -81,6 +81,39 @@ drop trigger if exists knowledge_touch_trg on knowledge;
 create trigger knowledge_touch_trg
   before update on knowledge
   for each row execute function touch_updated_at();
+
+-- ----------------------------------------------------------------------------
+-- 2.5 人単位の記憶（永続・要約のみ）
+--
+--   セッション単位の notes（sessions.notes）は「今回の見立て」。
+--   こちらは「この人について、次に来たときも持っておきたい要点」。
+--
+--   設計の要点：
+--   ・生の会話は一切累積しない。セッションが閉じるたびに要約を「上書き」する。
+--     追記ではなく置き換えなので、サイズは常に一定 = トークンは増えない。
+--   ・summary は必ず body_max_chars で強制的に切り詰める（DB側でも保証する）。
+--   ・氏名・学校名などの識別情報は入れない（sessions.notes と同じ制約）。
+--   ・「枠組み」を壊さないため、AIはこれを自分から詳しく語り直さない。
+--     プロンプト側の指示で制御する（buildSystem 側。CLAUDE.md 5.8参照）。
+-- ----------------------------------------------------------------------------
+create table if not exists person_memory (
+  client_id     text primary key,
+  summary       text not null default '',   -- 要約のみ。生ログではない。
+  session_count int  not null default 0,
+  first_seen    timestamptz not null default now(),
+  last_seen     timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  constraint person_memory_len_check check (char_length(summary) <= 600)
+);
+
+create or replace function touch_person_memory() returns trigger
+language plpgsql as $$
+begin new.updated_at = now(); return new; end $$;
+
+drop trigger if exists person_memory_touch_trg on person_memory;
+create trigger person_memory_touch_trg
+  before update on person_memory
+  for each row execute function touch_person_memory();
 
 -- ----------------------------------------------------------------------------
 -- 3. セッション
@@ -167,10 +200,12 @@ $$;
 -- ----------------------------------------------------------------------------
 -- 7. RLS
 --    ポリシーを一つも作らない = anon からは一切見えない。
---    Edge Function は service_role で接続するので RLS を迂回する。
+--    Next.js の Route Handler は service_role で接続するので RLS を迂回する
+--    （旧構成では Edge Function が同じ役割を担っていた）。
 -- ----------------------------------------------------------------------------
 alter table knowledge          enable row level security;
 alter table knowledge_history  enable row level security;
+alter table person_memory      enable row level security;
 alter table sessions           enable row level security;
 alter table messages           enable row level security;
 alter table safety_events      enable row level security;
