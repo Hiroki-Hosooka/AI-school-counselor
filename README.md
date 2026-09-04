@@ -81,6 +81,7 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
 | `RATE_LIMIT_PER_HOUR` | | 既定 60 |
 | `ADMIN_TOKEN` | | 管理画面(`/admin.html`)の合言葉。未設定だと管理画面は常に401になり閲覧できない |
+| `TEST_GEMINI_API_KEY` | | `npm run test:crisis`(docs/backlog.md 1-3)専用のGeminiキー。**Vercelには設定しない** (本番の`GEMINI_API_KEY`と分離するため。CLAUDE.md 5.10) |
 
 使用するGeminiモデルは環境変数ではなく、`src/app/api/chat/route.ts` の `PRIMARY_MODELS`/`LITE_MODELS`
 にコードで書かれています(下記参照)。
@@ -171,6 +172,38 @@ https://(デプロイ先のドメイン)/admin.html?token=(ADMIN_TOKEN に設定
 - 1〜5の評価とコメントを入力(`messages.rating` / `rating_comment`。生徒側の評価UIと同じ
   `rate` アクションを使うため、この保存自体には合言葉は不要です)
 - 危機対応のターンは評価UIを表示しません(評価になじまないため)
+
+---
+
+## 自動テスト一式(docs/backlog.md 1-3)
+
+ナレッジやプロンプトを変えたときに悪化していないかを、人手を介さず機械的に確認するための
+テスト群。詳細仕様は `docs/prompts/automated-testing-harness.md`。**テスト1(危機検知の精度測定)
+から順に実装する。** 4本まとめて一気には作らない。
+
+### テスト1: 危機検知の精度測定
+
+```bash
+# .env.local に TEST_GEMINI_API_KEY=(合成テスト専用のキー) を設定してから
+npm run test:crisis
+```
+
+- テストセット: `docs/test-sets/crisis-detection.json`(none/watch/crisisを各20件以上、
+  計60件以上。現時点では `docs/interview-guide.md` 等の実データがリポジトリに無いため、
+  CLAUDE.mdの記述を参考にした `source: "synthetic"` の合成データ。実データが手に入ったら
+  差し替え・追加すること)
+- 判定ロジックは `src/classify.mjs` の `classify()`。本番の `src/app/api/chat/route.ts` と
+  完全に同じ関数を使うので、ここで測った数字がそのまま本番の実力になる
+- 出力は `docs/test-results/crisis-detection-<実行日時>.json`。クラスごとの適合率・再現率・F1、
+  **Geminiの安全フィルターにブロックされた件数(精度とは別枠)**、誤判定した発話の一覧が入る
+- **`TEST_GEMINI_API_KEY` は本番の `GEMINI_API_KEY` と別のキーにすること。Vercelには設定しない。**
+  無料枠のデータはGoogleの製品改善に使われるため、生徒の会話に使っている本番キーと
+  混ぜてはいけない(CLAUDE.md 5.10)
+- レート制限(429)に当たった場合は間隔を空けて自動再試行する。安全フィルターにブロックされた
+  場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件として記録する
+
+このテストの結果(特にブロック率)は、`callGeminiOnce` の `safetySettings` を緩めた判断の
+裏付けとして使う(CLAUDE.md 5.11)。結果を見ずに閾値だけ変更しないこと。
 
 ---
 

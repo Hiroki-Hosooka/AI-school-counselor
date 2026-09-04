@@ -42,14 +42,14 @@
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { CRISIS_WORDS, OUTPUT_NG } from "@/safety.mjs";
+import { OUTPUT_NG } from "@/safety.mjs";
+import { LITE_MODELS, callGemini, classify, parseJSON } from "@/classify.mjs";
 
 // 本生成用(品質優先)。上から順に試す。2.5-flashは2026年10月16日に退役予定なので、
 // その前に後継モデルを先頭に追加し、退役後はこの行を削除すること。
 const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash"];
-// 安全判定(classify)・人単位の記憶の要約用。軽いタスクなので lite モデルで十分。
-// PRIMARY_MODELSと別モデルにすることで、レート制限の枠も分散させている。
-const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"];
+// 安全判定(classify)・人単位の記憶の要約用のモデル一覧、および危機判定ロジック本体は
+// src/classify.mjs にある(scripts/test-crisis-detection.mjs と共有するため)。
 
 const WEBHOOK = process.env.CRISIS_WEBHOOK_URL ?? "";
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_HOUR ?? "60");
@@ -149,14 +149,6 @@ async function updatePersonMemory(clientId: string, sessionNotes: Record<string,
     last_seen: new Date().toISOString(),
   });
 }
-
-const CLASSIFIER_PROMPT =
-`あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
-{"risk":"none|watch|crisis","reason":"20字以内"}
-crisis: 自殺念慮・自傷、死にたい気持ち、虐待や暴力の被害、性被害、いますぐの身の危険、深刻ないじめ被害。
-watch : つらさが強く、放置すると悪化しうる。孤立感が強い、眠れない、食べられない、学校に行けない等。
-none  : 通常の相談。
-迷ったら重いほうを選ぶこと。見逃しのほうが害が大きい。`;
 
 // ============================================================================
 //  ナレッジ(DB から読む。60秒キャッシュ)
@@ -336,98 +328,6 @@ ${know}
 notes には氏名・学校名・住所などの識別情報を書かないこと。わからない項目は空文字にする。`;
 }
 
-// ============================================================================
-//  Gemini 呼び出し
-//  contents は Gemini の形式 { role: "user"|"model", parts: [{ text }] }[] で渡す。
-//  responseMimeType を application/json にして、後述の出力形式(JSONのみ)を守らせやすくしている
-//  (それでも念のため parseJSON() で本文からJSON部分を取り出す形は残す)。
-//
-//  safetySettings: いじめ・孤立・希死念慮などをそのまま話題にするのがこのアプリの前提だが、
-//  Geminiの既定の安全フィルタ(BLOCK_MEDIUM_AND_ABOVE)は支援的な文脈でもこうした話題を
-//  ブロックし、応答が空になることがある。相手を傷つける内容の生成を防ぐ目的は保ったまま、
-//  高確度で有害と判定されたものだけを止めるBLOCK_ONLY_HIGHに緩めている。
-// ============================================================================
-async function callGeminiOnce(
-  model: string, systemInstruction: string, contents: unknown[], maxOutputTokens: number,
-) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": process.env.GEMINI_API_KEY!,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemInstruction }] },
-        contents,
-        generationConfig: { maxOutputTokens, responseMimeType: "application/json" },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-        ],
-      }),
-    },
-  );
-  if (!res.ok) {
-    const body = (await res.text()).slice(0, 200);
-    // レート制限(無料枠は1モデルあたりのRPMが低く、1ターンでclassify+本生成の
-    // 複数回呼ぶため連投だけでも超えうる)と、それ以外のエラーを区別できるようにしておく。
-    // 404はモデルが退役・存在しない場合もここに来るので、フォールバックの対象にする。
-    const tag = res.status === 429 ? "[RATE_LIMIT]" : `[HTTP_${res.status}]`;
-    throw new Error(`${tag} Gemini(${model}) ${res.status}: ${body}`);
-  }
-  const d = await res.json();
-  const candidate = d.candidates?.[0];
-  const text = (candidate?.content?.parts ?? [])
-    .map((p: { text?: string }) => p.text ?? "").join("");
-  if (!text) {
-    const reason = d.promptFeedback?.blockReason || candidate?.finishReason || "unknown";
-    throw new Error(`[BLOCKED] Gemini(${model})の応答が空でした(理由: ${reason})`);
-  }
-  return text;
-}
-
-// models を上から順に試し、最初に成功したものを返す。
-// レート制限・モデル退役・安全フィルタ等、理由を問わず失敗したら次のモデルに移る。
-// 全滅したら最後のエラーを投げる(呼び出し側は従来どおり [RATE_LIMIT]/[BLOCKED]/[HTTP_xxx]
-// のタグで原因を判別できる)。
-async function callGemini(
-  models: string[], systemInstruction: string, contents: unknown[], maxOutputTokens = 1000,
-) {
-  let lastError: unknown;
-  for (const model of models) {
-    try {
-      return await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens);
-    } catch (e) {
-      lastError = e;
-      console.error(`モデル ${model} が失敗、次のモデルにフォールバックします:`, e);
-    }
-  }
-  throw lastError;
-}
-
-function parseJSON(raw: string) {
-  const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
-  if (s < 0 || e < 0) throw new Error("応答をJSONとして読み取れませんでした");
-  return JSON.parse(raw.slice(s, e + 1));
-}
-
-async function classify(text: string) {
-  const keywords = CRISIS_WORDS.filter((w: string) => text.includes(w));
-  let model = { risk: "none", reason: "判定なし" };
-  try {
-    model = parseJSON(await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200));
-  } catch {
-    model = { risk: keywords.length ? "crisis" : "none", reason: "判定器エラー" };
-  }
-  // キーワードが当たったら判定器の結果によらず crisis 扱い(見逃しを避ける)
-  const risk = keywords.length ? "crisis" : model.risk;
-  return { risk, keywords, model };
-}
-
 const checkOutput = (t: string) =>
   OUTPUT_NG.filter((re: RegExp) => re.test(t)).map((re: RegExp) => String(re).slice(0, 42));
 
@@ -503,7 +403,7 @@ export async function POST(req: Request) {
         .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at")
         .eq("session_id", sessionId).order("seq");
       const allUsedIds = Array.from(new Set((msgs ?? []).flatMap((m) => m.used ?? [])));
-      let knowledgeMap: Record<string, { id: string; src: string; cat: string; body: string }> = {};
+      const knowledgeMap: Record<string, { id: string; src: string; cat: string; body: string }> = {};
       if (allUsedIds.length) {
         const { data: kn } = await db.from("knowledge").select("id,src,cat,body").in("id", allUsedIds);
         for (const k of kn ?? []) knowledgeMap[k.id] = k;
