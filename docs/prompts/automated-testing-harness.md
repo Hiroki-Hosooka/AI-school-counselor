@@ -116,3 +116,32 @@ docs/backlog.md 1-3 に書いた5〜6種のペルソナそれぞれについて�
   Geminiにブロックされた場合をタグ付きで区別できるようにした（挙動自体は変更していない）。
 - 実測結果は docs/test-results/ 配下に実行のたびに残る。まだ実際のGeminiキーでは
   実行できていない（TEST_GEMINI_API_KEY の発行はユーザー側の作業）。
+
+### テスト2〜4
+
+- 2026年9月: 「とりあえず全て実装してみて下さい」との指示を受け、テスト2〜4も実装した
+  （本来は1本ずつ確認を挟む予定だったが、ユーザーの明示的な指示により4本まとめて実装）。
+- route.ts のナレッジ検索・システムプロンプト構築・本生成ロジック（loadKnowledge/
+  knowledgeVersion/retrieve/buildSystem/generateReply/applyTurnUpdate）を src/generate.mjs
+  へ抽出（挙動不変）。route.ts とテスト2〜4が完全に同じ関数を使うようにした。
+- CRISIS_REPLY を src/classify.mjs へ移動（テスト4が危機分岐を忠実に再現するため。
+  挙動不変）。
+- テスト2: docs/test-sets/ng-leak-rate-inputs.json（synthetic・10種）+
+  scripts/test-ng-leak-rate.mjs。DBには書き込まない。
+- テスト3: docs/test-sets/relation-stability-personas.json（synthetic・6種）+
+  scripts/test-relation-stability.mjs。DBには書き込まない。
+- テスト4: docs/test-sets/persona-regression-personas.json（synthetic・6種。テスト3と
+  同じペルソナに、多ターン改善用のふるまい詳細を加えたもの）+
+  scripts/test-persona-regression.mjs。sessions/messagesに書き込み、admin.htmlから
+  閲覧できる。**安全上の理由から、route.ts本体・DBスキーマは変更せず、テストスクリプト側の
+  判断で以下を実施**（docs/backlog.md 1-3にも記載）:
+  - client_id を `TEST-PERSONA-<ペルソナ>-<実行時刻>` にし、admin.htmlの一覧で
+    実際の生徒と見た目で区別できるようにした
+  - 危機分岐時、notifyCrisis()の呼び出しとsafety_eventsへの書き込みを行わない
+    （合成ペルソナの発言で実在しない生徒の危機が学校スタッフに誤通知されるのを防ぐため）
+  - person_memoryは更新しない
+- 「評価対象（相談AI本体）: Flash または Pro」のうち、Proは現状PRIMARY_MODELSに
+  含まれていない（実在未確認のモデルIDを推測で書かないため）ため、本番と同じ
+  PRIMARY_MODELSを使うことで「本番相当」を満たすことにした。
+- いずれも TEST_GEMINI_API_KEY 必須（本番キーへのフォールバックなし）。まだ実際の
+  キー・DBでは実行できていない。

@@ -18,48 +18,17 @@
 //  ここで止める。
 // ============================================================================
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { requireTestGeminiKey, sleep } from "./_lib/test-env.mjs";
+import { classify, LITE_MODELS } from "../src/classify.mjs";
+import { CRISIS_WORDS } from "../src/safety.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// --------------------------------------------------------------------------
-// .env.local / .env を軽く読む(Next.js相当。依存パッケージを増やさないため自前実装)
-// --------------------------------------------------------------------------
-function loadEnvFile(file) {
-  if (!existsSync(file)) return;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (!m) continue;
-    const key = m[1];
-    let value = m[2];
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    if (!(key in process.env)) process.env[key] = value;
-  }
-}
-loadEnvFile(path.join(ROOT, ".env.local"));
-loadEnvFile(path.join(ROOT, ".env"));
-
-// --------------------------------------------------------------------------
-// 本番キーとの分離(CLAUDE.md 5.10)。フォールバックしない。
-// --------------------------------------------------------------------------
-const TEST_KEY = process.env.TEST_GEMINI_API_KEY;
-if (!TEST_KEY) {
-  console.error("TEST_GEMINI_API_KEY が設定されていません。");
-  console.error("本番の GEMINI_API_KEY とは別の、合成テスト専用のキーを用意してください(CLAUDE.md 5.10)。");
-  console.error(".env.local に TEST_GEMINI_API_KEY=... を追加するか、環境変数として渡してください。");
-  process.exit(1);
-}
-process.env.GEMINI_API_KEY = TEST_KEY;
-
-const { classify, LITE_MODELS } = await import("../src/classify.mjs");
-const { CRISIS_WORDS } = await import("../src/safety.mjs");
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+requireTestGeminiKey(ROOT);
 
 // --------------------------------------------------------------------------
 // テストセット読み込み

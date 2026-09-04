@@ -178,13 +178,20 @@ https://(デプロイ先のドメイン)/admin.html?token=(ADMIN_TOKEN に設定
 ## 自動テスト一式(docs/backlog.md 1-3)
 
 ナレッジやプロンプトを変えたときに悪化していないかを、人手を介さず機械的に確認するための
-テスト群。詳細仕様は `docs/prompts/automated-testing-harness.md`。**テスト1(危機検知の精度測定)
-から順に実装する。** 4本まとめて一気には作らない。
+テスト群。詳細仕様は `docs/prompts/automated-testing-harness.md`。4本とも実装済み。
+
+**共通の前提**
+
+- `TEST_GEMINI_API_KEY` は本番の `GEMINI_API_KEY` と別のキーにすること。**Vercelには設定しない。**
+  無料枠のデータはGoogleの製品改善に使われるため、生徒の会話に使っている本番キーと
+  混ぜてはいけない(CLAUDE.md 5.10)。`.env.local` に書くか、環境変数として渡す
+- テスト2〜4はナレッジ・会話ログを読み書きするため `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
+  も必要(本番と同じものでよい。ナレッジは要配慮個人情報ではないため)
+- レート制限(429)に当たった場合は、どのテストも間隔を空けて自動再試行する
 
 ### テスト1: 危機検知の精度測定
 
 ```bash
-# .env.local に TEST_GEMINI_API_KEY=(合成テスト専用のキー) を設定してから
 npm run test:crisis
 ```
 
@@ -196,14 +203,62 @@ npm run test:crisis
   完全に同じ関数を使うので、ここで測った数字がそのまま本番の実力になる
 - 出力は `docs/test-results/crisis-detection-<実行日時>.json`。クラスごとの適合率・再現率・F1、
   **Geminiの安全フィルターにブロックされた件数(精度とは別枠)**、誤判定した発話の一覧が入る
-- **`TEST_GEMINI_API_KEY` は本番の `GEMINI_API_KEY` と別のキーにすること。Vercelには設定しない。**
-  無料枠のデータはGoogleの製品改善に使われるため、生徒の会話に使っている本番キーと
-  混ぜてはいけない(CLAUDE.md 5.10)
-- レート制限(429)に当たった場合は間隔を空けて自動再試行する。安全フィルターにブロックされた
-  場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件として記録する
+- 安全フィルターにブロックされた場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件
+  として記録する(レート制限とは区別する)
 
 このテストの結果(特にブロック率)は、`callGeminiOnce` の `safetySettings` を緩めた判断の
 裏付けとして使う(CLAUDE.md 5.11)。結果を見ずに閾値だけ変更しないこと。
+
+### テスト2: 禁止表現の漏れ率
+
+```bash
+npm run test:ng-leak
+```
+
+- 入力セット: `docs/test-sets/ng-leak-rate-inputs.json`(同調・励まし待ちの場面10種)を、
+  本番と同じ `src/generate.mjs` の `generateReply()`(本生成+NG検知時の1回だけの再生成)に
+  各10回通す
+- 出力は `docs/test-results/ng-leak-rate-<実行日時>.json`。入力ごとの検知率、
+  「1回目に検知→再生成で解消」と「再生成でも直らなかった」の内訳、直らなかった具体例が入る
+- 単発生成のみでDBには書き込まない
+
+### テスト3: 関わりの型判定の安定性
+
+```bash
+npm run test:relation-stability
+```
+
+- ペルソナセット: `docs/test-sets/relation-stability-personas.json`(6種)の初回発言を、
+  同じく `generateReply()` に各10回通し、`relation` の多数決との一致率を算出する
+- 出力は `docs/test-results/relation-stability-<実行日時>.json`。一致率が低い(揺れが大きい)
+  ペルソナは実際に出た `relation` の並びごと記録される
+- こちらもDBには書き込まない
+
+### テスト4: ペルソナ多ターン回帰テスト
+
+```bash
+npm run test:persona-regression
+# 動作確認だけなら1ペルソナ・1ターンにできる:
+npm run test:persona-regression -- --persona=visitor --turns=1
+```
+
+- ペルソナ設定: `docs/test-sets/persona-regression-personas.json`(6種)
+- 生徒役AI(`LITE_MODELS`。無料枠)と相談AI本体(`PRIMARY_MODELS`)を10ターン会話させ、
+  本番と全く同じ形で `sessions`/`messages` に保存する。**`admin.html` から通常の会話ログと
+  同様に閲覧できる**(セッション一覧から探すか、出力されたJSONの `session_id` で特定する)
+- 実行時のナレッジ世代(`sessions.knowledge_version`)を記録する
+- **合成データであることが分かるように、`client_id` を `TEST-PERSONA-<ペルソナ>-<実行時刻>`
+  にしている。** `admin.html` のセッション一覧では先頭8文字(`client_id_short`)が
+  `TEST-PER` と表示されるため、実際の生徒の匿名IDと見た目で区別できる
+- **危機分岐(`classify()` が crisis を返した場合)は固定応答を会話には残すが、
+  `notifyCrisis()` の呼び出しと `safety_events` への記録は行わない。** 合成ペルソナの
+  発言で実在しない生徒の危機が学校スタッフに誤通知される事態を避けるための、このテスト
+  スクリプト側だけの判断で、`route.ts` 本体やDBスキーマは変更していない
+- `person_memory` は更新しない(一回きりの合成会話のため)
+
+出力は `docs/test-results/persona-regression-<実行日時>.json`。各ペルソナのターン数・
+危機分岐回数・フラグ発生回数・最終的な `relation` の要約が入る(詳細な発言内容は
+`admin.html` 側で確認する)。
 
 ---
 

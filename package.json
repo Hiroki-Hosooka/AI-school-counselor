@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "test:safety": "node scripts/test-output-check.mjs",
-    "test:crisis": "node scripts/test-crisis-detection.mjs"
+    "test:crisis": "node scripts/test-crisis-detection.mjs",
+    "test:ng-leak": "node scripts/test-ng-leak-rate.mjs",
+    "test:relation-stability": "node scripts/test-relation-stability.mjs",
+    "test:persona-regression": "node scripts/test-persona-regression.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",
