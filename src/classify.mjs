@@ -41,6 +41,17 @@ none  : 通常の相談。
 //  responseMimeType を application/json にして、後述の出力形式(JSONのみ)を守らせやすくしている
 //  (それでも念のため parseJSON() で本文からJSON部分を取り出す形は残す)。
 //
+//  thinkingConfig.thinkingBudget: 0 (2026年9月・重要)
+//  gemini-2.5/3.5系は既定で「思考(thinking)」が有効で、thinkingConfigを指定しないと
+//  この思考トークンが maxOutputTokens の枠を食う。分類器(200トークン)はもちろん、
+//  本生成(既定1000トークン)でも、思考に大半を使われて可視の応答(JSON本体)が
+//  尻切れになり、parseJSON()が「応答をJSONとして読み取れませんでした」で落ちる、
+//  または応答が空になり[BLOCKED]扱いになる、という不具合が多発する原因になっていた。
+//  この応答は短い会話文+構造化JSONで、深い思考の連鎖を必要としないタスクのため、
+//  thinkingBudgetを0にして無効化する(Google公式ドキュメントが低コスト・低レイテンシ
+//  用途向けに明示している設定)。crisis判定のロジックや安全フィルタの閾値そのものは
+//  変更していない。
+//
 //  safetySettings: いじめ・孤立・希死念慮などをそのまま話題にするのがこのアプリの前提だが、
 //  Geminiの既定の安全フィルタ(BLOCK_MEDIUM_AND_ABOVE)は支援的な文脈でもこうした話題を
 //  ブロックし、応答が空になることがある。相手を傷つける内容の生成を防ぐ目的は保ったまま、
@@ -60,7 +71,10 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents,
-        generationConfig: { maxOutputTokens, responseMimeType: "application/json" },
+        generationConfig: {
+          maxOutputTokens, responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
+        },
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
           { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
@@ -92,7 +106,9 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 // レート制限・モデル退役・安全フィルタ等、理由を問わず失敗したら次のモデルに移る。
 // 全滅したら最後のエラーを投げる(呼び出し側は [RATE_LIMIT]/[BLOCKED]/[HTTP_xxx]
 // のタグで原因を判別できる)。
-export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1000) {
+// 既定の1500は本生成(generateReply)用。thinkingConfigで思考トークンは切っているが、
+// reply本文+notes7項目+その他のJSONを余裕を持って収められるよう、多少の余白を持たせてある。
+export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500) {
   let lastError;
   for (const model of models) {
     try {
