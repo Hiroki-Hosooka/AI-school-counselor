@@ -215,7 +215,14 @@ alter table safety_events      enable row level security;
 -- ----------------------------------------------------------------------------
 
 -- 未対応の危機イベント（毎日ここを見る運用にする）
-create or replace view pending_safety as
+-- subject 列(自己/第三者の区別)は9.4節で追加する。この時点ではまだ safety_events.subject
+-- が存在しないため、ここでは元のままにしておくこと(9.4節側で作り直す)。
+-- drop + create にしているのは、create or replace view は既存ビューへの列の追加しか
+-- 許さず(途中への挿入や削除はできない)、9.4節で列を足した後にこの schema.sql 全体を
+-- 再実行すると、この文がその列を持たない形に「戻そう」として cannot drop columns from
+-- view で失敗するため。drop してから作り直せば、直前の状態に関係なく必ず成功する。
+drop view if exists pending_safety;
+create view pending_safety as
 select e.seq, e.created_at, e.risk, e.model_reason, e.session_id, s.client_id
 from safety_events e
 left join sessions s on s.id = e.session_id
@@ -343,3 +350,28 @@ alter table messages add column if not exists mode text[] not null default '{}'
     'CBT','SFBT','NARRATIVE','ASSERTION','LISTEN_ONLY','PROBLEM_SOLVING','PSYCHOEDUCATION'
   ]::text[]);
 alter table messages add column if not exists ambivalence_detected boolean;
+
+-- ----------------------------------------------------------------------------
+-- 9.4 安全判定:第三者(友人等)の安全懸念を区別する(手順4)
+--
+--  classify() が返す subject(self/other)をログに残す。self=相談者自身の危機、
+--  other=「友達が死にたいと言っている」等、第三者の安全についての発言。
+--  risk が同じ crisis でも、self だけが生成スキップ+固定応答(CLAUDE.md 5.2)の対象で、
+--  other は生成を続けたうえでAIの応答の仕方だけを絞り込む(route.ts / src/generate.mjs)。
+--  スタッフが pending_safety を見たとき、本人の危機か友人の心配かを区別できるようにする。
+-- ----------------------------------------------------------------------------
+alter table safety_events add column if not exists subject text
+  check (subject is null or subject in ('self','other'));
+
+-- pending_safety ビューを subject 込みで作り直す(列追加の「後」でなければ
+-- column does not exist で失敗するため、この位置で行う)。drop + create にしている
+-- 理由は上の(元の)ビュー定義のコメントと同じ:create or replace view は列の
+-- 追加・削除・並び替えを含む変更を許さないため、直前の状態に関係なく必ず成功する
+-- drop + create を使う。
+drop view if exists pending_safety;
+create view pending_safety as
+select e.seq, e.created_at, e.risk, e.model_reason, e.session_id, s.client_id, e.subject
+from safety_events e
+left join sessions s on s.id = e.session_id
+where e.risk <> 'none' and e.handled = false
+order by e.created_at desc;

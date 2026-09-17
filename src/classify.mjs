@@ -27,13 +27,35 @@ export const CRISIS_REPLY =
 // レート制限の枠も分散させている。
 export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"];
 
+// 2026年9月(構造化面接AI統合 手順4)に、絶望感≠危機の原則とsubject(self/other)判定を追加。
+// 「もう無理」「限界」等はここでは crisis から外し、watch(Tier B)側に明示的に含めている
+// (src/safety.mjs の CRISIS_WORDS 変更と対をなす)。subject は、友人・家族等の第三者の
+// 安全についての発言を、相談者自身の危機と取り違えないための判定(03_共通グランドルール
+// _両条件共通.txt 7-5)。route.ts 側は risk==="crisis" && subject==="self" のときだけ
+// 生成をスキップする(CLAUDE.md 5.2 の対象は self のみ)。
 const CLASSIFIER_PROMPT =
 `あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
-{"risk":"none|watch|crisis","reason":"20字以内"}
-crisis: 自殺念慮・自傷、死にたい気持ち、虐待や暴力の被害、性被害、いますぐの身の危険、深刻ないじめ被害。
-watch : つらさが強く、放置すると悪化しうる。孤立感が強い、眠れない、食べられない、学校に行けない等。
-none  : 通常の相談。
-迷ったら重いほうを選ぶこと。見逃しのほうが害が大きい。`;
+{"risk":"none|watch|crisis","subject":"self|other","reason":"20字以内"}
+
+risk の基準:
+crisis: 自殺念慮・自傷(方法や実行への言及を含む)、生命に関わる暴力の被害・加害、虐待、性被害、
+        いますぐの身の危険、深刻ないじめ被害。「死にたい」「消えたい」「もう終わりにしたい」等、
+        自殺念慮を直接示す表現を含む。
+watch : 「もう無理」「限界」「自分なんて」「どうしようもない」等、自殺念慮を明示しない
+        無力感・自己否定の表現。孤立感が強い、眠れない、食べられない、学校に行けない等も含む。
+none  : 通常の相談。「わからない」「決められない」等の判断の迷い、「どうにかしたい」等の
+        前向きな焦りは、無力感を伴わない限り none。
+
+重要な原則:絶望感・無力感の表現(「話しても無駄」「何をしても変わらない」等)は、それ単独では
+crisis のサインではない。自殺念慮を明示していない限り、watch までにとどめること。
+
+subject の基準(発言が誰の安全についてか):
+self : 相談者自身についての発言。
+other: 「友達が」「家族が」等、相談者以外の第三者の安全についての発言。
+       相談者自身にも同時にサインがある場合は self とする。
+
+迷ったら、risk は重いほうを選ぶこと(見逃しのほうが害が大きい)。
+ただし self か other かで迷う場合は self を選ぶこと(第三者の話だと誤って軽く扱うことを避けるため)。`;
 
 // ============================================================================
 //  Gemini 呼び出し
@@ -139,15 +161,18 @@ export function parseJSON(raw) {
 // 呼び出し側にそのまま伝える(route.ts 側はこの値を見なくても従来どおり動く)。
 export async function classify(text) {
   const keywords = CRISIS_WORDS.filter((w) => text.includes(w));
-  let model = { risk: "none", reason: "判定なし" };
+  let model = { risk: "none", subject: "self", reason: "判定なし" };
   let classifierError = null;
   try {
     model = parseJSON(await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200));
   } catch (e) {
     classifierError = e instanceof Error ? e.message : String(e);
-    model = { risk: keywords.length ? "crisis" : "none", reason: "判定器エラー" };
+    model = { risk: keywords.length ? "crisis" : "none", subject: "self", reason: "判定器エラー" };
   }
   // キーワードが当たったら判定器の結果によらず crisis 扱い(見逃しを避ける)
   const risk = keywords.length ? "crisis" : model.risk;
-  return { risk, keywords, model, classifierError };
+  // subject が "other" と明示的に判定された場合のみ other。それ以外(不正値・判定器エラー含む)は
+  // 安全側の self に倒す(第三者の話だと誤って軽く扱うことを避けるため。CLAUDE.md 5.2 の対象は self のみ)。
+  const subject = model.subject === "other" ? "other" : "self";
+  return { risk, keywords, subject, model, classifierError };
 }

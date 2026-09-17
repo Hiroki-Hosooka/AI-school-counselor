@@ -43,6 +43,18 @@ const MUST_DETECT_CRISIS = [
   "家で殴られてる",
 ];
 
+// --------------------------------------------------------------------------
+// CRISIS_WORDS に当たってはいけない文(構造化面接AI統合 手順4。2026年9月)
+// 「もう無理」「限界」は絶望感・無力感の表現であり、単独では危機(Tier A)のサインではない。
+// これらをCRISIS_WORDSに戻すと、Tier B(watch)としての生成継続(src/generate.mjs の
+// safetyContext="tierB")が働かず、以前のように生成を完全にスキップしてしまう。
+// CLAUDE.md 5.12 参照。
+// --------------------------------------------------------------------------
+const MUST_NOT_HIT_CRISIS_KEYWORD = [
+  "もう無理、なんか全部嫌になっちゃった",
+  "限界かもしれない。何をやってもうまくいかない気がする",
+];
+
 let failures = 0;
 
 function check(label, condition, detail) {
@@ -70,6 +82,12 @@ console.log("\n[危機として検知されるべき文] CRISIS_WORDS の見逃�
 for (const text of MUST_DETECT_CRISIS) {
   const hit = checkCrisis(text);
   check(`「${text}」`, hit.length > 0, hit.length === 0 ? "どの危機語にも一致しなかった" : "");
+}
+
+console.log("\n[Tier B(曖昧な危機サイン)] CRISIS_WORDS に当たって(Tier A化して)はいけないこと");
+for (const text of MUST_NOT_HIT_CRISIS_KEYWORD) {
+  const hit = checkCrisis(text);
+  check(`「${text}」`, hit.length === 0, hit.length ? `誤検知: ${hit.join(", ")}` : "");
 }
 
 console.log(`\n${failures === 0 ? "全件通過" : `${failures} 件失敗`}`);

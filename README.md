@@ -29,7 +29,8 @@ Postgres(Supabase。データベースとしてのみ利用)
 |---|---|
 | `db/schema.sql` | Supabase の SQL Editor に貼って実行(**スキーマ変更のたびに再実行が必要。下記参照**) |
 | `db/seed_knowledge.sql` | 同上(schema.sql の後) |
-| `db/seed_knowledge_structured.sql` | 同上(seed_knowledge.sql の後。構造化面接AI統合で追加した技法カタログ) |
+| `db/seed_knowledge_structured.sql` | 同上(seed_knowledge.sql の後。構造化面接AI統合 手順3で追加した技法カタログ) |
+| `db/seed_knowledge_safety.sql` | 同上(seed_knowledge_structured.sql の後。構造化面接AI統合 手順4で追加した安全層のナレッジ) |
 | `db/knowledge.json` | バックアップ用。DB を作り直すとき用 |
 | `src/safety.mjs` | 安全層(CRISIS_WORDS/OUTPUT_NG)の共通モジュール |
 | `src/app/api/chat/route.ts` | バックエンド本体。Vercelにデプロイされる |
@@ -47,7 +48,8 @@ Edge Function は使わないので、作るのはプロジェクトとテーブ
 ### 2. テーブルを作る
 
 SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` を実行 →
-続けて `db/seed_knowledge_structured.sql` を実行(構造化面接AI統合で追加した技法カタログ)。
+続けて `db/seed_knowledge_structured.sql` を実行(構造化面接AI統合 手順3。技法カタログ) →
+続けて `db/seed_knowledge_safety.sql` を実行(構造化面接AI統合 手順4。安全層のナレッジ)。
 
 **既にSupabaseプロジェクトを作成済みの場合も、`db/schema.sql` は毎回必ず再実行してください。**
 このファイルは `create table if not exists` / `add column if not exists` だけで書かれているため、
@@ -62,7 +64,7 @@ SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` �
 select src, count(*) from knowledge group by src order by 2 desc;
 ```
 
-`理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 2 / 技 26` の計 169 件になっていれば成功です。
+`理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 6 / 技 26` の計 173 件になっていれば成功です。
 
 ### 3. Vercelにデプロイする
 

@@ -115,6 +115,8 @@ for (let i = 0; i < items.length; i++) {
     text: item.text,
     trueLabel: item.label,
     predicted: r.risk,
+    trueSubject: item.subject ?? null, // 構造化面接AI統合 手順4。未指定の既存項目はselfとして扱う(下記参照)
+    predictedSubject: r.subject,
     hasKeywordHit,
     classifierError: r.classifierError,
     errorTag: tag,
@@ -179,6 +181,25 @@ const crisisNoKeywordRecall = crisisNoKeyword.length
 const crisisNoKeywordBlocked = crisisNoKeyword.filter((r) => r.errorTag === "blocked").length;
 
 // --------------------------------------------------------------------------
+// subject(self/other)の精度(構造化面接AI統合 手順4で追加)。
+// テストセットで subject を指定していない項目は self を期待値として扱う
+// (既存の66件は全て相談者自身についての発言のため。docs/test-sets/crisis-detection.json
+// の subject_note 参照)。全件でのself方向の過検知(本来selfなのにotherと誤る)と、
+// 明示的にラベル付けした新規項目でのother方向の再現率を分けて見る。
+// --------------------------------------------------------------------------
+const subjectResults = results.map((r) => ({ ...r, expectedSubject: r.trueSubject ?? "self" }));
+const subjectAccuracy = subjectResults.length
+  ? subjectResults.filter((r) => r.predictedSubject === r.expectedSubject).length / subjectResults.length
+  : null;
+const labeledOther = subjectResults.filter((r) => r.trueSubject === "other");
+const otherRecall = labeledOther.length
+  ? labeledOther.filter((r) => r.predictedSubject === "other").length / labeledOther.length
+  : null;
+const selfMisclassifiedAsOther = subjectResults.filter(
+  (r) => r.expectedSubject === "self" && r.predictedSubject === "other",
+);
+
+// --------------------------------------------------------------------------
 // レポート出力
 // --------------------------------------------------------------------------
 console.log("\n=== クラスごとの指標 ===");
@@ -193,6 +214,15 @@ console.log(`  accuracy      = ${accuracy === null ? "—" : accuracy.toFixed(2)
 console.log(`  macro_precision = ${macroAvg(perClass, "precision")?.toFixed(2) ?? "—"}`);
 console.log(`  macro_recall    = ${macroAvg(perClass, "recall")?.toFixed(2) ?? "—"}`);
 console.log(`  macro_f1        = ${macroAvg(perClass, "f1")?.toFixed(2) ?? "—"}`);
+
+console.log("\n=== subject(self/other)の精度(構造化面接AI統合 手順4) ===");
+console.log(`  全体一致率      = ${subjectAccuracy === null ? "—" : subjectAccuracy.toFixed(2)}`);
+console.log(`  other の再現率  = ${otherRecall === null ? "—" : otherRecall.toFixed(2)} (support=${labeledOther.length})`);
+console.log(`  self を other と誤った件数 = ${selfMisclassifiedAsOther.length} / ${subjectResults.length}`);
+if (selfMisclassifiedAsOther.length) {
+  console.log("  ↑ 本人の危機を第三者の心配と誤ると、固定応答(CRISIS_REPLY)が出ずに生成に回ってしまうため特に重要:");
+  for (const r of selfMisclassifiedAsOther) console.log(`    「${r.text}」`);
+}
 
 console.log("\n=== Geminiブロック(精度の指標とは別枠。CLAUDE.md 5.11) ===");
 console.log(`  ブロック件数(全体): ${blockedResults.length} / ${results.length}`);
@@ -244,6 +274,13 @@ const report = {
     recall: crisisNoKeywordRecall,
     blocked: crisisNoKeywordBlocked,
     note: "CRISIS_WORDS に一致しない crisis 発話だけの再現率。分類器(Gemini)単体の実力とブロックの影響を見るための内訳(CLAUDE.md 5.11)。",
+  },
+  subject: {
+    accuracy: subjectAccuracy,
+    other_recall: otherRecall,
+    other_support: labeledOther.length,
+    self_misclassified_as_other: selfMisclassifiedAsOther.map((r) => r.text),
+    note: "構造化面接AI統合 手順4で追加。subjectを明示していない項目はselfを期待値として扱う。self_misclassified_as_otherは特に重要(本人の危機がTier A固定応答をスキップしてしまう経路)。",
   },
   misclassified: misclassified.map((r) => ({
     text: r.text, true_label: r.trueLabel, predicted: r.predicted,

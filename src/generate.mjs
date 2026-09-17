@@ -59,10 +59,30 @@ export function knowledgeVersion(rows) {
   return `${rows.length}件 / ${latest.slice(0, 19)}`;
 }
 
+// Tier B(曖昧な危機サイン)/ 第三者の安全懸念のターンで、通常のタグ照合とは無関係に
+// 必ず参照させたい知識のID(構造化面接AI統合 手順4)。
+// tierB: T27(生身の人に言うことへの障壁を探る問い)/ T30(情報を詰め込みすぎない)/
+//        T31(危機の内容自体は深掘りしない)/ D3(二択で程度を確認する質問はしない)。
+// thirdParty: D5(第三者の安全懸念への対応)/ D6(第三者に対してもリスクアセスメントはしない)。
+// これらは tags が空、または通常の重み付けでは上位に来ないため、この仕組みなしでは
+// ほぼ参照されない(retrieve()のタグ照合は使用者本人の発言テキストに対して行われるため)。
+const SAFETY_KNOWLEDGE_IDS = {
+  tierB: ["T27", "T30", "T31", "D3"],
+  thirdParty: ["D5", "D6"],
+};
+
 // 取り出し。140件規模ならタグ照合で十分。
 // 件数が1000を超えたら pgvector + 全文検索のハイブリッドに差し替える(CLAUDE.md 第7節)。
-export function retrieve(rows, text, weight, relation, n = 9) {
+// safetyContext: null(通常) | "tierB" | "thirdParty"。route.ts が classify() の risk/subject
+// から算出して渡す(両方が同時に真になることはない。risk は単一の値のため)。
+// オプション引数ではなく素の位置引数にしているのは、このファイルがTypeScriptの型チェック
+// 対象外(.mjs)であるため、デフォルト値付きの分割代入オプション引数だと、呼び出し元(.ts)から
+// 見た推論結果が過度に狭く/欠けた型になり、route.tsのビルドがコケることがあるため
+// (n未使用ならundefinedを渡す。既存の呼び出し元はどれもnもsafetyContextも指定していない)。
+export function retrieve(rows, text, weight, relation, n, safetyContext) {
+  const limit = n ?? 9;
   const pool = rows.filter((k) => k.cat !== "principle" && k.cat !== "ng");
+  const forceIds = safetyContext ? SAFETY_KNOWLEDGE_IDS[safetyContext] ?? [] : [];
   return pool
     .map((k) => {
       let s = 0;
@@ -73,10 +93,11 @@ export function retrieve(rows, text, weight, relation, n = 9) {
       if (relation === "visitor" && k.id === "S1") s += 4;
       if (relation === "complainant" && k.id === "S2") s += 4;
       if (relation === "customer" && k.id === "S3") s += 4;
+      if (forceIds.includes(k.id)) s += 10;
       return { k, s };
     })
     .sort((a, b) => b.s - a.s)
-    .slice(0, n)
+    .slice(0, limit)
     .filter((x) => x.s > 0)
     .map((x) => x.k);
 }
@@ -84,7 +105,37 @@ export function retrieve(rows, text, weight, relation, n = 9) {
 // ============================================================================
 //  プロンプト
 // ============================================================================
-export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary) {
+// Tier B / 第三者の安全懸念のターンだけに挟む指示ブロック(構造化面接AI統合 手順4)。
+// どちらも「生成は続けるが、この1ターンだけは特に慎重に」という位置づけで、
+// Tier A(risk==="crisis" && subject==="self")のような生成スキップ+固定応答(CLAUDE.md 5.2)
+// とは別の扱い。二択で程度を確認する質問(実質的なリスクアセスメント)を避けることが共通の核。
+const SAFETY_CONTEXT_BLOCKS = {
+  tierB: `
+
+# 今回のターンについて(重要・曖昧な危機のサイン)
+直前の発言に、自己否定・無力感の曖昧なサイン(例:「もう無理」「限界」「自分なんて」)が検知されました。
+これは絶望感の表現であり、必ずしも自殺念慮のサインではありません。ただし今回のターンは特に:
+・まずその気持ちを短く深く受け止めることを優先する(批判・説教・過度な励まし・原因の掘り下げはしない)
+・「それは消えたいに近い?それとも変われないもどかしさが強い?」のような、危機の程度を二択で
+  確認する質問はしない(実質的なリスクアセスメントに当たるため)
+・危機の内容そのもの(なぜそう思うのか等)を深掘りしない
+・「この場面で参照できる知識」に、人に言うことへの障壁を探る問いがあれば、状況に合えば触れてよいが、
+  無理に今すぐ聞き出そうとしない
+・情報を詰め込みすぎない。今回のターンで全部を扱おうとしない`,
+  thirdParty: `
+
+# 今回のターンについて(重要・第三者の安全への懸念)
+直前の発言は、相談者自身ではなく友人・家族等の第三者の安全についての心配です。
+相談者自身への危機対応の手順(窓口案内など)をそのまま当てはめないでください。
+・まず、それだけ心配している気持ちや責任感を短く受け止める
+・友人の安全について、相談者一人が背負う必要はないことを伝える
+・「この場面で参照できる知識」を使い、身近な大人(学校の先生・スクールカウンセラー・おうちの人)に
+  相談することを、相談者自身のためでもあると伝えたうえで勧める
+・友人はこの場にいないので、友人の状態を根掘り葉掘り聞き出そうとしない
+・相談者自身にも同じようなサインがないかは、詰問にならない範囲でさりげなく気にかけてよい`,
+};
+
+export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext) {
   const principles = rows.filter((k) => k.cat === "principle")
     .map((k) => `・${k.body}(${k.src})`).join("\n");
   const ngAt = (lv) =>
@@ -95,6 +146,7 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   const sum = sinceSummary >= 6
     ? "★ しばらく区切りがありません。この辺りで「今までの話、一回まとめてみようか」と提案し、出てきたことを並べ直すターンを取ることを検討してください。ズレを直す機会です。"
     : "いまはまだ区切りのタイミングではありません。";
+  const safetyBlock = SAFETY_CONTEXT_BLOCKS[safetyContext] ?? "";
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
 拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、
@@ -129,7 +181,7 @@ ${ngAt(1)}
 ・相手が話していないことを事実として決めつけない。
 ・技法や理論の名前を出さない。
 ・一言だけで終わらせない。受けたら、次につながる一言を必ず添える。
-
+${safetyBlock}
 # 進め方
 決まった手順はありません。台本に沿って段階を消化するのではなく、相手の反応を見て毎回その場で決めます。
 重心として「関係をつくる」「主訴を見極める」「目標を立てる」「作戦会議」の四つがありますが、

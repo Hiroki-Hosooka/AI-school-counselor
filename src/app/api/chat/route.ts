@@ -147,14 +147,19 @@ async function updatePersonMemory(clientId: string, sessionNotes: Record<string,
 // 危機通知。本文は送らない。
 // 未成年の相談内容を Slack 等のチャンネルに流すのは避け、
 // 「確認が必要なセッションがある」ことだけを伝えて、詳細は管理画面で見る運用にする。
-async function notifyCrisis(sessionId: string) {
+// subject: "self"(本人の危機)| "other"(友人等、第三者の安全への懸念。構造化面接AI統合 手順4)。
+// どちらも通知は鳴らすが、スタッフが優先順位をつけられるよう文言だけ分ける。
+// classify.mjs(JS、型チェック対象外)から来る値なので string で受け、ここで判定する
+// (sess.weight/out.relation 等、他の値も同様にリテラル型では受けていない)。
+async function notifyCrisis(sessionId: string, subject: string = "self") {
   if (!WEBHOOK) return false;
+  const label = subject === "other" ? "危機判定が出ました(友人等の安全への心配)" : "危機判定が出ました(本人)";
   try {
     await fetch(WEBHOOK, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        text: `【要確認】相談AIで危機判定が出ました\nセッション: ${sessionId}\n時刻: ${new Date().toISOString()}\n内容は管理画面(pending_safety)で確認してください。`,
+        text: `【要確認】相談AIで${label}\nセッション: ${sessionId}\n時刻: ${new Date().toISOString()}\n内容は管理画面(pending_safety)で確認してください。`,
       }),
     });
     return true;
@@ -312,24 +317,30 @@ export async function POST(req: Request) {
         .insert({ session_id: sessionId, role: "user", body: text }).select("seq").single();
 
       // ---- 入力フィルタ ----
+      // 構造化面接AI統合 手順4より、危機分岐は risk に加えて subject(self/other)でも振り分ける。
+      // 「本人の危機(self)」だけが生成スキップ+固定応答(CLAUDE.md 5.2)の対象。
+      // 「友人等、第三者の安全への懸念(other)」と、曖昧な危機サイン(watch=Tier B)は、
+      // どちらも生成は続けつつ、この1ターンだけ safetyContext で AI の応答の仕方を絞り込む
+      // (src/generate.mjs の buildSystem 参照)。
       const safety = await classify(text);
+      const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
       if (safety.risk !== "none") {
-        const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId) : false;
+        const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
         await db.from("safety_events").insert({
-          session_id: sessionId, risk: safety.risk, keywords: safety.keywords,
+          session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: safety.keywords,
           model_risk: safety.model.risk, model_reason: safety.model.reason, notified,
         });
       }
 
-      // 危機なら生成をスキップして固定応答
-      if (safety.risk === "crisis") {
+      // 本人の危機(Tier A・self)なら生成をスキップして固定応答。この分岐だけは変更しない。
+      if (isSelfCrisis) {
         const { data: aiMsg } = await db.from("messages").insert({
           session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
         }).select("seq").single();
         await db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId);
         return json({
           reply: CRISIS_REPLY, crisis: true,
-          safety: { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
+          safety: { risk: safety.risk, subject: safety.subject, keywords: safety.keywords.length, model: safety.model.risk },
           user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
         });
       }
@@ -341,8 +352,11 @@ export async function POST(req: Request) {
       // その場合も技術的なエラーを生徒にそのまま見せず、受け止めだけの返答で会話を続ける
       // (generateReply内で処理)。見逃さないよう flags に記録し、心理士のレビュー画面で
       // 頻度を確認できるようにしておく。
+      const safetyContext = safety.risk === "watch" ? "tierB"
+        : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
+        : null;
       const rows = await loadKnowledge(db);
-      const chunks = retrieve(rows, text, sess.weight, sess.relation);
+      const chunks = retrieve(rows, text, sess.weight, sess.relation, undefined, safetyContext);
 
       const { data: hist } = await db.from("messages")
         .select("role,body,crisis").eq("session_id", sessionId).order("seq");
@@ -353,7 +367,7 @@ export async function POST(req: Request) {
       const { data: memory } = await db.from("person_memory")
         .select("summary").eq("client_id", clientId).maybeSingle();
       const system = buildSystem(
-        rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
+        rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary, safetyContext,
       );
 
       const { out, flags } = await generateReply(system, messages);
