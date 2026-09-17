@@ -313,6 +313,65 @@ ${stageText}${compositeNote}
 挙がっている、既存の言い回し(特に【逐語】)を優先してください。`;
 }
 
+// フェーズ2:クロージング(会話を終える際のルール。構造化面接AI統合 手順7)。
+// 00_統合版_構造化面接AIプロンプト.txt 11章を、要点を保ったまま短く言い換えたもの
+// (全体方針④。11章はクロージングの具体的な要約の型まで踏み込んでおり、既存の
+// 非構造化側の設計より具体的なため、ほぼそのまま採用している)。
+// 注意:ここでの「クロージング」(今日の会話を終えるかどうか)は、buildSystemの
+// 「区切りの判断」(sinceSummaryに基づく、5〜6ターンごとの定期的な要約提案。
+// CLAUDE.md 9節の用語集の「区切り」はこちらを指す)とは別物。両方が同時に
+// 該当することもあるが、混同しないよう別セクションのまま保つ。
+function buildClosingBlock(closingState, userGoal) {
+  const stateNote = {
+    none: "まだクロージング(今日の会話を終えるかどうかの話)は出ていません。",
+    awaiting_choice: "直前のあなたの返答で「続けるか、今日はここまでにするか」を尋ねています。" +
+      "今回の相手の返答が、その答えになっていないか確認してください。",
+    confirmed_continue: "直前に「続けたい」という意思を一度確認しています。ここから改めて" +
+      "終わりに向かうときも、下記の「望ましい流れ」をもう一度たどってください" +
+      "(1回確認したら以降は聞かなくてよい、ではありません)。",
+    closed: "直前に、今日はここで区切ることを確認しています。まだ話が続くようなら、" +
+      "前回のクロージングを蒸し返さず、新しい話として自然に応じてください。",
+  }[closingState] ?? "";
+
+  return `# クロージング(会話を終える際のルール)
+会話を終えるかどうかは、常にユーザー自身に決めてもらいます。あなたが「もう十分話せた」
+「ここが区切りだ」と一方的に判断して、要約や締めの挨拶に入ってはいけません。
+
+## やってはいけないこと
+・「思いつかない」「わからない」等、技法上の手詰まりを、会話を終えたい意思だと解釈しない。
+・あなたが提案した一つの行動に「やってみる」と同意しただけなのに、それを会話を終える
+  同意だと解釈しない(行動を試すことへの同意と、会話を終えることへの同意は別物)。
+・まとめの結論を、あなたが代わりに言い切らない(「〜な時間を大切にしてね」等)。
+・一度「続けたい」という意思を確認したら、次に終わりに向かうときに下記の手順を省略しない。
+
+## 望ましい流れ
+1. 技法上の手詰まりが出たら、まずそれ自体を素直に認める(「なかなか浮かびにくいくらい、
+   難しい状況なんだね」)。終わりの合図だとはみなさない。
+2. この人がインテークで話したゴール(下記)に一度立ち返り、正直に確認する。
+   「最初に話してくれた『(ゴール)』について、今はどんな感じがする?」のように、
+   近づけたかどうかを本人自身に評価してもらう。何も解決していなくても、取り繕わず
+   そのまま受け止める。
+3. 続けるか、ここで一区切りにするかを、必ず本人に選んでもらう(「今日はここまでにしておく?
+   それとも、もう少し違う角度から一緒に考えてみる?」等)。決定権は本人に渡す。
+   直前に同じ確認をしていれば、同じ言い回しを繰り返さない。
+   → この返答をする場合、出力の"closing_event"に"asked"を入れる。
+4. 本人が明確に区切りを希望する言葉(「今日はここまででいい」「大丈夫、また今度」等)を
+   返した場合にのみ、クロージングの要約に入る。
+   → その場合、出力の"closing_event"に"close"を入れる。
+   要約の作り方:感情を反映しつつ簡潔に。明るい面(本人が見つけた工夫・気づき)を
+   強調しつつ、結論はあなたが言い切らず、「今日話した中で、これは持って帰れそうだな、
+   って思うことはある?」のように、まとめの言葉を本人自身に語ってもらう。ゴールに対して
+   まだ曖昧な部分があれば、取り繕わず正直に示す。最後に「しんどくなったら、いつでも
+   こういうところに頼っていいよ」という趣旨を一言添える(具体的な窓口名・電話番号は
+   書かなくてよい。別途画面に表示される)。
+   本人が続けたいと返してきた場合は、出力の"closing_event"に"continue"を入れる。
+5. 上記のいずれにも当てはまらないターンでは、出力の"closing_event"は"none"のままにする。
+
+## いまの状態
+${stateNote}
+${userGoal ? `この人がインテークで話したゴール:「${userGoal}」` : ""}`;
+}
+
 // フェーズ2(intake完了後)の進め方。既存の非構造化AIの自由な進め方をそのまま残したもの
 // (構造化面接AI統合 手順5以前の唯一の挙動)。モード別プロトコルの中身(手順6)は
 // buildModeBlockが別ブロックとして追加する(既存のrelation/question_level/role判定は
@@ -350,12 +409,15 @@ const INTAKE_OUTPUT_SCHEMA = `,
     "intake_complete": true または false
   }`;
 
-// フェーズ2の間だけ出力JSONに追加させるフィールド(構造化面接AI統合 手順6)。
-// 通常は空配列。LISTEN_ONLY(17-5)のように、本人が自発的に進め方を変えたいと
-// 望んだ場合のみ、モデルがここに新しいrecommended_modeを入れる想定。
+// フェーズ2の間だけ出力JSONに追加させるフィールド(構造化面接AI統合 手順6・7)。
+// mode_update: 通常は空配列。LISTEN_ONLY(17-5)のように、本人が自発的に進め方を
+// 変えたいと望んだ場合のみ、モデルがここに新しいrecommended_modeを入れる想定。
 // 毎ターン自動で判定し直すものではない(db/schema.sql 9.2のrecommended_modeコメント通り)。
+// closing_event: buildClosingBlockの指示に沿って、そのターンで何が起きたかを申告させる
+// (手順7)。既定は"none"。
 const PHASE2_OUTPUT_SCHEMA = `,
-  "mode_update": ["本人が自発的に進め方を変えたいと望んだ場合のみ、新しいrecommended_mode配列。希望していなければ空配列"]`;
+  "mode_update": ["本人が自発的に進め方を変えたいと望んだ場合のみ、新しいrecommended_mode配列。希望していなければ空配列"],
+  "closing_event": "none または asked または continue または close"`;
 
 export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake) {
   const principles = rows.filter((k) => k.cat === "principle")
@@ -375,7 +437,8 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   const phase = intake?.phase === "intake" ? "intake" : "phase2";
   const flowBlock = phase === "intake"
     ? buildIntakeBlock(intake)
-    : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode);
+    : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode)
+      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal);
   const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA;
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
@@ -599,4 +662,22 @@ export function applyModeUpdate(sess, out) {
     : [];
   if (!requested.length) return {};
   return { recommended_mode: requested };
+}
+
+// ============================================================================
+//  クロージング(会話を終える際のルール。構造化面接AI統合 手順7)。
+//  buildClosingBlockの指示に沿ってモデルが申告した"closing_event"を、
+//  sessions.closing_stateへ反映する。intake/modeの判定と違い、値が実際に
+//  揃っているかをサーバ側で検証できる性質のものではない(自然文の意図判定のため)。
+//  そのため、これは「フェーズを切り替える固いゲート」ではなく、次のターンに
+//  「前回どこまで話したか」を思い出させるための、あくまで参考情報という位置づけ
+//  (CLAUDE.md 5.15)。closing_eventが不正な値なら何もしない。
+// ============================================================================
+const CLOSING_EVENT_TO_STATE = { asked: "awaiting_choice", continue: "confirmed_continue", close: "closed" };
+
+export function applyClosingUpdate(sess, out) {
+  if (sess.phase !== "phase2") return {};
+  const next = CLOSING_EVENT_TO_STATE[out.closing_event];
+  if (!next) return {};
+  return { closing_state: next };
 }

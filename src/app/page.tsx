@@ -18,6 +18,7 @@ type Msg = {
   seq?: number;
   crisis?: boolean;
   summary?: boolean;
+  closing?: boolean;
   error?: boolean;
   rating?: number | null;
 };
@@ -48,6 +49,10 @@ const HOTLINES: [string, string][] = [
   ["こころの健康相談統一ダイヤル", "0570-064-556"],
   ["いますぐ危ないとき", "119"],
 ];
+// クロージング(手順7)のカードでは、緊急連絡("いますぐ危ないとき")を除いた
+// 相談窓口だけを見せる。今日の会話をふつうに終える場面であり、緊急時のcrisis-cardとは
+// トーンを分けたいため(CLAUDE.md 5.15)。
+const CLOSING_HOTLINES = HOTLINES.filter(([name]) => name !== "いますぐ危ないとき");
 const CHIPS = ["新しいクラスで居場所がない気がする", "全部あの子のせいだと思う", "別に相談したいことがあるわけじゃない"];
 
 const store = {
@@ -114,11 +119,12 @@ export default function Page() {
         setTrail([r.session.weight]);
         setNotes(r.session.notes || {});
         setMessages(
-          r.messages.map((m: { role: string; body: string; seq: number; crisis?: boolean; rating?: number }) => ({
+          r.messages.map((m: { role: string; body: string; seq: number; crisis?: boolean; closing?: boolean; rating?: number }) => ({
             role: m.role === "user" ? "user" : "ai",
             body: m.body,
             seq: m.seq,
             crisis: m.crisis,
+            closing: m.closing,
             rating: m.rating,
           })),
         );
@@ -169,7 +175,7 @@ export default function Page() {
         const next = [...t, r.weight as Weight];
         return next.length > 28 ? next.slice(next.length - 28) : next;
       });
-      setMessages((m) => [...m, { role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized }]);
+      setMessages((m) => [...m, { role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized, closing: r.closing }]);
       setNotes(r.notes || {});
       setChoice({
         relation: r.relation,
@@ -422,6 +428,19 @@ function MessageBubble({ msg, onRate }: { msg: Msg; onRate: (seq: number, n: num
             ))}
           </dl>
           <p>どれも無料で、名前を言わなくても話せます。学校の先生や保健室の先生に、この画面を見せるだけでも伝わります。</p>
+        </div>
+      )}
+      {msg.closing && (
+        <div className="closing-card">
+          <h4>また話したくなったら</h4>
+          <dl>
+            {CLOSING_HOTLINES.map(([name, num]) => (
+              <Fragment key={name}>
+                <dt>{name}</dt><dd>{num}</dd>
+              </Fragment>
+            ))}
+          </dl>
+          <p>しんどくなったら、ここに書いたところにも頼っていいからね。もちろん、また続きをここで話しに来てくれてもいいよ。</p>
         </div>
       )}
       {msg.role === "ai" && !msg.error && msg.seq != null && (

@@ -80,6 +80,35 @@ vercel link
 vercel deploy --prod
 ```
 
+#### `main` 以外のブランチ(作業ブランチ)を確認したいとき
+
+Vercelダッシュボードでこのリポジトリを接続していれば、**`main`(Production Branch)以外の
+ブランチにpushしても、Vercel側で自動的に「Preview Deployment」が作られます。** `public/admin.html`
+はビルド成果物に含まれる静的ファイルの一つなので、admin.htmlだけを個別にデプロイする手順は
+存在しません。アプリ全体のデプロイ(本番・プレビューのどちらでも)に自動で含まれます。
+
+作業ブランチ用のURLは、次のいずれかで見つかります。
+
+- Vercelダッシュボード → 対象プロジェクト → **Deployments** タブ → ブランチ名で絞り込み、
+  最新のデプロイの「Visit」を開く
+- GitHubのコミット一覧・PRに、Vercel Bot(GitHub連携が有効な場合)が
+  「✅ Preview: `https://...`」のようなステータス・コメントを自動で付ける
+- Git Branch URL(ブランチが変わってもURLが固定される。コミットのたびに変わる個別URLより
+  こちらが便利):
+  `https://<プロジェクト名>-git-<ブランチ名を小文字化し/と_を-に置換したもの>-<Vercelのチーム/個人アカウント名>.vercel.app`
+  例: ブランチ `claude/doc-review-n5v5eq` → `...-git-claude-doc-review-n5v5eq-....vercel.app`
+  (正確な値はDeploymentsの詳細画面に表示されるものを使ってください)
+
+admin.htmlは、そのプレビューURLに `/admin.html?token=(ADMIN_TOKENの値)` を付けてアクセスします
+(本番URLと同じ要領)。
+
+**プレビューデプロイでAPIが動かない場合、まず環境変数の適用範囲を疑ってください。** Vercelの
+環境変数はProduction/Preview/Developmentを別々に有効・無効にできるため、下記4.の変数を
+「Production」にしか適用していないと、作業ブランチのプレビューでは `GEMINI_API_KEY` 等が
+読めずAPIが失敗します(admin.html自体は開けても、会話やログ取得のAPI呼び出しがすべて
+失敗する、という形で症状が出ます)。各変数の追加時に、対象環境として **Production・Preview
+の両方**(できればDevelopmentも)にチェックを入れてください。
+
 ### 4. 環境変数を設定する
 
 Vercelダッシュボード → Project → Settings → Environment Variables

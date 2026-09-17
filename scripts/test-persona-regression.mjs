@@ -34,7 +34,7 @@ import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
-  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
 } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -153,7 +153,7 @@ for (const persona of personas) {
   // db/schema.sqlのdefaultによりphase='intake'で作られる。
   const { data: sessionRow, error: sessionErr } = await db.from("sessions")
     .insert({ client_id: clientId, knowledge_version: version })
-    .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode")
+    .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
     .single();
   if (sessionErr || !sessionRow) {
     console.error(`[${persona.id}] セッション作成に失敗しました:`, sessionErr);
@@ -173,6 +173,7 @@ for (const persona of personas) {
     user_goal: sessionRow.user_goal,
     ambivalence_detected: sessionRow.ambivalence_detected,
     recommended_mode: sessionRow.recommended_mode,
+    closing_state: sessionRow.closing_state,
   };
   const history = []; // { speaker: 'student'|'counselor', text, crisis? }
   const turnLog = [];
@@ -229,10 +230,14 @@ for (const persona of personas) {
     const updated = applyTurnUpdate(sessState, out);
     // フェーズ1(インテーク)のスロット更新(構造化面接AI統合 手順5)。route.tsと同じ、
     // 差分(intakePatch)をsessionsへ、このターン時点の現在値(mergedIntake)をmessagesへ。
-    // applyModeUpdate(手順6)はphase2の時だけ働く。phaseで排他的なので、route.tsと
-    // 同じくそのままマージしてよい。
-    const intakePatch = { ...applyIntakeUpdate(sessState, out), ...applyModeUpdate(sessState, out) };
+    // applyModeUpdate/applyClosingUpdate(手順6・7)はphase2の時だけ働く。それぞれ
+    // 別のキーしか返さないので、route.tsと同じくそのままマージしてよい。
+    const intakePatch = {
+      ...applyIntakeUpdate(sessState, out), ...applyModeUpdate(sessState, out),
+      ...applyClosingUpdate(sessState, out),
+    };
     const mergedIntake = { ...sessState, ...intakePatch };
+    const justClosed = intakePatch.closing_state === "closed";
 
     await db.from("messages").insert({
       session_id: sessionId, role: "ai", body: out.reply,
@@ -244,6 +249,7 @@ for (const persona of personas) {
       distress_level: mergedIntake.distress_level ?? null,
       mode: mergedIntake.recommended_mode ?? [],
       ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
+      closing: justClosed,
     });
     await db.from("sessions").update({
       weight: updated.weight, relation: updated.relation,
@@ -259,7 +265,7 @@ for (const persona of personas) {
       weight: updated.weight, relation: updated.relation,
       question_level: out.question_level, flags,
     });
-    console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation} phase=${mergedIntake.phase}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
+    console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation} phase=${mergedIntake.phase}${mergedIntake.closing_state && mergedIntake.closing_state !== "none" ? ` closing=${mergedIntake.closing_state}` : ""}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
     await sleep(1500);
   }
 
@@ -272,6 +278,7 @@ for (const persona of personas) {
     stopped_early: stoppedEarly,
     final_weight: sessState.weight, final_relation: sessState.relation,
     final_phase: sessState.phase, recommended_mode: sessState.recommended_mode ?? [],
+    final_closing_state: sessState.closing_state ?? "none",
     flagged_turns: turnLog.filter((t) => t.flags && t.flags.length).length,
     turn_log: turnLog,
   });
@@ -283,7 +290,7 @@ const finishedAt = new Date();
 console.log("=== まとめ ===");
 console.log(`ナレッジ世代: ${version}`);
 for (const r of personaReports) {
-  console.log(`  [${r.persona}] session=${r.session_id} 完了${r.turns_completed}/${TURNS}ターン 危機分岐${r.crisis_turns}回 flags発生${r.flagged_turns}回 最終relation=${r.final_relation} phase=${r.final_phase}${r.recommended_mode.length ? ` mode=${r.recommended_mode.join("+")}` : ""}${r.stopped_early ? ` (${r.stopped_early})` : ""}`);
+  console.log(`  [${r.persona}] session=${r.session_id} 完了${r.turns_completed}/${TURNS}ターン 危機分岐${r.crisis_turns}回 flags発生${r.flagged_turns}回 最終relation=${r.final_relation} phase=${r.final_phase}${r.recommended_mode.length ? ` mode=${r.recommended_mode.join("+")}` : ""}${r.final_closing_state !== "none" ? ` closing=${r.final_closing_state}` : ""}${r.stopped_early ? ` (${r.stopped_early})` : ""}`);
 }
 console.log("\nadmin.html でセッションIDを検索するか、一覧から探して会話を確認してください。");
 

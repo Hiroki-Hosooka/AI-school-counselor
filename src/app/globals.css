@@ -3,6 +3,7 @@
   --indigo:#2F4858; --moss:#6E8B74; --plum:#7A6480; --amber:#A8794A;
   --sand:#E4E0D6; --sand-deep:#D3CDBF;
   --alert:#A8443A; --alert-bg:#FBF1EF;
+  --moss-bg:#F1F4EE;
   --mincho:"Shippori Mincho B1",serif; --gothic:"Zen Kaku Gothic New",system-ui,sans-serif;
 }
 *{box-sizing:border-box}
@@ -68,6 +69,16 @@ main{flex:1;overflow-y:auto;padding:26px 20px 8px}
 .crisis-card dt{color:var(--ink-soft)}
 .crisis-card dd{margin:0;font-weight:500;font-variant-numeric:tabular-nums}
 .crisis-card p{margin:10px 0 0;color:var(--ink-soft);font-size:12px}
+
+/* クロージング(手順7)。crisis-cardと同じ形だが、緊急ではない通常の締めくくりなので、
+   警告色(--alert)ではなく落ち着いたmoss系の配色にする。 */
+.closing-card{background:var(--moss-bg);border:1px solid var(--sand-deep);border-radius:10px;padding:15px 17px;
+  margin:13px 0 0 19px;font-family:var(--gothic);font-size:13px;line-height:1.95}
+.closing-card h4{margin:0 0 9px;font-size:12px;letter-spacing:.06em;color:var(--moss);font-weight:700}
+.closing-card dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 13px}
+.closing-card dt{color:var(--ink-soft)}
+.closing-card dd{margin:0;font-weight:500;font-variant-numeric:tabular-nums}
+.closing-card p{margin:10px 0 0;color:var(--ink-soft);font-size:12px}
 
 footer{border-top:1px solid var(--sand);background:var(--paper);padding:13px 20px 15px}
 .composer{max-width:760px;margin:0 auto;display:flex;gap:9px;align-items:flex-end}

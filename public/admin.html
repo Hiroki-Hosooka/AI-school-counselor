@@ -183,6 +183,11 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     PSYCHOEDUCATION: "心理教育・ノーマライズ",
   };
   var CATEGORY_JA = { 1: "友達・人間関係", 2: "勉強・進路・部活", 3: "家族・家", 4: "性格・メンタル", 5: "漠然としたしんどさ" };
+  // 構造化面接AI統合 手順7。closing_stateは11章のクロージング交渉の進み具合(sessions列)。
+  var CLOSING_JA = {
+    none: "なし", awaiting_choice: "続ける/区切るを確認中",
+    confirmed_continue: "「続ける」を確認済み", closed: "区切り済み",
+  };
 
   function esc(v) {
     return String(v === undefined || v === null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -295,6 +300,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (s.recommended_mode && s.recommended_mode.length) {
       rows.push(["判定モード", s.recommended_mode.map(function (m) { return MODE_JA[m] || m; }).join(" + ")]);
     }
+    if (s.closing_state && s.closing_state !== "none") {
+      rows.push(["クロージング", CLOSING_JA[s.closing_state] || s.closing_state]);
+    }
     if (!rows.length) { intakeBlockEl.hidden = true; intakeBlockEl.innerHTML = ""; return; }
     intakeBlockEl.hidden = false;
     intakeBlockEl.innerHTML = "<h5>インテーク(" + (s.phase === "intake" ? "進行中" : "完了") + ")</h5><dl>" +
@@ -329,6 +337,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (m.question_level) parts.push('<span class="tag">' + esc(QL_JA[m.question_level] || m.question_level) + '</span>');
     if (m.role_kind) parts.push('<span class="tag">役割 ' + esc(RL_JA[m.role_kind] || m.role_kind) + '</span>');
     if (m.summarized) parts.push('<span class="tag amber">区切り</span>');
+    if (m.closing) parts.push('<span class="tag amber">クロージング要約</span>');
     return parts.join("");
   }
 
@@ -451,6 +460,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (s.recommended_mode && s.recommended_mode.length) {
       lines.push("- 判定モード: " + s.recommended_mode.map(function (m) { return MODE_JA[m] || m; }).join(" + "));
     }
+    if (s.closing_state && s.closing_state !== "none") {
+      lines.push("- クロージング: " + (CLOSING_JA[s.closing_state] || s.closing_state));
+    }
     lines.push("");
     lines.push("| Turn | 発話者 | 発話内容 | 内部判断(AIのみ) |");
     lines.push("|---|---|---|---|");
@@ -470,6 +482,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
           if (m.question_level) parts.push("問い:" + (QL_JA[m.question_level] || m.question_level));
           if (m.role_kind) parts.push("役割:" + (RL_JA[m.role_kind] || m.role_kind));
           if (m.mode && m.mode.length) parts.push("モード:" + m.mode.map(function (mm) { return MODE_JA[mm] || mm; }).join("+"));
+          if (m.closing) parts.push("クロージング要約");
           judgement = parts.join(" / ");
         }
       }

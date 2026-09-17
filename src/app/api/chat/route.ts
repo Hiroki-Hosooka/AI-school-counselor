@@ -45,7 +45,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { LITE_MODELS, callGemini, classify, CRISIS_REPLY } from "@/classify.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
-  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
 } from "@/generate.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -216,11 +216,11 @@ export async function POST(req: Request) {
       const sessionId = String(payload.session_id ?? "").trim();
       if (!sessionId) return json({ error: "session_id が必要です" }, 400);
       const { data: s } = await db.from("sessions")
-        .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode")
+        .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
         .eq("id", sessionId).maybeSingle();
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const { data: msgs } = await db.from("messages")
-        .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected")
+        .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing")
         .eq("session_id", sessionId).order("seq");
       const allUsedIds = Array.from(new Set((msgs ?? []).flatMap((m) => m.used ?? [])));
       const knowledgeMap: Record<string, { id: string; src: string; cat: string; body: string }> = {};
@@ -241,6 +241,7 @@ export async function POST(req: Request) {
           onset_context: s.onset_context, distress_level: s.distress_level,
           physical_mental_symptoms: s.physical_mental_symptoms, user_goal: s.user_goal,
           ambivalence_detected: s.ambivalence_detected, recommended_mode: s.recommended_mode,
+          closing_state: s.closing_state,
         },
         messages,
       });
@@ -292,7 +293,7 @@ export async function POST(req: Request) {
         return json({ session: null, messages: [] }); // クライアント側が start を呼び直す
       }
       const { data: msgs } = await db.from("messages")
-        .select("seq,role,body,used,flags,crisis,rating")
+        .select("seq,role,body,used,flags,crisis,rating,closing")
         .eq("session_id", s.id).order("seq");
       return json({ session: s, messages: msgs ?? [] });
     }
@@ -316,7 +317,7 @@ export async function POST(req: Request) {
       // phase以下はフェーズ1(インテーク)用(構造化面接AI統合 手順5)。
       // phase2に進んだセッションでは、applyIntakeUpdate()がこれ以上変更しない。
       const { data: sess } = await db.from("sessions")
-        .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode")
+        .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
         .eq("id", sessionId).single();
       if (!sess) return json({ error: "セッションが見つかりません" }, 404);
 
@@ -393,11 +394,16 @@ export async function POST(req: Request) {
       // (構造化面接AI統合 手順5)。sessionsへは差分(intakePatch)だけを書き込み、
       // messagesへはこのターン時点の現在値(mergedIntake)をスナップショットとして残す
       // (weight/relationと同じ、db/schema.sql 9.3の意図)。
-      // applyModeUpdateはsess.phase==="phase2"の時だけ働く(手順6。本人の明示的な
-      // 要望があった場合のみrecommended_modeを更新)。phaseで排他的なので、
-      // 両方が同時に非空オブジェクトを返すことはない。
-      const intakePatch = { ...applyIntakeUpdate(sess, out), ...applyModeUpdate(sess, out) };
+      // applyModeUpdate/applyClosingUpdateはsess.phase==="phase2"の時だけ働く
+      // (手順6・7)。それぞれ別のキー(recommended_mode/closing_state)しか
+      // 返さないので、そのままマージしてよい。
+      const intakePatch = {
+        ...applyIntakeUpdate(sess, out), ...applyModeUpdate(sess, out), ...applyClosingUpdate(sess, out),
+      };
       const mergedIntake = { ...sess, ...intakePatch };
+      // このターンでクロージングの要約に入った(closing_stateがclosedになった)かどうか。
+      // 画面側で「話せる窓口」の案内カードを出すために使う(手順7。CLAUDE.md 5.15)。
+      const justClosed = intakePatch.closing_state === "closed";
 
       const { data: aiMsg } = await db.from("messages").insert({
         session_id: sessionId, role: "ai", body: out.reply,
@@ -408,6 +414,7 @@ export async function POST(req: Request) {
         distress_level: mergedIntake.distress_level ?? null,
         mode: mergedIntake.recommended_mode ?? [],
         ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
+        closing: justClosed,
       }).select("seq").single();
 
       await db.from("sessions").update({
@@ -430,6 +437,7 @@ export async function POST(req: Request) {
         hypothesis: out.hypothesis ?? "", why: out.why ?? "",
         notes, used: usedRows, flags,
         safety: { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
+        closing: justClosed,
         user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
       });
     }

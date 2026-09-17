@@ -398,3 +398,12 @@ select
 from sessions s
 left join messages m on m.session_id = s.id
 group by s.id;
+
+-- ----------------------------------------------------------------------------
+-- 9.6 クロージング(会話を終える際のルール。手順7)
+--
+--  closing_stateは9.2で用意済み(none/awaiting_choice/confirmed_continue/closed)。
+--  ここではmessages側に、そのターンがクロージングの要約だったかどうかを、
+--  crisis列と同じ扱いで記録する(resume/admin.htmlで再表示するため)。
+-- ----------------------------------------------------------------------------
+alter table messages add column if not exists closing boolean not null default false;
