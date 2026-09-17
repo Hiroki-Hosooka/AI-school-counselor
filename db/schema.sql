@@ -249,3 +249,97 @@ select
 from sessions s
 left join messages m on m.session_id = s.id
 group by s.id;
+
+-- ============================================================================
+--  9. 構造化面接AIとの統合(2026年9月〜)
+--
+--  Gemini Gemで別途試作した「構造化面接AI」(フェーズ0安全確認 → フェーズ1インテーク
+--  → 内部アセスメント → フェーズ2モード別プロトコル → クロージング)を、既存の
+--  非構造化AIに統合する。進み方の骨格は構造化側を採用しつつ、フェーズ2で使う
+--  言い回し・知識は既存の非構造化ナレッジ(嶋/石の逐語)を優先する
+--  (docs/prompts/structured-unstructured-merge.md 参照)。
+--
+--  このセクションのみ ALTER TABLE ADD COLUMN IF NOT EXISTS を使い、再実行しても
+--  安全にする。既存のテーブル定義(1〜4節)自体は変更していない(元の設計判断の
+--  記録として残す)。
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 9.1 ナレッジ:モードという新しい軸
+--
+--  weight(rapport/main/goal/plan)は会話の重心、mode はフェーズ2で使う技法の
+--  引き出し。別の軸なので両方持てる。既存140件は mode = null のままにする
+--  (モードを問わず使える知識という扱いになり、retrieve() のモード一致ブースト
+--  の対象にはならないが、従来通りタグ・weight・verbatim等では通常通りヒットする)。
+--
+--  MI(動機づけ面接)は資料上「モード横断的な技法」という位置づけのため、
+--  knowledge.mode には入れられるが、9.2の sessions.recommended_mode(選択される
+--  モード)には含めない。
+--
+--  新しい出典タグ `技`(技法・プロトコル理論資料)を使う。knowledge.src には
+--  もともとCHECK制約が無いためスキーマ変更は不要。出典URLは note 列に記録する。
+-- ----------------------------------------------------------------------------
+alter table knowledge add column if not exists mode text
+  check (mode is null or mode in (
+    'CBT','SFBT','NARRATIVE','ASSERTION','LISTEN_ONLY','PROBLEM_SOLVING','PSYCHOEDUCATION','MI'
+  ));
+
+create index if not exists knowledge_mode_idx on knowledge (mode) where mode is not null;
+
+-- ----------------------------------------------------------------------------
+-- 9.2 セッション:フェーズ・インテーク・クロージングの小状態
+--
+--  phase: intake(Turn1〜4のスロットフィリング) → phase2(モード別プロトコル)。
+--  closing_state: phase2内でのクロージング交渉の状態。11章のルール
+--  (一度「続ける」という意思を確認したら、次に終了へ向かうには改めて
+--  手詰まり→ゴール確認からやり直しが必要)を守るために、AIが今
+--  「続ける/区切る」のどちらを聞いている最中かを区別する。
+--
+--  危機対応(フェーズ0)用の新しい状態列はここに含めない。既存の classify() の
+--  none/watch/crisis(Tier A = crisis、Tier B = watch)をそのまま使い、
+--  「直近でTier B確認をしたか」はプロンプト側で会話履歴から判定させる方針
+--  (structured-unstructured-merge.md 手順4で、CRISIS_WORDS等の差分を
+--  確認してから実装する。ここでは実装しない)。
+-- ----------------------------------------------------------------------------
+alter table sessions add column if not exists phase text not null default 'intake'
+  check (phase in ('intake','phase2'));
+alter table sessions add column if not exists closing_state text not null default 'none'
+  check (closing_state in ('none','awaiting_choice','confirmed_continue','closed'));
+
+-- インテーク(フェーズ1)のスロット。Turn1〜4で順に埋まる。
+alter table sessions add column if not exists chief_complaint_category int
+  check (chief_complaint_category between 1 and 5);
+  -- Turn1: 1人間関係/2学業部活/3家族/4性格メンタル/5漠然
+alter table sessions add column if not exists onset_context text;
+  -- Turn2: 時期・きっかけの要約
+alter table sessions add column if not exists distress_level int
+  check (distress_level between 1 and 5);
+  -- Turn3。固定値ではなく、以降のターンで悪化・改善が見えたら更新される
+alter table sessions add column if not exists physical_mental_symptoms text;
+  -- Turn3の補足(心身症状)
+alter table sessions add column if not exists user_goal text;
+  -- Turn4
+alter table sessions add column if not exists ambivalence_detected boolean not null default false;
+alter table sessions add column if not exists recommended_mode text[] not null default '{}'
+  check (recommended_mode <@ array[
+    'CBT','SFBT','NARRATIVE','ASSERTION','LISTEN_ONLY','PROBLEM_SOLVING','PSYCHOEDUCATION'
+  ]::text[]);
+  -- 複合可。Turn4直後の内部アセスメントで一度確定し、以降は本人の明示的な
+  -- 要望があった場合のみ更新する(毎ターン自動では判定し直さない)
+alter table sessions add column if not exists intake_completed_at timestamptz;
+
+-- ----------------------------------------------------------------------------
+-- 9.3 メッセージ:ターンごとの推移を記録
+--
+--  weight/relationと同じ扱いで、そのターン時点の値をスナップショットする。
+--  構造化/非構造化比較研究のため、推移を後から追えるようにする。
+--  chief_complaint_category/onset_context/user_goal は一度きりの事実なので
+--  sessionsのみに置き、ここには複製しない。
+-- ----------------------------------------------------------------------------
+alter table messages add column if not exists distress_level int
+  check (distress_level between 1 and 5);
+alter table messages add column if not exists mode text[] not null default '{}'
+  check (mode <@ array[
+    'CBT','SFBT','NARRATIVE','ASSERTION','LISTEN_ONLY','PROBLEM_SOLVING','PSYCHOEDUCATION'
+  ]::text[]);
+alter table messages add column if not exists ambivalence_detected boolean;
