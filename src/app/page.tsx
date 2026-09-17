@@ -319,7 +319,9 @@ export default function Page() {
               e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              // Enterで送信、Shift+Enterで改行。isComposingは日本語入力の変換確定Enterを
+              // 誤送信しないためのガード(これが無いと、変換確定のたびに送信されてしまう)。
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 submit();
               }

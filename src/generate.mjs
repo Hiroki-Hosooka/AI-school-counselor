@@ -16,7 +16,11 @@ import { callGemini, parseJSON } from "./classify.mjs";
 
 // 本生成用(品質優先)。上から順に試す。2.5-flashは2026年10月16日に退役予定なので、
 // その前に後継モデルを先頭に追加し、退役後はこの行を削除すること。
-export const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash"];
+// gemini-3-flash-preview(2026年9月に追加): Google AI Studioのレート制限画面で
+// 「テキスト出力モデル」として無料枠の割り当てがある(RPM等が0/0でない)ことを確認済み。
+// プレビュー版だが、3.5と2.5の間のフォールバックとして使う
+// (https://ai.google.dev/gemini-api/docs/gemini-3 で実在・無料枠ありを確認)。
+export const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
 
 // ----------------------------------------------------------------------------
 // DBクライアント。route.ts自身の(型付きの)getDb()とは別に、テストスクリプトからも

@@ -169,22 +169,33 @@ gemini-2.5/3.5系のモデルは既定で「思考(thinking)」が有効で、`t
 
 `route.ts` は単一モデルではなく、モデルのリストを上から順に試すようになっています(2026年9月〜)。
 
-- `PRIMARY_MODELS`(本生成用・品質優先): `gemini-3.5-flash` → `gemini-2.5-flash`
-- `LITE_MODELS`(安全判定・人単位の記憶の要約用・軽量タスク向け): `gemini-3.5-flash-lite`
-  (フォールバック無し。下記参照)
+- `PRIMARY_MODELS`(本生成用・品質優先): `gemini-3.5-flash` → `gemini-3-flash-preview` → `gemini-2.5-flash`
+- `LITE_MODELS`(安全判定・人単位の記憶の要約用・軽量タスク向け):
+  `gemini-3.5-flash-lite` → `gemini-2.5-flash-lite`
 
 レート制限だけでなく、Googleのモデル退役(Gemini 2.0系は2026年6月1日に退役済み)にも対応するためです。
+一覧は、Google AI Studioの「レート制限」画面(<https://aistudio.google.com/rate-limit>)の
+「テキスト出力モデル」に無料枠の割り当てがある(RPM等が `0/0` ではない)ものを、
+`PRIMARY_MODELS` は通常モデル、`LITE_MODELS` は `-lite` モデルとして振り分けたものです。
 
 **`gemini-2.5-flash` は2026年10月16日(Vertex AI表記では10月20日)に退役予定です。** それまでに
 `PRIMARY_MODELS`/`LITE_MODELS` の該当行を削除し、後継モデルに置き換えてください。全滅すると
 「うまく応答できませんでした」しか返らなくなります。どのモデルが実在するかは
 <https://ai.google.dev/gemini-api/docs/models> で確認してください。
 
-**`gemini-2.5-flash-lite` は退役予定日を待たず、2026年9月時点で新規のAPIキー/プロジェクトでは
-既に404("no longer available to new users")になることが実運用で確認されたため、
-`LITE_MODELS` から削除済みです。** 姉妹モデルの `gemini-2.5-flash`(`PRIMARY_MODELS` 側)も
-同じ理由で新規ユーザー向けには既に使えなくなっている可能性があります。本生成で
-`[HTTP_404]` のエラーが出た場合は、同様に該当行を削除してください(退役日を待つ必要はありません)。
+**`gemini-2.5-flash-lite` は、APIキー/プロジェクトによって挙動が割れています。** 2026年9月、
+本番のAPIキーでは「no longer available to new users」という404を実際に受け取った一方、
+Google AI Studioのレート制限画面(別プロジェクト)では無料枠の割り当てが残っていることも
+確認できました。新規プロジェクトかどうかで使えるかが分かれている可能性があるため、
+`LITE_MODELS` の先頭には置かず、`gemini-3.5-flash-lite` が失敗した時だけ試す2番目に
+置いています(失敗しても次に自動でフォールバックするだけなので、載せておいて害はありません)。
+姉妹モデルの `gemini-2.5-flash`(`PRIMARY_MODELS` 側)も同じ理由で新規ユーザー向けには
+使えなくなっている可能性があります。本生成で `[HTTP_404]` のエラーが頻発する場合は、
+同様に該当行の並び順や要否を見直してください(退役日を待つ必要はありません)。
+
+`gemini-3-flash-preview` はプレビュー版ですが、無料枠での提供が確認できたため
+`PRIMARY_MODELS` に追加しています(<https://ai.google.dev/gemini-api/docs/gemini-3> 参照)。
+プレビュー版は仕様変更や提供終了が急に起こり得るので、動作がおかしくなったら真っ先に疑ってください。
 
 ---
 
