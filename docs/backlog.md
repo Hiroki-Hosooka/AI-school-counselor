@@ -12,10 +12,13 @@
 `README.md` の手順どおりに Supabase(DBとして)を立て、SQL を流し、Vercelにデプロイする。
 (2026年9月にSupabase Edge Function構成からNext.js/Vercel構成へ移行済み。同時期に
 `person_memory` テーブルを追加したので、`db/schema.sql` を再実行すること。`create table if not exists`
-なので既存データに影響なし)
+なので既存データに影響なし。構造化面接AI統合(structured-unstructured-merge.md)に伴い、
+`db/schema.sql` 実行後に `db/seed_knowledge_structured.sql` も流すこと)
 
 **完了の条件**
-- `select src, count(*) from knowledge group by src;` が `理 54 / 石 42 / 嶋 37 / 嶋石 5 / 設 2` = 140件
+- `select src, count(*) from knowledge group by src;` が
+  `理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 2 / 技 26` = 169件
+  (`db/seed_knowledge_structured.sql` を流す前は嶋37・技0の140件)
 - ブラウザから1往復できる
 - `messages` にユーザー発言とAI応答の両方が入っている
 - `GEMINI_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` が `NEXT_PUBLIC_` 接頭辞なしでVercelに設定され、

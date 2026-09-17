@@ -45,7 +45,8 @@ Edge Function は使わないので、作るのはプロジェクトとテーブ
 
 ### 2. テーブルを作る
 
-SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` を実行。
+SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` を実行 →
+続けて `db/seed_knowledge_structured.sql` を実行(構造化面接AI統合で追加した技法カタログ)。
 
 確認:
 
@@ -53,7 +54,7 @@ SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` �
 select src, count(*) from knowledge group by src order by 2 desc;
 ```
 
-`理 54 / 石 42 / 嶋 37 / 嶋石 5 / 設 2` の計 140 件になっていれば成功です。
+`理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 2 / 技 26` の計 169 件になっていれば成功です。
 
 ### 3. Vercelにデプロイする
 
