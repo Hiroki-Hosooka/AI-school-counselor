@@ -112,12 +112,17 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   </div>
 </header>
 <main>
-  <div id="noToken" class="notice" hidden>
-    このページを開くには、URLの末尾に <code>?token=（合言葉）</code> を付けてください。
-    合言葉は <code>ADMIN_TOKEN</code> として管理者がVercelに設定した値です。
-  </div>
+  <form id="loginForm" class="notice" hidden>
+    <p style="margin:0 0 10px">このページを開くには、合言葉を入力してください。
+      合言葉は <code>ADMIN_TOKEN</code> として管理者がVercelに設定した値です。</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="password" id="tokenInput" class="rate-comment" autocomplete="current-password"
+        placeholder="合言葉" style="min-width:220px">
+      <button type="submit" class="rate-save">入る</button>
+    </div>
+  </form>
   <div id="authError" class="notice warn" hidden>
-    合言葉が違います。URLの <code>?token=...</code> の値を確認してください。
+    合言葉が違います。もう一度入力してください。
   </div>
   <div id="loadError" class="notice warn" hidden></div>
 
@@ -144,18 +149,28 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   </section>
 
   <div class="foot-note">
-    このページのURLには合言葉がそのまま含まれています。スクリーンショットやチャットへの貼り付けでも
-    共有しないでください。相談内容は要配慮個人情報です。
+    このページには生徒の相談内容がそのまま表示されます。スクリーンショットやチャットへの貼り付け、
+    画面の共有などをしないでください。相談内容は要配慮個人情報です。
   </div>
 </main>
 <script>
 (function () {
   "use strict";
 
-  var token = new URLSearchParams(location.search).get("token") || "";
+  // 合言葉はURLのクエリ文字列ではなく、ログインフォームで入力してもらう
+  // (URL履歴・共有スクリーンショットに残らないようにするため)。
+  // sessionStorageに保存し、同じタブを開いている間は再入力を求めない(タブを閉じれば消える)。
+  var TOKEN_KEY = "sc_admin_token";
+  var tokenStore = {
+    get: function () { try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } },
+    set: function (v) { try { sessionStorage.setItem(TOKEN_KEY, v); } catch (e) { /* 保存できなくても続行する */ } },
+    clear: function () { try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* noop */ } },
+  };
+  var token = tokenStore.get();
 
   var $ = function (sel) { return document.querySelector(sel); };
-  var noToken = $("#noToken");
+  var loginForm = $("#loginForm");
+  var tokenInput = $("#tokenInput");
   var authError = $("#authError");
   var loadError = $("#loadError");
   var listView = $("#listView");
@@ -218,9 +233,12 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     }).then(function (res) {
       return res.json().catch(function () { return null; }).then(function (body) {
         if (res.status === 401) {
+          tokenStore.clear();
           authError.hidden = false;
+          loginForm.hidden = false;
           listView.hidden = true;
           detailView.hidden = true;
+          tokenInput.focus();
           throw new Error("unauthorized");
         }
         if (!res.ok) {
@@ -540,8 +558,20 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     loadSessions();
   });
 
+  loginForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var v = tokenInput.value.trim();
+    if (!v) return;
+    token = v;
+    tokenStore.set(v);
+    authError.hidden = true;
+    loginForm.hidden = true;
+    loadSessions();
+  });
+
   if (!token) {
-    noToken.hidden = false;
+    loginForm.hidden = false;
+    tokenInput.focus();
   } else {
     loadSessions();
   }
