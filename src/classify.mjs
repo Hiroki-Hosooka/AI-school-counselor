@@ -25,7 +25,15 @@ export const CRISIS_REPLY =
 // 安全判定(classify)・人単位の記憶の要約用。軽いタスクなので lite モデルで十分。
 // route.ts の本生成用モデル(PRIMARY_MODELS)とは別モデルにすることで、
 // レート制限の枠も分散させている。
-export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"];
+// gemini-2.5-flash-liteは削除済み(2026年9月、実運用で
+// "This model models/gemini-2.5-flash-lite is no longer available to new users" という
+// 404を実際に受け取ったため。退役予定日を待たず、新規のAPIキー/プロジェクトでは
+// 既に使えなくなっていた)。フォールバック先が無くなった状態なので、
+// gemini-3.5-flash-liteがレート制限等で失敗すると、この用途は今フォールバックできない。
+// 後継の軽量モデルが実在確認できたら追加すること(実在未確認のモデルIDを推測で書かない)。
+// 同じ理由で、PRIMARY_MODELS側のgemini-2.5-flash(姉妹モデル)も同様に新規ユーザー向けに
+// 提供終了している可能性があるので、本生成で同種の404が出ないか注視すること。
+export const LITE_MODELS = ["gemini-3.5-flash-lite"];
 
 // 2026年9月(構造化面接AI統合 手順4)に、絶望感≠危機の原則とsubject(self/other)判定を追加。
 // 「もう無理」「限界」等はここでは crisis から外し、watch(Tier B)側に明示的に含めている

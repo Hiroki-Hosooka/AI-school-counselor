@@ -39,6 +39,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   font-size:12.5px;color:var(--ink-soft)}
 .sort-tab.on{border-color:var(--indigo);color:var(--indigo);font-weight:600}
 .count{font-size:12px;color:var(--ink-faint)}
+.low-pri-toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-faint);
+  margin:-4px 0 12px;cursor:pointer}
+.low-pri-toggle input{margin:0}
 
 .s-list{display:flex;flex-direction:column;gap:10px}
 .s-card{border:1px solid var(--sand);background:#fff;border-radius:10px;padding:13px 16px;cursor:pointer}
@@ -134,6 +137,10 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       </div>
       <span id="listCount" class="count"></span>
     </div>
+    <label class="low-pri-toggle">
+      <input type="checkbox" id="showLowPriority">
+      <span id="lowPriorityLabel">やり取り0件、または3往復以下で進展が無く危機でもないセッションを隠す</span>
+    </label>
     <div id="sessionList" class="s-list"></div>
     <div id="listEmpty" class="empty" hidden>まだセッションがありません。</div>
   </section>
@@ -178,6 +185,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var sessionListEl = $("#sessionList");
   var listEmpty = $("#listEmpty");
   var listCount = $("#listCount");
+  var showLowPriorityCheckbox = $("#showLowPriority");
+  var lowPriorityLabelEl = $("#lowPriorityLabel");
   var sessionHeaderEl = $("#sessionHeader");
   var intakeBlockEl = $("#intakeBlock");
   var notesBlockEl = $("#notesBlock");
@@ -251,14 +260,37 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 
   var sessions = [];
   var sortMode = "new";
+  var showLowPriority = false;
+
+  // 0往復(まだ何も起きていない)、または3往復以下でrelation/weightが初期値のまま
+  // (=何も動いていない)、かつ危機でもないセッションを「低優先度」として扱う。
+  // relation/weightが初期値から動いた時点で、たとえ短くても何らかの進展があった
+  // とみなす(4節「対話設計」のrelation/weightをそのまま流用。新しい判定軸は作らない)。
+  // has_crisisは常に優先表示するため、このフィルタの対象外にする。
+  function isLowPriority(s) {
+    if (s.has_crisis) return false;
+    var turns = s.turn_count || 0;
+    if (turns === 0) return true;
+    return turns <= 3 && s.relation === "visitor" && s.weight === "rapport";
+  }
 
   function renderList() {
-    var sorted = sessions.slice().sort(function (a, b) {
+    var lowPriorityCount = sessions.filter(isLowPriority).length;
+    var visible = showLowPriority ? sessions : sessions.filter(function (s) { return !isLowPriority(s); });
+    var sorted = visible.slice().sort(function (a, b) {
       if (sortMode === "unrated") return (b.unrated_count || 0) - (a.unrated_count || 0);
       return new Date(b.started_at) - new Date(a.started_at);
     });
-    listCount.textContent = sessions.length ? sessions.length + "件" : "";
+    listCount.textContent = sessions.length
+      ? visible.length + "件" + (!showLowPriority && lowPriorityCount ? "(低優先度" + lowPriorityCount + "件を非表示)" : "")
+      : "";
+    lowPriorityLabelEl.textContent = lowPriorityCount
+      ? "やり取り0件、または3往復以下で進展が無く危機でもないセッション(" + lowPriorityCount + "件)を隠す"
+      : "やり取り0件、または3往復以下で進展が無く危機でもないセッションを隠す(現在は該当なし)";
     listEmpty.hidden = sorted.length !== 0;
+    listEmpty.textContent = (sorted.length === 0 && !showLowPriority && lowPriorityCount)
+      ? "低優先度のセッション" + lowPriorityCount + "件のみです。上のチェックを入れると表示されます。"
+      : "まだセッションがありません。";
     sessionListEl.innerHTML = sorted.map(function (s) {
       var badges = "";
       if (s.has_crisis) badges += '<span class="badge warn">危機</span>';
@@ -293,6 +325,11 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       sortMode = btn.dataset.sort;
       renderList();
     });
+  });
+
+  showLowPriorityCheckbox.addEventListener("change", function () {
+    showLowPriority = showLowPriorityCheckbox.checked;
+    renderList();
   });
 
   function loadSessions() {

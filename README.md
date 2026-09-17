@@ -170,7 +170,8 @@ gemini-2.5/3.5系のモデルは既定で「思考(thinking)」が有効で、`t
 `route.ts` は単一モデルではなく、モデルのリストを上から順に試すようになっています(2026年9月〜)。
 
 - `PRIMARY_MODELS`(本生成用・品質優先): `gemini-3.5-flash` → `gemini-2.5-flash`
-- `LITE_MODELS`(安全判定・人単位の記憶の要約用・軽量タスク向け): `gemini-3.5-flash-lite` → `gemini-2.5-flash-lite`
+- `LITE_MODELS`(安全判定・人単位の記憶の要約用・軽量タスク向け): `gemini-3.5-flash-lite`
+  (フォールバック無し。下記参照)
 
 レート制限だけでなく、Googleのモデル退役(Gemini 2.0系は2026年6月1日に退役済み)にも対応するためです。
 
@@ -178,6 +179,12 @@ gemini-2.5/3.5系のモデルは既定で「思考(thinking)」が有効で、`t
 `PRIMARY_MODELS`/`LITE_MODELS` の該当行を削除し、後継モデルに置き換えてください。全滅すると
 「うまく応答できませんでした」しか返らなくなります。どのモデルが実在するかは
 <https://ai.google.dev/gemini-api/docs/models> で確認してください。
+
+**`gemini-2.5-flash-lite` は退役予定日を待たず、2026年9月時点で新規のAPIキー/プロジェクトでは
+既に404("no longer available to new users")になることが実運用で確認されたため、
+`LITE_MODELS` から削除済みです。** 姉妹モデルの `gemini-2.5-flash`(`PRIMARY_MODELS` 側)も
+同じ理由で新規ユーザー向けには既に使えなくなっている可能性があります。本生成で
+`[HTTP_404]` のエラーが出た場合は、同様に該当行を削除してください(退役日を待つ必要はありません)。
 
 ---
 
