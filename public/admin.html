@@ -135,6 +135,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 
   <section id="detailView" hidden>
     <button type="button" id="backBtn" class="icon-btn">← 一覧へ</button>
+    <button type="button" id="exportLogBtn" class="icon-btn">ログを出力</button>
+    <span id="exportLogMsg" class="count" hidden>コピーしました</span>
     <div id="sessionHeader" class="s-header"></div>
     <div id="intakeBlock" class="notes-block" hidden></div>
     <div id="notesBlock" class="notes-block" hidden></div>
@@ -165,6 +167,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var intakeBlockEl = $("#intakeBlock");
   var notesBlockEl = $("#notesBlock");
   var threadEl = $("#thread");
+  var exportLogBtn = $("#exportLogBtn");
+  var exportLogMsg = $("#exportLogMsg");
+  var currentDetail = null; // ログ出力用に、開いているセッションのsession/messagesを保持する
 
   var WEIGHT_JA = { rapport: "関係をつくる", main: "主訴を見極める", goal: "目標を立てる", plan: "作戦会議" };
   var REL_JA = { visitor: "ビジター", complainant: "コンプレイナント", customer: "カスタマー" };
@@ -409,6 +414,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   function openSession(id) {
     loadError.hidden = true;
     return api("admin_session_detail", { session_id: id }).then(function (body) {
+      currentDetail = body;
       renderSessionHeader(body.session);
       renderIntake(body.session);
       renderNotes(body.session.notes);
@@ -421,10 +427,99 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     });
   }
 
+  // ログ出力(構造化面接AI統合。00_統合版_構造化面接AIプロンプト.txt 9章「ログ出力ルール」を
+  // 参考に、心理士向けレビュー画面用に実装。生徒向け画面(page.tsx)には技法名等の内部判断を
+  // 一切出さないが、この画面は心理士が内部判断を見る前提の画面のため(CLAUDE.md 5.9)、
+  // relation/weight/mode等を含めたMarkdown表として出力する。
+  function mdEscape(v) {
+    return String(v === undefined || v === null ? "" : v).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+  }
+
+  function buildLogMarkdown(detail) {
+    var s = detail.session;
+    var msgs = detail.messages || [];
+    var lines = [];
+    lines.push("# 相談ログ(" + plainText(s.client_id_short) + ")");
+    lines.push("");
+    lines.push("- 期間: " + fmtDate(s.started_at) + " 〜 " + (s.closed_at ? fmtDate(s.closed_at) : "(継続中)"));
+    lines.push("- 関わりの型: " + (REL_JA[s.relation] || s.relation || "—") + " / 重心: " + (WEIGHT_JA[s.weight] || s.weight || "—"));
+    if (s.phase) lines.push("- フェーズ: " + (s.phase === "intake" ? "インテーク中" : "フェーズ2以降"));
+    if (s.chief_complaint_category) lines.push("- 主訴カテゴリ: " + (CATEGORY_JA[s.chief_complaint_category] || s.chief_complaint_category));
+    if (s.onset_context) lines.push("- 背景・きっかけ: " + s.onset_context);
+    if (s.distress_level) lines.push("- つらさスケール: " + s.distress_level + " / 5");
+    if (s.user_goal) lines.push("- 期待するゴール: " + s.user_goal);
+    if (s.recommended_mode && s.recommended_mode.length) {
+      lines.push("- 判定モード: " + s.recommended_mode.map(function (m) { return MODE_JA[m] || m; }).join(" + "));
+    }
+    lines.push("");
+    lines.push("| Turn | 発話者 | 発話内容 | 内部判断(AIのみ) |");
+    lines.push("|---|---|---|---|");
+
+    var turn = 0;
+    msgs.forEach(function (m) {
+      if (m.role === "user") turn++;
+      var speaker = m.role === "user" ? "生徒" : "AI";
+      var judgement = "";
+      if (m.role === "ai") {
+        if (m.crisis) {
+          judgement = "危機対応(固定応答)";
+        } else {
+          var parts = [];
+          if (m.relation) parts.push("型:" + (REL_JA[m.relation] || m.relation));
+          if (m.weight) parts.push("重心:" + (WEIGHT_JA[m.weight] || m.weight));
+          if (m.question_level) parts.push("問い:" + (QL_JA[m.question_level] || m.question_level));
+          if (m.role_kind) parts.push("役割:" + (RL_JA[m.role_kind] || m.role_kind));
+          if (m.mode && m.mode.length) parts.push("モード:" + m.mode.map(function (mm) { return MODE_JA[mm] || mm; }).join("+"));
+          judgement = parts.join(" / ");
+        }
+      }
+      lines.push("| " + turn + " | " + speaker + " | " + mdEscape(m.body) + " | " + mdEscape(judgement) + " |");
+    });
+
+    lines.push("");
+    lines.push("_出力日時: " + fmtDate(new Date().toISOString()) + "。心理士向けレビュー用のログです。生徒本人には内部判断(型・重心・モード等)を開示していません。_");
+    return lines.join("\n");
+  }
+
+  function plainText(v) { return String(v === undefined || v === null ? "" : v); }
+
+  exportLogBtn.addEventListener("click", function () {
+    if (!currentDetail) return;
+    var md = buildLogMarkdown(currentDetail);
+    var showMsg = function (text) {
+      exportLogMsg.textContent = text;
+      exportLogMsg.hidden = false;
+      setTimeout(function () { exportLogMsg.hidden = true; }, 2000);
+    };
+    var download = function () {
+      var blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "log-" + plainText(currentDetail.session.client_id_short) + ".md";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(md).then(function () {
+        showMsg("コピーしました");
+      }, function () {
+        download();
+        showMsg("コピーできなかったのでダウンロードしました");
+      });
+    } else {
+      download();
+      showMsg("ダウンロードしました");
+    }
+  });
+
   $("#backBtn").addEventListener("click", function () {
     detailView.hidden = true;
     listView.hidden = false;
     loadError.hidden = true;
+    currentDetail = null;
   });
 
   $("#refreshBtn").addEventListener("click", function () {
