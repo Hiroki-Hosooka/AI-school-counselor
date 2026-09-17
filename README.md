@@ -52,11 +52,15 @@ SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` �
 続けて `db/seed_knowledge_safety.sql` を実行(構造化面接AI統合 手順4。安全層のナレッジ)。
 
 **既にSupabaseプロジェクトを作成済みの場合も、`db/schema.sql` は毎回必ず再実行してください。**
-このファイルは `create table if not exists` / `add column if not exists` だけで書かれているため、
-既存のテーブルやデータには影響しません。逆に言うと、新しい seed ファイルだけを流すと、
-そのファイルが前提にしている列(例: `knowledge.mode`)がまだ無くて
-`column "mode" of relation "knowledge" does not exist` のようなエラーになります。
-迷ったら、他のSQLを実行する前にまず `db/schema.sql` から実行してください。
+このファイルは `create table if not exists` / `add column if not exists` / (ビューは
+`drop view if exists` + `create view`)だけで書かれているため、既存のテーブルやデータには
+影響しません。逆に言うと、コード側だけ更新してSupabase側で `db/schema.sql` を再実行し忘れると、
+アプリが前提にしている列やビューがまだ無い状態になり、
+`column "mode" of relation "knowledge" does not exist` や
+`column session_overview.phase does not exist` のような「column ... does not exist」エラーに
+なります。**この種のエラーを見たら、原因を個別に調べる前に、まず最新の `db/schema.sql` の
+全文をSupabaseのSQL Editorに貼って再実行してください。** それで直らない場合だけ、
+他の原因を疑ってください。
 
 確認:
 
