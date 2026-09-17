@@ -151,3 +151,13 @@ docs/backlog.md 1-3 に書いた5〜6種のペルソナそれぞれについて�
   PRIMARY_MODELSを使うことで「本番相当」を満たすことにした。
 - いずれも TEST_GEMINI_API_KEY 必須（本番キーへのフォールバックなし）。まだ実際の
   キー・DBでは実行できていない。
+- 2026年9月(構造化面接AI統合 手順5): scripts/test-persona-regression.mjs を更新。
+  - 手順4で route.ts に入れた subject(self/other)による危機分岐の振り分けが、この
+    テストスクリプトには反映されていなかった(手順4のときの見落とし)。risk==="crisis"
+    であれば無条件で固定応答にしていたのを、route.tsと同じく
+    `risk==="crisis" && subject==="self"` のときだけ固定応答にするよう修正した。
+  - sessions/messagesのintake列(phase/chief_complaint_category等)を読み書きするよう
+    追加し、buildSystem/applyIntakeUpdateにroute.tsと同じ形でsessステートを渡すようにした。
+    これにより、生徒役ペルソナとのロールプレイがフェーズ1(インテークのTurn1〜4)から
+    実際に始まるようになった(以前はフェーズの区別なく、常にフェーズ2相当の自由な
+    受け答えから始まっていた)。

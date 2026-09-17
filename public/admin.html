@@ -136,6 +136,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   <section id="detailView" hidden>
     <button type="button" id="backBtn" class="icon-btn">← 一覧へ</button>
     <div id="sessionHeader" class="s-header"></div>
+    <div id="intakeBlock" class="notes-block" hidden></div>
     <div id="notesBlock" class="notes-block" hidden></div>
     <div id="thread" class="thread"></div>
   </section>
@@ -161,6 +162,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var listEmpty = $("#listEmpty");
   var listCount = $("#listCount");
   var sessionHeaderEl = $("#sessionHeader");
+  var intakeBlockEl = $("#intakeBlock");
   var notesBlockEl = $("#notesBlock");
   var threadEl = $("#thread");
 
@@ -168,6 +170,14 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var REL_JA = { visitor: "ビジター", complainant: "コンプレイナント", customer: "カスタマー" };
   var QL_JA = { none: "問わず受け止めのみ", data: "第1層・事実を聞く", diagnostic: "第2層・仮説を確かめる", confrontational: "第3層・見立てで介入" };
   var RL_JA = { listen: "相談を受ける", assess: "査定する", inform: "情報を提供する" };
+  // 構造化面接AI統合 手順5。技法名は生徒には開示しないが、心理士向けのこの画面では表示してよい
+  // (CLAUDE.md 5.9)。
+  var MODE_JA = {
+    CBT: "認知行動療法(CBT)", SFBT: "解決志向(SFBT)", NARRATIVE: "ナラティヴ",
+    ASSERTION: "アサーション", LISTEN_ONLY: "傾聴", PROBLEM_SOLVING: "問題解決技法",
+    PSYCHOEDUCATION: "心理教育・ノーマライズ",
+  };
+  var CATEGORY_JA = { 1: "友達・人間関係", 2: "勉強・進路・部活", 3: "家族・家", 4: "性格・メンタル", 5: "漠然としたしんどさ" };
 
   function esc(v) {
     return String(v === undefined || v === null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -225,6 +235,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       var badges = "";
       if (s.has_crisis) badges += '<span class="badge warn">危機</span>';
       if (!s.closed_at) badges += '<span class="badge open">進行中</span>';
+      if (s.phase === "intake") badges += '<span class="badge">インテーク中</span>';
       if (s.unrated_count > 0) badges += '<span class="badge">未評価 ' + esc(s.unrated_count) + '</span>';
       return (
         '<div class="s-card' + (s.has_crisis ? " crisis" : "") + '" data-id="' + esc(s.id) + '">' +
@@ -265,6 +276,24 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     }, function (e) {
       if (e.message !== "unauthorized") showLoadError(e.message);
     });
+  }
+
+  // 構造化面接AI統合 手順5。フェーズ1(インテーク)で集めた情報とモード判定結果を表示する。
+  function renderIntake(s) {
+    var rows = [];
+    if (s.chief_complaint_category) rows.push(["主訴カテゴリ", CATEGORY_JA[s.chief_complaint_category] || s.chief_complaint_category]);
+    if (s.onset_context) rows.push(["背景・きっかけ", s.onset_context]);
+    if (s.distress_level) rows.push(["つらさスケール", s.distress_level + " / 5"]);
+    if (s.physical_mental_symptoms) rows.push(["心身の症状", s.physical_mental_symptoms]);
+    if (s.user_goal) rows.push(["期待するゴール", s.user_goal]);
+    if (typeof s.ambivalence_detected === "boolean") rows.push(["両価性", s.ambivalence_detected ? "あり" : "無し"]);
+    if (s.recommended_mode && s.recommended_mode.length) {
+      rows.push(["判定モード", s.recommended_mode.map(function (m) { return MODE_JA[m] || m; }).join(" + ")]);
+    }
+    if (!rows.length) { intakeBlockEl.hidden = true; intakeBlockEl.innerHTML = ""; return; }
+    intakeBlockEl.hidden = false;
+    intakeBlockEl.innerHTML = "<h5>インテーク(" + (s.phase === "intake" ? "進行中" : "完了") + ")</h5><dl>" +
+      rows.map(function (kv) { return "<dt>" + esc(kv[0]) + "</dt><dd>" + esc(kv[1]) + "</dd>"; }).join("") + "</dl>";
   }
 
   function renderNotes(notes) {
@@ -381,6 +410,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     loadError.hidden = true;
     return api("admin_session_detail", { session_id: id }).then(function (body) {
       renderSessionHeader(body.session);
+      renderIntake(body.session);
       renderNotes(body.session.notes);
       renderMessages(body.messages || []);
       listView.hidden = true;

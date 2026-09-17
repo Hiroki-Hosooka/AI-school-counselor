@@ -247,7 +247,12 @@ group by 1 order by n desc;
 
 -- 管理画面(admin.html)用:セッションごとの集計。
 -- ターン数(AI発言数)・未評価件数(危機対応を除く未評価のAI発言数)・危機の有無。
-create or replace view session_overview as
+-- phase列(9.5節)は9.2節(sessions.phase追加)より前のこの位置ではまだ参照できないため、
+-- ここでは含めない。drop + create にしているのは、9.4のpending_safetyと同じ理由
+-- (create or replace view は列の追加・削除・並び替えを含む変更を許さないため、
+-- 9.5節での再定義後にこのschema.sql全体を再実行しても失敗しないようにするため)。
+drop view if exists session_overview;
+create view session_overview as
 select
   s.id, s.client_id, s.started_at, s.last_at, s.closed_at, s.relation, s.weight,
   count(m.seq) filter (where m.role = 'ai')                                   as turn_count,
@@ -375,3 +380,21 @@ from safety_events e
 left join sessions s on s.id = e.session_id
 where e.risk <> 'none' and e.handled = false
 order by e.created_at desc;
+
+-- ----------------------------------------------------------------------------
+-- 9.5 admin.html の一覧に、インテーク中かどうかを出す(手順5)
+--
+--  session_overview は2節で定義済みで、phase列(9.2)より前にあるため、そのままでは
+--  参照できない。9.4のpending_safetyと同じ理由でdrop + createを使う。
+-- ----------------------------------------------------------------------------
+drop view if exists session_overview;
+create view session_overview as
+select
+  s.id, s.client_id, s.started_at, s.last_at, s.closed_at, s.relation, s.weight,
+  count(m.seq) filter (where m.role = 'ai')                                   as turn_count,
+  count(m.seq) filter (where m.role = 'ai' and not m.crisis and m.rating is null) as unrated_count,
+  coalesce(bool_or(m.crisis), false)                                          as has_crisis,
+  s.phase
+from sessions s
+left join messages m on m.session_id = s.id
+group by s.id;

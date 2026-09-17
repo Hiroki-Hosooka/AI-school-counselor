@@ -44,7 +44,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { LITE_MODELS, callGemini, classify, CRISIS_REPLY } from "@/classify.mjs";
 import {
-  loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, applyTurnUpdate,
+  loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
+  applyTurnUpdate, applyIntakeUpdate,
 } from "@/generate.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -196,7 +197,7 @@ export async function POST(req: Request) {
     if (action === "admin_sessions") {
       if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
       const { data, error } = await db.from("session_overview")
-        .select("id,client_id,started_at,last_at,closed_at,relation,weight,turn_count,unrated_count,has_crisis")
+        .select("id,client_id,started_at,last_at,closed_at,relation,weight,turn_count,unrated_count,has_crisis,phase")
         .order("started_at", { ascending: false });
       if (error) throw new Error(error.message);
       const sessions = (data ?? []).map((s) => ({
@@ -205,6 +206,7 @@ export async function POST(req: Request) {
         started_at: s.started_at, last_at: s.last_at, closed_at: s.closed_at,
         relation: s.relation, weight: s.weight,
         turn_count: s.turn_count, unrated_count: s.unrated_count, has_crisis: s.has_crisis,
+        phase: s.phase,
       }));
       return json({ sessions });
     }
@@ -214,11 +216,11 @@ export async function POST(req: Request) {
       const sessionId = String(payload.session_id ?? "").trim();
       if (!sessionId) return json({ error: "session_id が必要です" }, 400);
       const { data: s } = await db.from("sessions")
-        .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes")
+        .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode")
         .eq("id", sessionId).maybeSingle();
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const { data: msgs } = await db.from("messages")
-        .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at")
+        .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected")
         .eq("session_id", sessionId).order("seq");
       const allUsedIds = Array.from(new Set((msgs ?? []).flatMap((m) => m.used ?? [])));
       const knowledgeMap: Record<string, { id: string; src: string; cat: string; body: string }> = {};
@@ -235,6 +237,10 @@ export async function POST(req: Request) {
           id: s.id, client_id_short: String(s.client_id).slice(0, 8),
           started_at: s.started_at, last_at: s.last_at, closed_at: s.closed_at,
           relation: s.relation, weight: s.weight, notes: s.notes,
+          phase: s.phase, chief_complaint_category: s.chief_complaint_category,
+          onset_context: s.onset_context, distress_level: s.distress_level,
+          physical_mental_symptoms: s.physical_mental_symptoms, user_goal: s.user_goal,
+          ambivalence_detected: s.ambivalence_detected, recommended_mode: s.recommended_mode,
         },
         messages,
       });
@@ -307,8 +313,10 @@ export async function POST(req: Request) {
         return json({ error: "しばらく時間をおいてから、またどうぞ。", rate_limited: true }, 429);
       }
 
+      // phase以下はフェーズ1(インテーク)用(構造化面接AI統合 手順5)。
+      // phase2に進んだセッションでは、applyIntakeUpdate()がこれ以上変更しない。
       const { data: sess } = await db.from("sessions")
-        .select("id,weight,relation,turns_since_summary,notes")
+        .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode")
         .eq("id", sessionId).single();
       if (!sess) return json({ error: "セッションが見つかりません" }, 404);
 
@@ -366,14 +374,23 @@ export async function POST(req: Request) {
 
       const { data: memory } = await db.from("person_memory")
         .select("summary").eq("client_id", clientId).maybeSingle();
+      // sessをそのままintake引数として渡す(phase/chief_complaint_category等の列名が
+      // buildSystem/applyIntakeUpdateが期待する形と一致するように選択している)。
       const system = buildSystem(
-        rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary, safetyContext,
+        rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
+        safetyContext, sess,
       );
 
       const { out, flags } = await generateReply(system, messages);
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);
+      // フェーズ1(インテーク)のスロット更新。sess.phase!=="intake"なら空オブジェクト
+      // (構造化面接AI統合 手順5)。sessionsへは差分(intakePatch)だけを書き込み、
+      // messagesへはこのターン時点の現在値(mergedIntake)をスナップショットとして残す
+      // (weight/relationと同じ、db/schema.sql 9.3の意図)。
+      const intakePatch = applyIntakeUpdate(sess, out);
+      const mergedIntake = { ...sess, ...intakePatch };
 
       const { data: aiMsg } = await db.from("messages").insert({
         session_id: sessionId, role: "ai", body: out.reply,
@@ -381,11 +398,15 @@ export async function POST(req: Request) {
         summarized: out.did_summarize === true,
         hypothesis: out.hypothesis ?? null, why: out.why ?? null,
         used: out.used ?? chunks.map((c: { id: string }) => c.id), flags,
+        distress_level: mergedIntake.distress_level ?? null,
+        mode: mergedIntake.recommended_mode ?? [],
+        ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
       }).select("seq").single();
 
       await db.from("sessions").update({
         weight, relation, turns_since_summary: since, notes,
         last_at: new Date().toISOString(),
+        ...intakePatch,
       }).eq("id", sessionId);
 
       // 参照したナレッジは本文も返す(管理画面で見せるため)

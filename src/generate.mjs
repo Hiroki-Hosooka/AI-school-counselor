@@ -59,6 +59,10 @@ export function knowledgeVersion(rows) {
   return `${rows.length}件 / ${latest.slice(0, 19)}`;
 }
 
+// フェーズ2で選ばれうる7モード(構造化面接AI統合)。MIは横断的技法のためここには含めない
+// (db/schema.sql 9.2 の sessions.recommended_mode の CHECK 制約と一致させること)。
+export const MODES = ["CBT", "SFBT", "NARRATIVE", "ASSERTION", "LISTEN_ONLY", "PROBLEM_SOLVING", "PSYCHOEDUCATION"];
+
 // Tier B(曖昧な危機サイン)/ 第三者の安全懸念のターンで、通常のタグ照合とは無関係に
 // 必ず参照させたい知識のID(構造化面接AI統合 手順4)。
 // tierB: T27(生身の人に言うことへの障壁を探る問い)/ T30(情報を詰め込みすぎない)/
@@ -135,7 +139,95 @@ const SAFETY_CONTEXT_BLOCKS = {
 ・相談者自身にも同じようなサインがないかは、詰問にならない範囲でさりげなく気にかけてよい`,
 };
 
-export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext) {
+// フェーズ1(インテーク)の進捗を文章化する(構造化面接AI統合 手順5)。
+// 00_統合版_構造化面接AIプロンプト.txt 14〜15章のTurn1〜4・モード判定基準をほぼそのまま
+// 採用しつつ、絵文字は使わない(既存の「絵文字を使わない」原則。番号は絵文字ではなく
+// 半角数字にしている)。intakeはsessionsの列(chief_complaint_category等)をそのまま渡す想定。
+function buildIntakeBlock(intake) {
+  const filled = [];
+  if (intake?.chief_complaint_category) filled.push(`主訴カテゴリ=${intake.chief_complaint_category}`);
+  if (intake?.onset_context) filled.push(`背景・きっかけ=${intake.onset_context}`);
+  if (intake?.distress_level) filled.push(`つらさスケール=${intake.distress_level}`);
+  if (intake?.physical_mental_symptoms) filled.push(`心身症状=${intake.physical_mental_symptoms}`);
+  if (intake?.user_goal) filled.push(`期待するゴール=${intake.user_goal}`);
+  const filledText = filled.length ? filled.join(" / ") : "(まだ無し)";
+
+  return `# 現在のフェーズ:インテーク(初回の受付・最初の数ターン)
+まだ関係性ができる前です。目的は、そのあとの関わり方を決めるための最低限の情報を、
+負担をかけずに集めること。1ターンにつき1つずつ、下の順で、まだ埋まっていない項目を尋ねてください。
+**危機のサインが出た場合は、この手順よりも安全確認(既に別途指示している内容)を常に優先してください。**
+
+## すでに聞けている項目(再度聞かない)
+${filledText}
+
+## 進め方(上から、まだ埋まっていない項目へ)
+1. 主訴カテゴリ:「今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね
+   (一言でもOKだよ)」1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと
+   4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい
+2. 背景・きっかけ:選んだテーマへの共感を述べたうえで、いつ頃からか・きっかけを尋ねる。
+   カテゴリに応じて視点を変える(人間関係→誰と・どんな場面、学業→科目や場面か将来のことか、
+   家族→どの関係性・頻度、性格→どんなところが気になるか、漠然→無理に特定させず輪郭を
+   言葉にする手伝いをする)
+3. つらさスケール:「今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに
+   一番近いかな?(数字だけでも全然大丈夫だよ)」1:少し気になる 2:まあまあモヤモヤする
+   3:かなりつらい 4:限界に近い 5:もう耐えられない。眠れない・胸が苦しい等の心身の様子も
+   聞いてよい。**4か5と答えた場合は、次に進む前に必ず、曖昧な危機サインへの配慮
+   (受け止めを優先し、二択で程度を確認する質問はしない)を優先してください。**
+4. 期待するゴール:「今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?」
+
+## インテーク完了時の内部判定(ユーザーには見せない)
+主訴カテゴリ・背景・つらさスケール・ゴールの4つが埋まったら、出力の"intake"に
+recommended_mode(複合可)を入れ、intake_completeをtrueにしてください。判定基準:
+- LISTEN_ONLY:「ただ聞いてほしい」という要望、または苦痛度が高い(4〜5)
+- CBT:出来事の捉え方に極端な偏りがあり、整理が必要
+- SFBT:現状を打開する工夫や第一歩を、本人の資源・成功体験から見つけたい
+- ASSERTION:言い方・断り方・伝え方の具体的技術を学びたい
+- NARRATIVE:自己否定感が強く、問題と自分を切り離して捉え直したい
+- PROBLEM_SOLVING:勉強法・時間配分等、具体的・実務的な問題を整理し実行可能な手立てを立てたい
+- PSYCHOEDUCATION:動悸・不眠等の心身反応があり、まず「自然な反応だ」という理解を必要としている
+複数の要望がある場合は一つに断定せず複合してよい(例:PSYCHOEDUCATION+CBT等)。
+**これらのモード名(CBT・SFBT等)を、そのままユーザーに開示しないこと。**
+
+返答の文面は、上のスクリプトの言い回しをそのまま貼るのではなく、これまでのやりとりに
+合わせて自然な言葉に調整してよい。ただし数字での選択肢の提示(1・3の質問)は残すこと。`;
+}
+
+// フェーズ2(intake完了後)の進め方。既存の非構造化AIの自由な進め方をそのまま残したもの
+// (構造化面接AI統合 手順5以前の唯一の挙動)。モード別プロトコルの中身は手順6で追加する。
+const PHASE2_FLOW_BLOCK = `# 進め方
+決まった手順はありません。台本に沿って段階を消化するのではなく、相手の反応を見て毎回その場で決めます。
+重心として「関係をつくる」「主訴を見極める」「目標を立てる」「作戦会議」の四つがありますが、
+これは順序ではなく重なり合うものです。行き来してかまいません。
+
+毎ターン、次を自分で判断してください。
+1. 関わりの型(relation)
+   visitor: 問題を表明しない/解決を期待していない。→ 解決へ急がず、来てくれたこと自体をねぎらう。行動を求めない。雑談に逃げてもよい。
+   complainant: 不満はあるが、自分は変えられない・相手が悪いと感じている。→ 不満に共感するが同調はしない。本人に行動を求めない。
+   customer: 自分の問題として動く用意がある。→ ここで初めて具体的な行動の話が生きる。
+2. 問いの層(question_level)— none / data / diagnostic / confrontational。
+   層が上がるほど関係のできぐあいが要ります。迷ったら下の層に留めるか、問わずに受け止めだけにする。
+3. 役割(role)— listen / assess / inform。inform は慎重に。
+4. 重心(weight)— rapport / main / goal / plan。
+   plan(作戦会議)は、本人が実際に動く気になったときだけ。
+   「誰に」「いつ」「どう切り出すか」を一緒に具体化する段階です。
+   いきなりドーンと話すことはしないもの。やれそうなイメージを持ってもらうのが目的で、
+   手法を並べ立てる場ではありません。`;
+
+// フェーズ1(intake)の間だけ出力JSONに追加させるフィールド。
+// route.tsのapplyIntakeUpdate()がこれを読んでsessionsの列に反映する。
+const INTAKE_OUTPUT_SCHEMA = `,
+  "intake": {
+    "chief_complaint_category": 1から5の数値。まだ聞けていなければnull,
+    "onset_context": "時期・きっかけの要約。まだなら空文字",
+    "distress_level": 1から5の数値。まだ聞けていなければnull,
+    "physical_mental_symptoms": "心身の症状の要約。無ければ空文字",
+    "user_goal": "期待するゴールの要約。まだなら空文字",
+    "ambivalence_detected": true または false,
+    "recommended_mode": ["CBT等、複合可。判定前は空配列"],
+    "intake_complete": true または false
+  }`;
+
+export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake) {
   const principles = rows.filter((k) => k.cat === "principle")
     .map((k) => `・${k.body}(${k.src})`).join("\n");
   const ngAt = (lv) =>
@@ -147,6 +239,12 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
     ? "★ しばらく区切りがありません。この辺りで「今までの話、一回まとめてみようか」と提案し、出てきたことを並べ直すターンを取ることを検討してください。ズレを直す機会です。"
     : "いまはまだ区切りのタイミングではありません。";
   const safetyBlock = SAFETY_CONTEXT_BLOCKS[safetyContext] ?? "";
+  // phase: intake(Turn1〜4のスロットフィリング) | phase2(それ以降)。
+  // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
+  // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。
+  const phase = intake?.phase === "intake" ? "intake" : "phase2";
+  const flowBlock = phase === "intake" ? buildIntakeBlock(intake) : PHASE2_FLOW_BLOCK;
+  const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : "";
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
 拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、
@@ -182,24 +280,7 @@ ${ngAt(1)}
 ・技法や理論の名前を出さない。
 ・一言だけで終わらせない。受けたら、次につながる一言を必ず添える。
 ${safetyBlock}
-# 進め方
-決まった手順はありません。台本に沿って段階を消化するのではなく、相手の反応を見て毎回その場で決めます。
-重心として「関係をつくる」「主訴を見極める」「目標を立てる」「作戦会議」の四つがありますが、
-これは順序ではなく重なり合うものです。行き来してかまいません。
-
-毎ターン、次を自分で判断してください。
-1. 関わりの型(relation)
-   visitor: 問題を表明しない/解決を期待していない。→ 解決へ急がず、来てくれたこと自体をねぎらう。行動を求めない。雑談に逃げてもよい。
-   complainant: 不満はあるが、自分は変えられない・相手が悪いと感じている。→ 不満に共感するが同調はしない。本人に行動を求めない。
-   customer: 自分の問題として動く用意がある。→ ここで初めて具体的な行動の話が生きる。
-2. 問いの層(question_level)— none / data / diagnostic / confrontational。
-   層が上がるほど関係のできぐあいが要ります。迷ったら下の層に留めるか、問わずに受け止めだけにする。
-3. 役割(role)— listen / assess / inform。inform は慎重に。
-4. 重心(weight)— rapport / main / goal / plan。
-   plan(作戦会議)は、本人が実際に動く気になったときだけ。
-   「誰に」「いつ」「どう切り出すか」を一緒に具体化する段階です。
-   いきなりドーンと話すことはしないもの。やれそうなイメージを持ってもらうのが目的で、
-   手法を並べ立てる場ではありません。
+${flowBlock}
 
 # 区切りの判断
 ${sum}
@@ -253,7 +334,7 @@ ${know}
     "主訴の候補": "", "言葉にならない言葉": "", "これまでの解決努力": "",
     "例外・うまくいっている時": "", "本人のリソース": "",
     "触れない領域": "", "サポート資源": ""
-  }
+  }${intakeSchema}
 }
 notes には氏名・学校名・住所などの識別情報を書かないこと。わからない項目は空文字にする。`;
 }
@@ -320,4 +401,43 @@ export function applyTurnUpdate(sess, out) {
   const relation = ["visitor", "complainant", "customer"].includes(out.relation) ? out.relation : sess.relation;
   const turns_since_summary = out.did_summarize === true ? 0 : (sess.turns_since_summary ?? 0) + 1;
   return { weight, relation, turns_since_summary, notes };
+}
+
+// ============================================================================
+//  フェーズ1(インテーク)のスロット更新(構造化面接AI統合 手順5)。
+//  applyTurnUpdate()と同じくroute.ts/test-persona-regression.mjsで共通化する。
+//  sess.phase!=="intake"なら何もしない(phase2ではintakeスロットはもう変化しない)。
+//
+//  モデルの自己申告(intake_complete)だけを信用せず、主訴カテゴリ・背景・つらさ
+//  スケール・ゴールの4つの核となるスロットが実際に(今回のpatch込みで)揃って
+//  いるかをサーバ側で確認してからphase2へ進める。ハルシネーションで早期に
+//  intake_completeがtrueになっても、勝手にフェーズが進まないようにするため。
+// ============================================================================
+export function applyIntakeUpdate(sess, out) {
+  if (sess.phase !== "intake") return {};
+  const i = out.intake ?? {};
+  const patch = {};
+  if (Number.isInteger(i.chief_complaint_category) && i.chief_complaint_category >= 1 && i.chief_complaint_category <= 5) {
+    patch.chief_complaint_category = i.chief_complaint_category;
+  }
+  if (i.onset_context) patch.onset_context = String(i.onset_context);
+  if (Number.isInteger(i.distress_level) && i.distress_level >= 1 && i.distress_level <= 5) {
+    patch.distress_level = i.distress_level;
+  }
+  if (i.physical_mental_symptoms) patch.physical_mental_symptoms = String(i.physical_mental_symptoms);
+  if (i.user_goal) patch.user_goal = String(i.user_goal);
+  if (typeof i.ambivalence_detected === "boolean") patch.ambivalence_detected = i.ambivalence_detected;
+  if (Array.isArray(i.recommended_mode)) {
+    const modes = i.recommended_mode.filter((m) => MODES.includes(m));
+    if (modes.length) patch.recommended_mode = modes;
+  }
+
+  const merged = { ...sess, ...patch };
+  const coreFilled = merged.chief_complaint_category != null && merged.onset_context
+    && merged.distress_level != null && merged.user_goal;
+  if (coreFilled && merged.recommended_mode?.length) {
+    patch.phase = "phase2";
+    patch.intake_completed_at = new Date().toISOString();
+  }
+  return patch;
 }

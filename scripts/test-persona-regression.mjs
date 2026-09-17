@@ -33,7 +33,8 @@ import path from "node:path";
 import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env.mjs";
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
-  getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, applyTurnUpdate,
+  getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
+  applyTurnUpdate, applyIntakeUpdate,
 } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -148,9 +149,12 @@ for (const persona of personas) {
   const clientId = `TEST-PERSONA-${persona.id}-${runId}`;
   const personaSystem = personaSystemPrompt(persona);
 
+  // phase以下は構造化面接AI統合 手順5(フェーズ1インテーク)用。新規セッションは
+  // db/schema.sqlのdefaultによりphase='intake'で作られる。
   const { data: sessionRow, error: sessionErr } = await db.from("sessions")
     .insert({ client_id: clientId, knowledge_version: version })
-    .select("id,weight,relation,turns_since_summary,notes").single();
+    .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode")
+    .single();
   if (sessionErr || !sessionRow) {
     console.error(`[${persona.id}] セッション作成に失敗しました:`, sessionErr);
     continue;
@@ -158,7 +162,18 @@ for (const persona of personas) {
   const sessionId = sessionRow.id;
   console.log(`[${persona.id}] ${persona.label ?? ""} session=${sessionId} client_id=${clientId}`);
 
-  let sessState = { weight: sessionRow.weight, relation: sessionRow.relation, turns_since_summary: sessionRow.turns_since_summary, notes: sessionRow.notes ?? {} };
+  let sessState = {
+    weight: sessionRow.weight, relation: sessionRow.relation,
+    turns_since_summary: sessionRow.turns_since_summary, notes: sessionRow.notes ?? {},
+    phase: sessionRow.phase,
+    chief_complaint_category: sessionRow.chief_complaint_category,
+    onset_context: sessionRow.onset_context,
+    distress_level: sessionRow.distress_level,
+    physical_mental_symptoms: sessionRow.physical_mental_symptoms,
+    user_goal: sessionRow.user_goal,
+    ambivalence_detected: sessionRow.ambivalence_detected,
+    recommended_mode: sessionRow.recommended_mode,
+  };
   const history = []; // { speaker: 'student'|'counselor', text, crisis? }
   const turnLog = [];
   let crisisTurns = 0;
@@ -180,7 +195,10 @@ for (const persona of personas) {
     const safety = await classifyWithRetry(studentText);
     await sleep(1500);
 
-    if (safety.risk === "crisis") {
+    // 構造化面接AI統合 手順4より、risk==="crisis"でもsubject==="self"のときだけ
+    // 固定応答(route.tsと同じ分岐)。それ以外(watch/第三者)はsafetyContext付きで生成する。
+    const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
+    if (isSelfCrisis) {
       crisisTurns++;
       await db.from("messages").insert({
         session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
@@ -188,18 +206,28 @@ for (const persona of personas) {
       await db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId);
       history.push({ speaker: "counselor", text: CRISIS_REPLY, crisis: true });
       turnLog.push({ turn, student: studentText, crisis: true, counselor: CRISIS_REPLY });
-      console.log(`  [T${turn}] → 危機分岐(固定応答。通知・safety_eventsへの記録は行っていません)`);
+      console.log(`  [T${turn}] → 危機分岐(本人・固定応答。通知・safety_eventsへの記録は行っていません)`);
       continue;
     }
 
-    const chunks = retrieve(rows, studentText, sessState.weight, sessState.relation);
-    const system = buildSystem(rows, chunks, sessState.weight, sessState.notes, sessState.turns_since_summary, null);
+    const safetyContext = safety.risk === "watch" ? "tierB"
+      : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
+      : null;
+    const chunks = retrieve(rows, studentText, sessState.weight, sessState.relation, undefined, safetyContext);
+    const system = buildSystem(
+      rows, chunks, sessState.weight, sessState.notes, sessState.turns_since_summary, null,
+      safetyContext, sessState,
+    );
     const counselorMessages = history
       .filter((h) => !h.crisis)
       .map((h) => ({ role: h.speaker === "student" ? "user" : "model", parts: [{ text: h.text }] }));
 
     const { out, flags } = await generateWithRetry(system, counselorMessages);
     const updated = applyTurnUpdate(sessState, out);
+    // フェーズ1(インテーク)のスロット更新(構造化面接AI統合 手順5)。route.tsと同じ、
+    // 差分(intakePatch)をsessionsへ、このターン時点の現在値(mergedIntake)をmessagesへ。
+    const intakePatch = applyIntakeUpdate(sessState, out);
+    const mergedIntake = { ...sessState, ...intakePatch };
 
     await db.from("messages").insert({
       session_id: sessionId, role: "ai", body: out.reply,
@@ -208,21 +236,25 @@ for (const persona of personas) {
       summarized: out.did_summarize === true,
       hypothesis: out.hypothesis ?? null, why: out.why ?? null,
       used: out.used ?? chunks.map((c) => c.id), flags,
+      distress_level: mergedIntake.distress_level ?? null,
+      mode: mergedIntake.recommended_mode ?? [],
+      ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
     });
     await db.from("sessions").update({
       weight: updated.weight, relation: updated.relation,
       turns_since_summary: updated.turns_since_summary, notes: updated.notes,
       last_at: new Date().toISOString(),
+      ...intakePatch,
     }).eq("id", sessionId);
 
-    sessState = updated;
+    sessState = { ...sessState, ...updated, ...intakePatch };
     history.push({ speaker: "counselor", text: out.reply });
     turnLog.push({
       turn, student: studentText, counselor: out.reply,
       weight: updated.weight, relation: updated.relation,
       question_level: out.question_level, flags,
     });
-    console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
+    console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation} phase=${mergedIntake.phase}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
     await sleep(1500);
   }
 
@@ -234,6 +266,7 @@ for (const persona of personas) {
     turns_completed: turnLog.length, crisis_turns: crisisTurns,
     stopped_early: stoppedEarly,
     final_weight: sessState.weight, final_relation: sessState.relation,
+    final_phase: sessState.phase, recommended_mode: sessState.recommended_mode ?? [],
     flagged_turns: turnLog.filter((t) => t.flags && t.flags.length).length,
     turn_log: turnLog,
   });
@@ -245,7 +278,7 @@ const finishedAt = new Date();
 console.log("=== まとめ ===");
 console.log(`ナレッジ世代: ${version}`);
 for (const r of personaReports) {
-  console.log(`  [${r.persona}] session=${r.session_id} 完了${r.turns_completed}/${TURNS}ターン 危機分岐${r.crisis_turns}回 flags発生${r.flagged_turns}回 最終relation=${r.final_relation}${r.stopped_early ? ` (${r.stopped_early})` : ""}`);
+  console.log(`  [${r.persona}] session=${r.session_id} 完了${r.turns_completed}/${TURNS}ターン 危機分岐${r.crisis_turns}回 flags発生${r.flagged_turns}回 最終relation=${r.final_relation} phase=${r.final_phase}${r.recommended_mode.length ? ` mode=${r.recommended_mode.join("+")}` : ""}${r.stopped_early ? ` (${r.stopped_early})` : ""}`);
 }
 console.log("\nadmin.html でセッションIDを検索するか、一覧から探して会話を確認してください。");
 
