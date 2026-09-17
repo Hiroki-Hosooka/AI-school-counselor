@@ -44,9 +44,12 @@ let cache = null;
 
 export async function loadKnowledge(db = getDb()) {
   if (cache && Date.now() - cache.at < 60_000) return cache.rows;
+  // mode列(手順6でretrieve()のモード一致ブーストに使う)を選択リストに追加。
+  // これを忘れるとk.modeが常にundefinedになり、ブーストが機能しないまま気づけない
+  // (ローカルPostgresでの検証で発覚)。
   const { data, error } = await db
     .from("knowledge")
-    .select("id,src,school,cat,lv,weight,tags,body,updated_at")
+    .select("id,src,school,cat,lv,weight,tags,body,updated_at,mode")
     .eq("active", true);
   if (error) throw new Error("ナレッジを読めませんでした: " + error.message);
   cache = { at: Date.now(), rows: data ?? [] };
@@ -79,14 +82,17 @@ const SAFETY_KNOWLEDGE_IDS = {
 // 件数が1000を超えたら pgvector + 全文検索のハイブリッドに差し替える(CLAUDE.md 第7節)。
 // safetyContext: null(通常) | "tierB" | "thirdParty"。route.ts が classify() の risk/subject
 // から算出して渡す(両方が同時に真になることはない。risk は単一の値のため)。
+// modes: フェーズ2で判定されたrecommended_mode配列(構造化面接AI統合 手順6)。null/[]なら
+// 従来通りモードによるブーストは行わない(intake中や、モード判定前のフォールバック呼び出し)。
 // オプション引数ではなく素の位置引数にしているのは、このファイルがTypeScriptの型チェック
 // 対象外(.mjs)であるため、デフォルト値付きの分割代入オプション引数だと、呼び出し元(.ts)から
 // 見た推論結果が過度に狭く/欠けた型になり、route.tsのビルドがコケることがあるため
 // (n未使用ならundefinedを渡す。既存の呼び出し元はどれもnもsafetyContextも指定していない)。
-export function retrieve(rows, text, weight, relation, n, safetyContext) {
+export function retrieve(rows, text, weight, relation, n, safetyContext, modes) {
   const limit = n ?? 9;
   const pool = rows.filter((k) => k.cat !== "principle" && k.cat !== "ng");
   const forceIds = safetyContext ? SAFETY_KNOWLEDGE_IDS[safetyContext] ?? [] : [];
+  const modeList = Array.isArray(modes) ? modes : [];
   return pool
     .map((k) => {
       let s = 0;
@@ -94,6 +100,11 @@ export function retrieve(rows, text, weight, relation, n, safetyContext) {
       if (k.cat === "verbatim") s += 1.2;
       if (k.weight === weight) s += 1.5;
       if (k.weight === "any") s += 0.4;
+      // mode一致は控えめな加点にとどめる。既存140件はmode=nullで遡及付与していないため
+      // (db/schema.sql 9.1)、ここを強くしすぎると出典「技」(未検証の理論資料)が
+      // 出典「嶋石」の逐語より機械的に上位に来かねない。優先順位の最終判断は
+      // buildSystemの「参照できる知識」の指示文(逐語優先)に委ねる。
+      if (k.mode && modeList.includes(k.mode)) s += 2;
       if (relation === "visitor" && k.id === "S1") s += 4;
       if (relation === "complainant" && k.id === "S2") s += 4;
       if (relation === "customer" && k.id === "S3") s += 4;
@@ -206,8 +217,106 @@ recommended_mode(複合可)を入れ、intake_completeをtrueにしてくださ�
 合わせて自然な言葉に調整してよい。ただし数字での選択肢の提示(1・3の質問)は残すこと。`;
 }
 
+// フェーズ2:モード別プロトコルの「進み方の骨格」(構造化面接AI統合 手順6)。
+// 00_統合版_構造化面接AIプロンプト.txt 17章を、要点を保ったまま短く言い換えたもの。
+// db/seed_knowledge_structured.sql(手順3)のコメントに書いた通り、17章の質問例文は
+// ナレッジ行にせず、ここでプロンプト側の「進み方」として持つ、という手順3時点からの計画に沿う。
+// ここに載せた例文はあくまで最後の補完(buildSystemの「参照できる知識」の指示で、
+// 既存の嶋/石の逐語を優先させる。手順6の設計方針①)。MIは横断的技法なので独立の
+// ブロックにせず、「全体を通して守ること」に両価性への対応として組み込んでいる。
+const MODE_STAGE_BLOCKS = {
+  SFBT: `SFBT寄りの進め方(解決志向。本人の資源・成功体験から一歩を探す):
+①望ましい未来を具体的に描いてもらう→②例外(うまくいっていた・マシだった瞬間)を深掘りする
+(見つけたら次の話題に流さず、「その時と何が違ったか」まで言語化してもらう)→③本人の工夫を
+そこから抽出する(AIから提案しない)→④今の状態を1〜5のスケールで確認し、そこからほんの
+少し(+0.5〜1点)良くなるとしたら何が変わっていそうかを聞く。
+例文(該当する逐語が無いときのみ参考に):「これまでの中で、少しだけうまくいってた瞬間って
+あったかな?」「そこから少し良くなるとしたら、何が変わっていそう?」`,
+  CBT: `CBT寄りの進め方(出来事の捉え方の整理。人ではなく考えを扱う):
+①その時頭に浮かんだ考え(自動思考)を言葉にしてもらう→②「100%それだけが理由か」
+「友達が同じ状況ならなんて声をかけるか」等、根拠と反証を一緒に検証する→③しんどくならない
+別の捉え方を、答えを与えず本人に探してもらう→④(本人が望めば)試してみたいことを本人に選んでもらう。
+「あなたはこう考えたんだね」という捉え方への言及にとどめ、人格を評価しない。
+例文(該当する逐語が無いときのみ参考に):「その時、一番強く感じた考えって何だった?」`,
+  NARRATIVE: `NARRATIVE寄りの進め方(問題と本人を切り離して捉え直す。自己否定感が強い時に有効):
+①その「しんどさ」を、本人の内面ではなく外側にある何かとして名前をつけてもらう(外在化)
+→②その「問題」が生活のどんな場面に入り込んでいるかを聞く→③その「問題」の影響が
+あまりなかった瞬間(ユニークな結果)を見つける→④その瞬間の本人が大事にしていたことを言葉にし、
+新しい自己像として一緒に紡ぐ。茶化す意図ではないと伝わる、真摯なトーンを保つ。
+例文(該当する逐語が無いときのみ参考に):「その『しんどさ』に名前をつけるなら、どんな感じ?」`,
+  ASSERTION: `ASSERTION寄りの進め方(伝え方・断り方の具体的な工夫。技法名・4分類そのものは出さず、
+自然な一問一答として展開する):
+①誰に・どんな場面で・何を伝えたいかを具体化→②今の伝え方の傾向(我慢しがち/つい強く言う等)
+を確認→③状況の描写・その時の気持ち・本当はどうしてほしかったか・伝えたらどうなりそうか、
+の順で自然に聞く→④次に試せそうな一言を本人の言葉で言語化してもらう。
+身近な大人に相談する話なら、技法として説明せず「誰に」「いつ」を具体的に一緒に考える
+「作戦会議」の軽いフレーミングにする。
+例文(該当する逐語が無いときのみ参考に):「それを伝えたら、どうなりそう?」`,
+  LISTEN_ONLY: `LISTEN_ONLY寄りの進め方(苦痛度が高い、または「聞いてほしい」という要望が明確な場合):
+繰り返し(感情の反射)・明確化・支持を中心に使い、助言・分析・解決策の提示はしない。
+本人が自発的に「どうしたらいいか考えたい」等、進め方を変えたい様子を見せた場合に限り、
+他の進め方への移行を提案してよい(こちらから一方的に切り替えない)。その場合のみ出力の
+"mode_update"に新しい配列を入れる(希望していなければ空配列のまま)。`,
+  PROBLEM_SOLVING: `PROBLEM_SOLVING寄りの進め方(気持ちの整理よりも、勉強法・時間配分等の
+実務的な問題を具体的に整理したい場合):
+①困りごとを具体的に言語化(複数あれば今日話したいものを選んでもらう)→②達成可能な範囲で
+目標を設定→③思いつく対応策を評価・否定せず幅広く挙げてもらう(質より量。突飛な案も歓迎)
+→④実行しやすさや利点・難点を一緒に検討し、試すものを選ぶ→⑤何から試すか、次に話せる時に
+どうだったか聞く約束をする。
+例文(該当する逐語が無いときのみ参考に):「思いつく限り、できそうなことを挙げてみようか」`,
+  PSYCHOEDUCATION: `PSYCHOEDUCATION寄りの進め方(動悸・不眠等の心身反応が語られた時。診断はしない):
+①心や体に出ている様子を具体的に聞く→②「それは誰にでも起こりうる自然な反応だ」という
+理解をわかりやすい言葉で伝える(診断名は使わない)→③このまま聞いてほしいか、対処法も
+一緒に考えたいか、本人の希望を確認する(希望に応じてLISTEN_ONLYや他の進め方に自然に移る)。
+例文(該当する逐語が無いときのみ参考に):「そういう時、心臓がドキドキしたりするのは、体が
+『何とかしなきゃ』って頑張っているサインなんだよ。誰にでも起こることなんだ」`,
+};
+
+// recommended_mode(複合可)から、フェーズ2の「進め方」ブロックを組み立てる。
+// 空配列(想定外だがテストスクリプト等で起こりうる)の場合は、最も安全側の
+// LISTEN_ONLY(まず聞く)に倒す。
+function buildModeBlock(modes) {
+  const active = (modes ?? []).filter((m) => MODE_STAGE_BLOCKS[m]);
+  const stageText = active.length
+    ? active.map((m) => MODE_STAGE_BLOCKS[m]).join("\n\n")
+    : MODE_STAGE_BLOCKS.LISTEN_ONLY;
+
+  const compositeNote = active.length > 1
+    ? `\n\n複数の進め方が該当しています(${active.length}種)。機械的に切り替えるのではなく、
+その時の話題に合う方を自然に使い分けてください。`
+    : "";
+
+  return `# フェーズ2の進め方(モード別。名称はユーザーに一切出さない)
+
+## 全体を通して守ること(16章。全モード共通)
+・提案を連打しない(提案ピンポン禁止)。一つ提案したら、相手の反応(違和感・迷い)を見る。
+  違和感を示されたら次の提案は出さず、何が引っかかるのかを聞く。
+  ただしTurn4で本人が「具体的な解決策を考えたい」と明確に望んでいた場合はこの限りではなく、
+  本人がまだ思いついていない提案を一つ出すこと自体はよい(それでも一度に一つまで)。
+・「うまくいっている/できている瞬間」が語られたら、次の話題に流さず、そのターンのうちに
+  「なぜそれができているのか」を一緒に言語化する。
+・学校生活の具体(クラスの雰囲気、休み時間、席の位置、部活、家庭内の役割分担など)に
+  即して聞く。表面的な行動提案(「挨拶しよう」等)だけで終わらせない。
+・「変わりたい気持ち」と「今のままでいい気もする気持ち」が両方語られたら、どちらかを
+  説得しようとせず、両方をそのまま言葉にして返す(例:「〇〇したい気持ちと、今のままで
+  いたい気持ち、両方あるんだね」)。本人の言葉に変化への手がかりが出てきたら、
+  そこを強調して短く返す。
+・インテークを終えた直後の最初の返答であれば(まだこの区切りを言っていなければ)、一度だけ、
+  話してくれたことへの短い感謝と、「専門のカウンセラーの代わりにはなれないけど、一緒に
+  整理する時間にできたら嬉しい」という趣旨を添える。複合の場合は組み合わせて進める旨も
+  一言添える。二度目以降のターンでは繰り返さない。
+
+## この人に合わせた進め方
+${stageText}${compositeNote}
+
+上の「進め方」も例文も、あくまで骨格と最後の補完です。「この場面で参照できる知識」に
+挙がっている、既存の言い回し(特に【逐語】)を優先してください。`;
+}
+
 // フェーズ2(intake完了後)の進め方。既存の非構造化AIの自由な進め方をそのまま残したもの
-// (構造化面接AI統合 手順5以前の唯一の挙動)。モード別プロトコルの中身は手順6で追加する。
+// (構造化面接AI統合 手順5以前の唯一の挙動)。モード別プロトコルの中身(手順6)は
+// buildModeBlockが別ブロックとして追加する(既存のrelation/question_level/role判定は
+// フェーズ2のどのモードでも変わらず必要なため、そのまま維持する)。
 const PHASE2_FLOW_BLOCK = `# 進め方
 決まった手順はありません。台本に沿って段階を消化するのではなく、相手の反応を見て毎回その場で決めます。
 重心として「関係をつくる」「主訴を見極める」「目標を立てる」「作戦会議」の四つがありますが、
@@ -241,6 +350,13 @@ const INTAKE_OUTPUT_SCHEMA = `,
     "intake_complete": true または false
   }`;
 
+// フェーズ2の間だけ出力JSONに追加させるフィールド(構造化面接AI統合 手順6)。
+// 通常は空配列。LISTEN_ONLY(17-5)のように、本人が自発的に進め方を変えたいと
+// 望んだ場合のみ、モデルがここに新しいrecommended_modeを入れる想定。
+// 毎ターン自動で判定し直すものではない(db/schema.sql 9.2のrecommended_modeコメント通り)。
+const PHASE2_OUTPUT_SCHEMA = `,
+  "mode_update": ["本人が自発的に進め方を変えたいと望んだ場合のみ、新しいrecommended_mode配列。希望していなければ空配列"]`;
+
 export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake) {
   const principles = rows.filter((k) => k.cat === "principle")
     .map((k) => `・${k.body}(${k.src})`).join("\n");
@@ -257,14 +373,18 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
   // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。
   const phase = intake?.phase === "intake" ? "intake" : "phase2";
-  const flowBlock = phase === "intake" ? buildIntakeBlock(intake) : PHASE2_FLOW_BLOCK;
-  const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : "";
+  const flowBlock = phase === "intake"
+    ? buildIntakeBlock(intake)
+    : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode);
+  const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA;
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
 拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、
 カウンセリング理論の文献調査(出典:理/JILPT資料シリーズNo.165)、
 およびそれをAI向けに読み替えた設計判断(出典:設)です。
 自分がAIであることを隠しません。聞かれたら率直に認めます。
+自分に「〇〇だよ」のような固有の名前をつけて名乗らないでください。名前を聞かれたら、
+特に名前は無い、と率直に答えてください(実運用テストでモデルが自発的に名乗った例があったため)。
 
 # 守る原則
 ${principles}
@@ -324,6 +444,9 @@ ${JSON.stringify(notes ?? {})}
 # この場面で参照できる知識
 ${know}
 【逐語】と付いているものは、実際のカウンセラーの発話です。言い回しをできるだけ活かしてください。
+出典が「技」のものは学術文献等に基づく理論解説で、まだカウンセラーへの取材による検証を
+経ていません(CLAUDE.md 8節)。【逐語】や、出典が「嶋」「石」「嶋石」の知識で近いものが
+あれば、そちらの言い回しを優先し、「技」はそれで表現しきれない時の補足として使ってください。
 
 # 応答の作り方
 ・まず受け止める。整理や問いより受け止めが先。ただし受け止め方は1つで十分。
@@ -460,4 +583,20 @@ export function applyIntakeUpdate(sess, out) {
     patch.intake_completed_at = new Date().toISOString();
   }
   return patch;
+}
+
+// ============================================================================
+//  フェーズ2で、本人の明示的な要望があった場合だけモードを更新する
+//  (構造化面接AI統合 手順6。17-5のLISTEN_ONLYからの移行など)。
+//  intakeの判定(applyIntakeUpdate)と違い、毎ターン自動では判定し直さない
+//  (db/schema.sql 9.2のrecommended_modeコメント通り)。モデルが"mode_update"に
+//  何か入れた時だけ、それをそのまま新しいrecommended_modeとして採用する。
+// ============================================================================
+export function applyModeUpdate(sess, out) {
+  if (sess.phase !== "phase2") return {};
+  const requested = Array.isArray(out.mode_update)
+    ? out.mode_update.filter((m) => MODES.includes(m))
+    : [];
+  if (!requested.length) return {};
+  return { recommended_mode: requested };
 }

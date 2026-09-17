@@ -45,7 +45,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { LITE_MODELS, callGemini, classify, CRISIS_REPLY } from "@/classify.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
-  applyTurnUpdate, applyIntakeUpdate,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate,
 } from "@/generate.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -364,7 +364,11 @@ export async function POST(req: Request) {
         : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
         : null;
       const rows = await loadKnowledge(db);
-      const chunks = retrieve(rows, text, sess.weight, sess.relation, undefined, safetyContext);
+      // recommended_modeは手順6でretrieve()に渡し、フェーズ2ではモード一致のナレッジも
+      // 引き出しやすくする(intake中は空配列なので、これまで通り影響しない)。
+      const chunks = retrieve(
+        rows, text, sess.weight, sess.relation, undefined, safetyContext, sess.recommended_mode,
+      );
 
       const { data: hist } = await db.from("messages")
         .select("role,body,crisis").eq("session_id", sessionId).order("seq");
@@ -389,7 +393,10 @@ export async function POST(req: Request) {
       // (構造化面接AI統合 手順5)。sessionsへは差分(intakePatch)だけを書き込み、
       // messagesへはこのターン時点の現在値(mergedIntake)をスナップショットとして残す
       // (weight/relationと同じ、db/schema.sql 9.3の意図)。
-      const intakePatch = applyIntakeUpdate(sess, out);
+      // applyModeUpdateはsess.phase==="phase2"の時だけ働く(手順6。本人の明示的な
+      // 要望があった場合のみrecommended_modeを更新)。phaseで排他的なので、
+      // 両方が同時に非空オブジェクトを返すことはない。
+      const intakePatch = { ...applyIntakeUpdate(sess, out), ...applyModeUpdate(sess, out) };
       const mergedIntake = { ...sess, ...intakePatch };
 
       const { data: aiMsg } = await db.from("messages").insert({

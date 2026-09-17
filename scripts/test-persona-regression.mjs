@@ -34,7 +34,7 @@ import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
-  applyTurnUpdate, applyIntakeUpdate,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate,
 } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -213,7 +213,10 @@ for (const persona of personas) {
     const safetyContext = safety.risk === "watch" ? "tierB"
       : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
       : null;
-    const chunks = retrieve(rows, studentText, sessState.weight, sessState.relation, undefined, safetyContext);
+    const chunks = retrieve(
+      rows, studentText, sessState.weight, sessState.relation, undefined, safetyContext,
+      sessState.recommended_mode,
+    );
     const system = buildSystem(
       rows, chunks, sessState.weight, sessState.notes, sessState.turns_since_summary, null,
       safetyContext, sessState,
@@ -226,7 +229,9 @@ for (const persona of personas) {
     const updated = applyTurnUpdate(sessState, out);
     // フェーズ1(インテーク)のスロット更新(構造化面接AI統合 手順5)。route.tsと同じ、
     // 差分(intakePatch)をsessionsへ、このターン時点の現在値(mergedIntake)をmessagesへ。
-    const intakePatch = applyIntakeUpdate(sessState, out);
+    // applyModeUpdate(手順6)はphase2の時だけ働く。phaseで排他的なので、route.tsと
+    // 同じくそのままマージしてよい。
+    const intakePatch = { ...applyIntakeUpdate(sessState, out), ...applyModeUpdate(sessState, out) };
     const mergedIntake = { ...sessState, ...intakePatch };
 
     await db.from("messages").insert({
