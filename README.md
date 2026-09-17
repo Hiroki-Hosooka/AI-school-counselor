@@ -27,8 +27,9 @@ Postgres(Supabase。データベースとしてのみ利用)
 
 | ファイル | 役割 |
 |---|---|
-| `db/schema.sql` | Supabase の SQL Editor に貼って実行 |
+| `db/schema.sql` | Supabase の SQL Editor に貼って実行(**スキーマ変更のたびに再実行が必要。下記参照**) |
 | `db/seed_knowledge.sql` | 同上(schema.sql の後) |
+| `db/seed_knowledge_structured.sql` | 同上(seed_knowledge.sql の後。構造化面接AI統合で追加した技法カタログ) |
 | `db/knowledge.json` | バックアップ用。DB を作り直すとき用 |
 | `src/safety.mjs` | 安全層(CRISIS_WORDS/OUTPUT_NG)の共通モジュール |
 | `src/app/api/chat/route.ts` | バックエンド本体。Vercelにデプロイされる |
@@ -47,6 +48,13 @@ Edge Function は使わないので、作るのはプロジェクトとテーブ
 
 SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` を実行 →
 続けて `db/seed_knowledge_structured.sql` を実行(構造化面接AI統合で追加した技法カタログ)。
+
+**既にSupabaseプロジェクトを作成済みの場合も、`db/schema.sql` は毎回必ず再実行してください。**
+このファイルは `create table if not exists` / `add column if not exists` だけで書かれているため、
+既存のテーブルやデータには影響しません。逆に言うと、新しい seed ファイルだけを流すと、
+そのファイルが前提にしている列(例: `knowledge.mode`)がまだ無くて
+`column "mode" of relation "knowledge" does not exist` のようなエラーになります。
+迷ったら、他のSQLを実行する前にまず `db/schema.sql` から実行してください。
 
 確認:
 
