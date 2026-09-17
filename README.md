@@ -120,7 +120,7 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | 同上。`service_role` の方(anon keyではない) |
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
 | `RATE_LIMIT_PER_HOUR` | | 既定 60 |
-| `ADMIN_TOKEN` | | 管理画面(`/admin.html`)の合言葉。未設定だと管理画面は常に401になり閲覧できない |
+| `ADMIN_TOKEN` | | 管理画面(`/admin.html`)の合言葉。未設定だと管理画面は常に401になり閲覧できない。**長く推測不能な値にすること**(例: `openssl rand -hex 16` 等で生成)。"admin"のような推測されやすい値は、生徒の危機対応記録・相談内容が漏れる直接の原因になる |
 | `TEST_GEMINI_API_KEY` | | `npm run test:crisis`(docs/backlog.md 1-3)専用のGeminiキー。**Vercelには設定しない** (本番の`GEMINI_API_KEY`と分離するため。CLAUDE.md 5.10) |
 
 使用するGeminiモデルは環境変数ではなく、`src/app/api/chat/route.ts` の `PRIMARY_MODELS`/`LITE_MODELS`
@@ -214,6 +214,10 @@ https://(デプロイ先のドメイン)/admin.html?token=(ADMIN_TOKEN に設定
 - `ADMIN_TOKEN` を設定していない場合、この画面は誰の合言葉でも開けません(常に401)
 - `noindex,nofollow` と `robots.txt` で検索エンジンからは隠していますが、**URLに合言葉が
   そのまま含まれるため、リンクやスクリーンショットを共有しないでください**
+- 生徒側画面(`page.tsx`)の「設定と記録」パネル最下部に、`/admin.html`(合言葉なし)への
+  小さなリンク「スタッフ用ページ」がある(すぐ辿り着けるようにするための暫定対応。
+  将来は別URLへ切り出す想定)。合言葉自体は埋め込んでいないが、URLの存在は生徒からも
+  見える状態になるため、`ADMIN_TOKEN` を推測されやすい値にしないことが一層重要
 
 画面でできること:
 

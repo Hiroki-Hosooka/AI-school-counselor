@@ -407,6 +407,20 @@ export default function Page() {
 
         <h5>この端末の会話</h5>
         <button className="btn ghost" onClick={newSession}>新しく話しはじめる</button>
+
+        {/* スタッフ向け。目立たない位置に小さく置く(生徒の目を引かないため)。
+            合言葉(ADMIN_TOKEN)はここには埋め込まない。開いた先で別途入力が必要
+            (CLAUDE.md 5.9)。将来的には別URLに切り出す想定の暫定リンク。 */}
+        <div style={{ marginTop: 26, paddingTop: 10, borderTop: "1px solid var(--sand)" }}>
+          <a
+            href="/admin.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 10.5, color: "var(--ink-faint)" }}
+          >
+            スタッフ用ページ
+          </a>
+        </div>
       </aside>
     </>
   );
