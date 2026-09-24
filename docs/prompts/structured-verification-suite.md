@@ -10,6 +10,23 @@ docs/prompts/structured-unstructured-merge.md で依頼した統合実装が完�
 AIはGemini APIを使用します。無料枠は合成テスト専用とし、本番環境とは
 APIキー・環境変数を完全に分離してください(既存のCLAUDE.mdの原則どおり)。
 
+## 実行と評価の役割分担(2026年9月・追記)
+
+テストの実行(Gemini呼び出し)と、結果の評価は分ける。
+
+- **実行はGemini(本人の`TEST_GEMINI_API_KEY`)で行う。** Claudeが代わりに判定・生成
+  すると、測っているのが「本番で動くGeminiの実力」ではなく「Claudeの実力」になり、
+  テストの意味が無くなる(特にテスト1のTier A見逃し率のような安全に関わる指標は、
+  本番と同じモデルで測らないと意味が無い)。
+- 実行の流れ:本人の環境で `.env.local` に `TEST_GEMINI_API_KEY` を設定
+  → `npm run test:crisis`(または `npm run test:all`)を実行
+  → 結果は `docs/test-results/` 配下にJSONで自動保存される(`.gitignore` 対象外)
+  → `git add docs/test-results/ && git commit && git push`
+- **評価(結果の要約・完了条件を満たしているかの判定)はClaudeが行う。** pushされた
+  結果JSONをリポジトリから読み、このファイルに書いた各テストの完了条件と照らし合わせて
+  日本語のレポートにまとめる。APIキーをClaudeに共有する必要はない(gitでのやり取りだけで
+  完結する)。
+
 ---
 
 ## テスト1(最優先): 危機検知の精度と、Tier A/B分離の妥当性
