@@ -14,19 +14,28 @@ import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { callGemini, parseJSON } from "./classify.mjs";
 
-// 本生成用(品質優先)。上から順に試す。2.5-flashは2026年10月16日に退役予定なので、
-// その前に後継モデルを先頭に追加し、退役後はこの行を削除すること。
-// gemini-3-flash-preview(2026年9月に追加): Google AI Studioのレート制限画面で
-// 「テキスト出力モデル」として無料枠の割り当てがある(RPM等が0/0でない)ことを確認済み。
-// プレビュー版だが、3.5と2.5の間のフォールバックとして使う
-// (https://ai.google.dev/gemini-api/docs/gemini-3 で実在・無料枠ありを確認)。
-// gemini-3.6-flash(2026年9月に追加): TEST_GEMINI_API_KEYでの実機検証(curl直接呼び出し)で、
-// gemini-2.5-flashがこのプロジェクトで404「no longer available to new users」になっており、
-// Gemini APIのエラーメッセージ自体がgemini-3.6-flashへの切り替えを推奨していることを確認した。
-// gemini-3.6-flashは直接呼び出しで実在・正常応答を確認済み(モデル退役に伴う後継、
-// gemini-2.5-flash-liteと同様のパターン)。2.5-flashは古いプロジェクトではまだ動く可能性が
-// あるため削除はせず、退役間際の2.5-flashより前に3.6-flashを試すようにしている。
-export const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.6-flash", "gemini-2.5-flash"];
+// 本生成用(品質優先)。上から順に試す。
+//
+// 2026年9月・モデル比較検証(npm run test:model-comparison。課金設定済みキーで、
+// 13入力×3回=39回/モデルを実測。docs/test-results/model-comparison-2026-09-24T16-12-03-489Z.json)
+// の結果、3.6/3.7/3.8-flashに並べ替えた。
+//   gemini-3.5-flash: 成功率97%・NG検知率16%(「頑張ってきたんだね」系の励まし表現・
+//     技法名の言いかけが繰り返し検知された。CLAUDE.md 5.5/5.14参照)・$0.01138/回(最高額)
+//   gemini-3.6-flash: 成功率100%・NG検知率3%・$0.00487/回
+//   gemini-3.7-flash: 成功率100%・NG検知率0%・$0.00507/回
+//   gemini-3.8-flash: 成功率100%・NG検知率0%・$0.00460/回(3つの中で最安)
+// n=39/モデルのため3.6〜3.8間の細かい差は誤差の範囲内だが、3.5-flashとの差
+// (NG検知率16% vs 0〜3%、コスト2倍以上)は明確。3.5-flashは全指標で劣っていたが
+// 削除はせず、退役・大規模障害時の保険として最後尾に降格した。
+//
+// gemini-2.5-flashは削除した。無料枠プロジェクトに続き、この課金プロジェクトでも
+// 「no longer available to new users」の404を確認(2026年9月)。2つの独立したプロジェクトで
+// 再現したため、退役済みと判断した。
+//
+// gemini-3-flash-preview(2026年9月に追加。プレビュー版):上記の比較検証の対象外
+// (実測データなし)。レート制限の分散先として最後尾に残す
+// (https://ai.google.dev/gemini-api/docs/gemini-3 で実在・無料枠ありを確認済み)。
+export const PRIMARY_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"];
 
 // ----------------------------------------------------------------------------
 // DBクライアント。route.ts自身の(型付きの)getDb()とは別に、テストスクリプトからも

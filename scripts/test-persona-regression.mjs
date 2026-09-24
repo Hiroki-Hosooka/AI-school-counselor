@@ -30,7 +30,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure, isTransientClassifierError } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure, isTransientClassifierError } from "./_lib/test-env.mjs";
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
@@ -41,8 +41,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
 // 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
-// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
+// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。生徒役・分類器(LITE_MODELS)
+// はこちら(無料枠)のまま。
 const KEY_POOL = requireTestGeminiKeyPool(ROOT);
+// 相談AI本体(PRIMARY_MODELS)だけは課金設定済みの単一キーを使う(2026年9月・モデル比較検証)。
+// 本番のgenerateReply()呼び出しは課金枠を使うため、それと同じ条件で測るのが本来の姿な
+// うえ、無料枠はこのテストの過去の実行で繰り返しレート制限に阻まれ完走できなかった
+// (docs/test-results/にキャプションされている過去の中断記録参照)。
+const PAID_KEY_POOL = requireTestGeminiKeyPaid(ROOT);
 // 役割ごとに別々の状態を持つ(生徒役・相談AI本体・分類器で直近成功したキーの
 // 位置がズレていても、お互いに干渉しないようにするため)。
 const STUDENT_KEY_ROTATION = createKeyRotationState();
@@ -118,10 +124,11 @@ async function generatePersonaLine(system, contents) {
   return { line: result.line, model: result.model };
 }
 
-// 相談AI本体の生成。レート制限は複数キーを切り替えながら再試行する。
+// 相談AI本体の生成。課金設定済みキーを使う(上記コメント参照)。1要素のプールでも
+// withRateLimitRetryはそのまま使え、429/503時は待って再試行する。
 async function generateWithRetry(system, messages) {
   return withRateLimitRetry(
-    KEY_POOL,
+    PAID_KEY_POOL,
     () => generateReply(system, messages),
     isTransientGenerateFailure,
     { label: "相談AI: ", state: COUNSELOR_KEY_ROTATION },
@@ -226,7 +233,7 @@ const startedAt = new Date();
 const runId = startedAt.toISOString().replace(/[^0-9]/g, "").slice(0, 14);
 
 console.log(`ペルソナ: ${personas.map((p) => p.id).join(", ")} / ターン数: ${TURNS} / runId: ${runId}`);
-console.log(`生徒役モデル: ${LITE_MODELS.join(" → ")} / 相談AI本体モデル: ${PRIMARY_MODELS.join(" → ")}(ともにTEST_GEMINI_API_KEY)\n`);
+console.log(`生徒役モデル: ${LITE_MODELS.join(" → ")}(無料枠) / 相談AI本体モデル: ${PRIMARY_MODELS.join(" → ")}(課金キー)\n`);
 
 const db = getDb();
 const rows = await loadKnowledge(db);

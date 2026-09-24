@@ -179,6 +179,14 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
 4. **ペルソナ多ターン回帰テスト** — `npm run test:persona-regression`。生徒役(Flash-Lite)×
    評価対象(PRIMARY_MODELS)。`sessions`/`messages`に保存し`admin.html`から閲覧できる。
    2026年9月: 同じ実行から人が読めるトークログ(.txt)もペアで出力するようにした
+5. **モデル横断のコスト・パフォーマンス比較** — `npm run test:model-comparison`(4本柱とは別枠。
+   docs/backlog.mdのこの4本とは別に、PRIMARY_MODELSの候補選定のためのツール)。
+   2026年9月: 課金設定済みキーで7候補(3.5-flash-lite/2.5-flash/3.1-flash-lite/3.5-flash/
+   3.6-flash/3.7-flash/3.8-flash)を実測。gemini-2.5-flashは404で使用不可と確定、
+   gemini-3.5-flashはNG検知率16%・コスト最高額と全指標で劣ることが判明したため、
+   `PRIMARY_MODELS`を3.8→3.7→3.6→3.5→3-flash-previewの順に並べ替えた
+   (詳細はsrc/generate.mjsのPRIMARY_MODELSコメント、実測値はdocs/test-results/
+   model-comparison-2026-09-24T16-12-03-489Z.json参照)
 
 ナレッジ検索・システムプロンプト構築・本生成は `src/generate.mjs` に切り出し、
 route.ts(本番)とテスト2〜4が完全に同じ関数を使う(測定対象と本番実装がずれないため)。
@@ -187,9 +195,18 @@ route.ts(本番)とテスト2〜4が完全に同じ関数を使う(測定対象�
 
 | 役割 | モデル | 枠 |
 |---|---|---|
-| 生徒役ペルソナ | Flash-Lite(`LITE_MODELS`) | 無料枠(`TEST_GEMINI_API_KEY`) |
-| 評価対象(相談AI本体) | `PRIMARY_MODELS`(本番と同じFlash系) | 無料枠(`TEST_GEMINI_API_KEY`) |
-| 危機判定・分類 | Flash-Lite(`LITE_MODELS`) | 無料枠(`TEST_GEMINI_API_KEY`) |
+| 生徒役ペルソナ | Flash-Lite(`LITE_MODELS`) | 無料枠(`TEST_GEMINI_API_KEY(S)`) |
+| 評価対象(相談AI本体) | `PRIMARY_MODELS`(本番と同じFlash系) | テスト2/3は無料枠、テスト4/5と
+  モデル比較は課金枠(`TEST_GEMINI_API_KEY_PAID`。2026年9月〜) |
+| 危機判定・分類 | Flash-Lite(`LITE_MODELS`) | 無料枠(`TEST_GEMINI_API_KEY(S)`) |
+
+**課金枠を一部で使う理由(2026年9月)**: PRIMARY_MODELS呼び出しは本番と同じ課金枠で
+測るのが本来の姿であることに加え、無料枠はテスト3・4でレート制限により繰り返し
+完走できなかった実績があるため、影響の大きいテスト4/5とモデル選定そのものの検証だけ
+切り替えた(CLAUDE.md 5.10の対象は「実際の生徒の会話データ」であり、合成テストデータの
+無料枠利用そのものは元々問題にしていない。課金枠への切り替えは無料枠のレート制限が
+運用上不十分だったことへの対応)。テスト2/3は今のところ無料枠のままで、切り替えるかは
+別途判断する。
 
 「Pro」は現状 `PRIMARY_MODELS` に含まれていない(実在未確認のモデルIDを推測で
 書かないため)ため採用していない。品質面での「本番相当」は、本番と同じ`PRIMARY_MODELS`を
