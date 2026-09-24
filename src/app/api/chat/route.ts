@@ -130,7 +130,9 @@ async function updatePersonMemory(clientId: string, sessionNotes: Record<string,
 
   let newSummary = existing?.summary ?? "";
   try {
-    newSummary = (await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 400)).trim();
+    // callGemini() は { text, model } を返す(2026年9月〜。src/classify.mjs 参照)。
+    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 400);
+    newSummary = summaryResult.text.trim();
   } catch (e) {
     console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);
     return; // 要約生成に失敗しても本体の会話は止めない。次回の更新に任せる。

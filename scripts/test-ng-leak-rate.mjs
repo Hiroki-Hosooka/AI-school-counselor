@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env.mjs";
-import { getDb, loadKnowledge, retrieve, buildSystem, generateReply } from "../src/generate.mjs";
+import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -79,7 +79,19 @@ function classifyOutcome(flags) {
 }
 
 console.log(`入力セット: ${path.relative(ROOT, SET_PATH)}(${items.length}件 × ${REPEATS}回)`);
+console.log(`生成モデル: ${PRIMARY_MODELS.join(" → ")}`);
 console.log("");
+
+// 実際に使われたモデルの内訳(検証一式・2026年9月)。attempts配列(used_model)から集計する。
+function countBy(rows, fn) {
+  const counts = {};
+  for (const r of rows) {
+    const v = fn(r);
+    if (!v) continue;
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  return counts;
+}
 
 const db = getDb();
 const rows = await loadKnowledge(db);
@@ -100,7 +112,7 @@ for (const item of items) {
 
   process.stdout.write(`[${item.id}] ${item.bait ?? ""} 「${item.text.slice(0, 20)}...」 `);
   for (let i = 0; i < REPEATS; i++) {
-    const { out, flags, generationFailed, failureCause } = await generateWithRetry(system, messages);
+    const { out, flags, generationFailed, failureCause, usedModel } = await generateWithRetry(system, messages);
     const outcome = classifyOutcome(flags);
     outcomes[outcome]++;
     if (outcome === "still_flagged") {
@@ -109,6 +121,7 @@ for (const item of items) {
     attempts.push({
       attempt: i + 1, outcome, reply: out.reply, flags,
       generation_failed: generationFailed === true, failure_cause: failureCause ?? null,
+      used_model: usedModel, // 実際に採用された返答を生成したモデルID(検証一式)
     });
     process.stdout.write(outcome === "clean" ? "." : outcome === "fixed_by_regen" ? "o" : outcome === "still_flagged" ? "X" : "!");
     if (i < REPEATS - 1) await sleep(1500);
@@ -122,6 +135,7 @@ for (const item of items) {
     detected_first_pass: detectedFirstPass,
     detection_rate: detectedFirstPass / REPEATS,
     still_flagged_examples: stillFlaggedExamples,
+    models_used: countBy(attempts, (a) => a.used_model),
     attempts,
   });
 }
@@ -148,6 +162,14 @@ console.log(`    うち再生成で解消: ${totals.fixed_by_regen}`);
 console.log(`    うち再生成でも直らず: ${totals.still_flagged}`);
 console.log(`  生成失敗(集計対象外): ${totals.generation_failed}`);
 
+const allAttempts = perInput.flatMap((r) => r.attempts);
+const globalModelsUsed = countBy(allAttempts, (a) => a.used_model);
+console.log("\n=== 実際に使われたモデルの内訳(検証一式) ===");
+console.log(`  設定上のフォールバック順: ${PRIMARY_MODELS.join(" → ")}`);
+for (const [m, c] of Object.entries(globalModelsUsed)) {
+  console.log(`  ${m}: ${c}件${m === PRIMARY_MODELS[0] ? "" : "  ← フォールバックが発生"}`);
+}
+
 const stillFlaggedTotal = perInput.flatMap((r) => r.still_flagged_examples.map((e) => ({ id: r.id, ...e })));
 if (stillFlaggedTotal.length) {
   console.log("\n=== 再生成でも直らなかった例(抜粋。プロンプト改善の材料) ===");
@@ -167,6 +189,13 @@ writeFileSync(outPath, JSON.stringify({
   elapsed_ms: finishedAt - startedAt,
   input_set: path.relative(ROOT, SET_PATH),
   repeats: REPEATS,
+  generation_models: PRIMARY_MODELS,
+  model_usage: {
+    counts: globalModelsUsed,
+    note: "実際に採用された返答を生成したモデルIDごとの件数(検証一式・2026年9月)。" +
+      "generation_modelsは設定上のフォールバック順であり、ここが2番目以降のモデルでも" +
+      "0件でなければ実行中にフォールバックが実際に発生したことを示す。",
+  },
   totals,
   per_input: perInput,
 }, null, 2));

@@ -560,8 +560,14 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS) {
   let out;
   let generationFailed = false;
   let failureCause = "";
+  // 実際に採用されたout(最終的に返す返答)を生成したモデルID。NG検知→再生成が
+  // 成功した場合は下でretryResult.modelに上書きする。全滅時はnull
+  // (2026年9月・検証一式のログ充実要望。callGemini()のコメント参照)。
+  let usedModel = null;
   try {
-    out = parseJSON(await callGemini(models, system, messages));
+    const result = await callGemini(models, system, messages);
+    out = parseJSON(result.text);
+    usedModel = result.model;
   } catch (e) {
     console.error("生成に失敗しました:", e);
     generationFailed = true;
@@ -583,14 +589,16 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS) {
     const fix = system +
       "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
     try {
-      const retry = parseJSON(await callGemini(models, fix, messages));
+      const retryResult = await callGemini(models, fix, messages);
+      const retry = parseJSON(retryResult.text);
       if (checkOutput(retry.reply ?? "").length === 0) {
         out = retry; flags = ["1回目に検知→再生成で解消"];
+        usedModel = retryResult.model; // 採用されたのは再生成の方なので上書きする
       }
-    } catch { /* 再生成に失敗したら1回目を使い、フラグを残す */ }
+    } catch { /* 再生成に失敗したら1回目を使い、フラグ・usedModelはそのまま残す */ }
   }
 
-  return { out, flags, generationFailed, failureCause };
+  return { out, flags, generationFailed, failureCause, usedModel };
 }
 
 // ============================================================================

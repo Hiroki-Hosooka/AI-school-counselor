@@ -21,7 +21,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env.mjs";
-import { getDb, loadKnowledge, retrieve, buildSystem, generateReply } from "../src/generate.mjs";
+import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -77,7 +77,19 @@ function majorityVote(labels) {
 }
 
 console.log(`ペルソナセット: ${path.relative(ROOT, SET_PATH)}(${personas.length}件 × ${REPEATS}回)`);
+console.log(`生成モデル: ${PRIMARY_MODELS.join(" → ")}`);
 console.log("");
+
+// 実際に使われたモデルの内訳(検証一式・2026年9月)。attempts配列(used_model)から集計する。
+function countBy(rows, fn) {
+  const counts = {};
+  for (const r of rows) {
+    const v = fn(r);
+    if (!v) continue;
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  return counts;
+}
 
 const db = getDb();
 const rows = await loadKnowledge(db);
@@ -98,7 +110,7 @@ for (const persona of personas) {
 
   process.stdout.write(`[${persona.id}] ${persona.label ?? ""} 「${persona.text.slice(0, 20)}...」 `);
   for (let i = 0; i < REPEATS; i++) {
-    const { out, generationFailed, failureCause } = await generateWithRetry(system, messages);
+    const { out, generationFailed, failureCause, usedModel } = await generateWithRetry(system, messages);
     if (generationFailed) {
       generationFailures.push(failureCause);
       attempts.push({ attempt: i + 1, generation_failed: true, failure_cause: failureCause ?? null });
@@ -109,6 +121,7 @@ for (const persona of personas) {
       attempts.push({
         attempt: i + 1, generation_failed: false, relation: r,
         reply: out.reply, hypothesis: out.hypothesis ?? "", why: out.why ?? "",
+        used_model: usedModel, // 実際に採用された判定を生成したモデルID(検証一式)
       });
       process.stdout.write(r[0].toUpperCase());
     }
@@ -126,6 +139,7 @@ for (const persona of personas) {
     agreement_rate: agreementRate,
     generation_failures: generationFailures,
     all_relations: relations,
+    models_used: countBy(attempts, (a) => a.used_model),
     attempts,
   });
 }
@@ -150,6 +164,14 @@ if (unstable.length) {
   }
 }
 
+const allAttempts = perPersona.flatMap((p) => p.attempts);
+const globalModelsUsed = countBy(allAttempts, (a) => a.used_model);
+console.log("\n=== 実際に使われたモデルの内訳(検証一式) ===");
+console.log(`  設定上のフォールバック順: ${PRIMARY_MODELS.join(" → ")}`);
+for (const [m, c] of Object.entries(globalModelsUsed)) {
+  console.log(`  ${m}: ${c}件${m === PRIMARY_MODELS[0] ? "" : "  ← フォールバックが発生"}`);
+}
+
 const resultsDir = path.join(ROOT, "docs/test-results");
 mkdirSync(resultsDir, { recursive: true });
 const stamp = startedAt.toISOString().replace(/[:.]/g, "-");
@@ -161,6 +183,13 @@ writeFileSync(outPath, JSON.stringify({
   elapsed_ms: finishedAt - startedAt,
   persona_set: path.relative(ROOT, SET_PATH),
   repeats: REPEATS,
+  generation_models: PRIMARY_MODELS,
+  model_usage: {
+    counts: globalModelsUsed,
+    note: "実際に採用された判定を生成したモデルIDごとの件数(検証一式・2026年9月)。" +
+      "generation_modelsは設定上のフォールバック順であり、ここが2番目以降のモデルでも" +
+      "0件でなければ実行中にフォールバックが実際に発生したことを示す。",
+  },
   overall_average_agreement_rate: overallAvg,
   per_persona: perPersona,
 }, null, 2));

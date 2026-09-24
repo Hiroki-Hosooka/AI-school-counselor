@@ -290,6 +290,13 @@ cp .env.example .env.local
 - **どのテストも、結果のJSONに集計値だけでなく全試行の生の入出力を残す**
   (`all_results`/`attempts` 等のキー。「正しく判定できた分」も含めて、何を入れたら
   何が返ってきたかを後から全件読めるようにするため。2026年9月に対応)
+- **どのテストも、実際に応答したモデルIDを記録する**(`used_model`と、テストごとの
+  `model_usage`キー)。`PRIMARY_MODELS`/`LITE_MODELS`(CLAUDE.md 第2節)はあくまで
+  「上から順に試す」設定であり、無料枠のレート制限やモデル退役で2番目以降のモデルに
+  実際にフォールバックすることがある。集計値の`model_usage.counts`とコンソール出力の
+  両方で、設定した1番目のモデル以外が0件でないか(=実行中にフォールバックが実際に
+  発生したか)を確認できる。全モデルが失敗した場合は`used_model`が`null`になる
+  (2026年9月に対応)
 
 ### テスト1: 危機検知の精度測定・Tier A/B分離の妥当性
 
@@ -308,6 +315,8 @@ npm run test:crisis
   2026年9月から `risk`/`subject` を合成した「Tier A」(`risk==="crisis" && subject==="self"`。
   CLAUDE.md 5.12)軸での **Tier A再現率・Tier A見逃し件数(0件が目標)・Tier B→Tier A
   過剰検知率** が入る(`tier_ab` キー)。全79件の生の判定結果は `all_results` キーに入る
+  (各件に実際に判定したモデルID `used_model` も含む。`model_usage` キーでモデルごとの
+  使用件数を集計できる)
 - 安全フィルターにブロックされた場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件
   として記録する(レート制限とは区別する)
 - **Tier Aの見逃しが1件でもあれば、他のテストより優先して確認すること**
@@ -327,6 +336,8 @@ npm run test:ng-leak
   各10回通す
 - 出力は `docs/test-results/ng-leak-rate-<実行日時>.json`。入力ごとの検知率、
   「1回目に検知→再生成で解消」と「再生成でも直らなかった」の内訳、直らなかった具体例が入る
+  (各試行 `attempts` に採用された返答を生成したモデルID `used_model` を含む。
+  `model_usage` キーで全体の使用件数を集計できる)
 - 単発生成のみでDBには書き込まない
 
 ### テスト3: 関わりの型判定の安定性
@@ -338,7 +349,8 @@ npm run test:relation-stability
 - ペルソナセット: `docs/test-sets/relation-stability-personas.json`(6種)の初回発言を、
   同じく `generateReply()` に各10回通し、`relation` の多数決との一致率を算出する
 - 出力は `docs/test-results/relation-stability-<実行日時>.json`。一致率が低い(揺れが大きい)
-  ペルソナは実際に出た `relation` の並びごと記録される
+  ペルソナは実際に出た `relation` の並びごと記録される(各試行 `attempts` に `used_model` を含む。
+  `model_usage` キーで全体の使用件数を集計できる)
 - こちらもDBには書き込まない
 
 ### テスト4: ペルソナ多ターン回帰テスト
@@ -354,6 +366,10 @@ npm run test:persona-regression -- --persona=visitor --turns=1
   本番と全く同じ形で `sessions`/`messages` に保存する。**`admin.html` から通常の会話ログと
   同様に閲覧できる**(セッション一覧から探すか、出力されたJSONの `session_id` で特定する)
 - 実行時のナレッジ世代(`sessions.knowledge_version`)を記録する
+- 出力JSON(`docs/test-results/persona-regression-<実行日時>.json`)の各ターン(`turn_log`)に、
+  生徒役・危機分類器・相談AI本体それぞれが実際に使ったモデルID(`student_model`/
+  `classifier_model`/`counselor_model`)を記録する。ペルソナ単位(`models_used`)と
+  全ペルソナ合計(`model_usage`)の集計も入る
 - **合成データであることが分かるように、`client_id` を `TEST-PERSONA-<ペルソナ>-<実行時刻>`
   にしている。** `admin.html` のセッション一覧では先頭8文字(`client_id_short`)が
   `TEST-PER` と表示されるため、実際の生徒の匿名IDと見た目で区別できる

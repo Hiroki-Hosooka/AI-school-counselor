@@ -138,11 +138,18 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 // のタグで原因を判別できる)。
 // 既定の1500は本生成(generateReply)用。thinkingConfigで思考トークンは切っているが、
 // reply本文+notes7項目+その他のJSONを余裕を持って収められるよう、多少の余白を持たせてある。
+//
+// 戻り値は { text, model }(2026年9月・検証一式のログ充実要望への対応)。
+// 以前は文字列(text)だけを返しており、フォールバックが実際に発生したか・
+// 最終的にどのモデルが応答したかが呼び出し元から分からなかった。classify()/
+// generateReply()/人単位の記憶要約(route.ts)/テストスクリプトの生徒役生成が、
+// 各ログに「使用したモデル」を残せるよう、成功したモデルIDも一緒に返す。
 export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500) {
   let lastError;
   for (const model of models) {
     try {
-      return await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens);
+      const text = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens);
+      return { text, model };
     } catch (e) {
       lastError = e;
       console.error(`モデル ${model} が失敗、次のモデルにフォールバックします:`, e);
@@ -171,8 +178,14 @@ export async function classify(text) {
   const keywords = CRISIS_WORDS.filter((w) => text.includes(w));
   let model = { risk: "none", subject: "self", reason: "判定なし" };
   let classifierError = null;
+  // 実際に判定に成功したモデルID(LITE_MODELSのどれか)。既存の"model"は判定器が返した
+  // JSON本体(risk/subject/reason)の意味で使われているため名前を分けている。全モデルが
+  // 失敗した場合はnull(2026年9月・検証一式のログ充実要望)。
+  let usedModel = null;
   try {
-    model = parseJSON(await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200));
+    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200);
+    model = parseJSON(result.text);
+    usedModel = result.model;
   } catch (e) {
     classifierError = e instanceof Error ? e.message : String(e);
     model = { risk: keywords.length ? "crisis" : "none", subject: "self", reason: "判定器エラー" };
@@ -182,5 +195,5 @@ export async function classify(text) {
   // subject が "other" と明示的に判定された場合のみ other。それ以外(不正値・判定器エラー含む)は
   // 安全側の self に倒す(第三者の話だと誤って軽く扱うことを避けるため。CLAUDE.md 5.2 の対象は self のみ)。
   const subject = model.subject === "other" ? "other" : "self";
-  return { risk, keywords, subject, model, classifierError };
+  return { risk, keywords, subject, model, classifierError, usedModel };
 }

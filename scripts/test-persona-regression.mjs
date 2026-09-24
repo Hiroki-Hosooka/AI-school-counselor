@@ -33,7 +33,7 @@ import path from "node:path";
 import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env.mjs";
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
-  getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
+  getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
 } from "../src/generate.mjs";
 
@@ -83,12 +83,14 @@ ${persona.brief}
 
 // 生徒役の1行を生成する。レート制限は間隔を空けて再試行。
 // それ以外の失敗(ブロック等)はnullを返し、呼び出し側でそのペルソナの会話を打ち切る。
+// 戻り値は { line, model }(検証一式・2026年9月。callGemini()が{text, model}を返すようになった
+// のに合わせ、実際に発言を生成したモデルIDもログに残せるようにする)。
 async function generatePersonaLine(system, contents, maxAttempts = 4) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const raw = await callGemini(LITE_MODELS, system, contents, 150);
-      const line = String(parseJSON(raw).line ?? "").trim();
-      if (line) return line;
+      const result = await callGemini(LITE_MODELS, system, contents, 150);
+      const line = String(parseJSON(result.text).line ?? "").trim();
+      if (line) return { line, model: result.model };
       throw new Error("生徒役の発言が空でした");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -135,8 +137,20 @@ async function classifyWithRetry(text, maxAttempts = 4) {
   return result;
 }
 
+// 実際に使われたモデルの内訳(検証一式・2026年9月)。turnLog(student_model/classifier_model/
+// counselor_model)から集計する。
+function countBy(rows, fn) {
+  const counts = {};
+  for (const r of rows) {
+    const v = fn(r);
+    if (!v) continue;
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  return counts;
+}
+
 console.log(`ペルソナ: ${personas.map((p) => p.id).join(", ")} / ターン数: ${TURNS} / runId: ${runId}`);
-console.log("(生徒役はLITE_MODELS、相談AI本体はPRIMARY_MODELSを使用。ともにTEST_GEMINI_API_KEY)\n");
+console.log(`生徒役モデル: ${LITE_MODELS.join(" → ")} / 相談AI本体モデル: ${PRIMARY_MODELS.join(" → ")}(ともにTEST_GEMINI_API_KEY)\n`);
 
 const db = getDb();
 const rows = await loadKnowledge(db);
@@ -185,8 +199,9 @@ for (const persona of personas) {
       ? history.map((h) => ({ role: h.speaker === "counselor" ? "user" : "model", parts: [{ text: h.text }] }))
       : [{ role: "user", parts: [{ text: "(相談室に入ってきた場面です。最初の一言を話してください)" }] }];
 
-    const studentText = await generatePersonaLine(personaSystem, personaContents);
-    if (!studentText) { stoppedEarly = `turn${turn}: 生徒役の発言生成に失敗`; break; }
+    const studentResult = await generatePersonaLine(personaSystem, personaContents);
+    if (!studentResult) { stoppedEarly = `turn${turn}: 生徒役の発言生成に失敗`; break; }
+    const { line: studentText, model: studentModel } = studentResult;
 
     await db.from("messages").insert({ session_id: sessionId, role: "user", body: studentText });
     history.push({ speaker: "student", text: studentText });
@@ -206,8 +221,11 @@ for (const persona of personas) {
       });
       await db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId);
       history.push({ speaker: "counselor", text: CRISIS_REPLY, crisis: true });
-      turnLog.push({ turn, student: studentText, crisis: true, counselor: CRISIS_REPLY });
-      console.log(`  [T${turn}] → 危機分岐(本人・固定応答。通知・safety_eventsへの記録は行っていません)`);
+      turnLog.push({
+        turn, student: studentText, student_model: studentModel,
+        classifier_model: safety.usedModel, crisis: true, counselor: CRISIS_REPLY,
+      });
+      console.log(`  [T${turn}] → 危機分岐(本人・固定応答。通知・safety_eventsへの記録は行っていません。判定モデル=${safety.usedModel ?? "不明"})`);
       continue;
     }
 
@@ -226,7 +244,7 @@ for (const persona of personas) {
       .filter((h) => !h.crisis)
       .map((h) => ({ role: h.speaker === "student" ? "user" : "model", parts: [{ text: h.text }] }));
 
-    const { out, flags } = await generateWithRetry(system, counselorMessages);
+    const { out, flags, usedModel: counselorModel } = await generateWithRetry(system, counselorMessages);
     const updated = applyTurnUpdate(sessState, out);
     // フェーズ1(インテーク)のスロット更新(構造化面接AI統合 手順5)。route.tsと同じ、
     // 差分(intakePatch)をsessionsへ、このターン時点の現在値(mergedIntake)をmessagesへ。
@@ -261,11 +279,12 @@ for (const persona of personas) {
     sessState = { ...sessState, ...updated, ...intakePatch };
     history.push({ speaker: "counselor", text: out.reply });
     turnLog.push({
-      turn, student: studentText, counselor: out.reply,
+      turn, student: studentText, student_model: studentModel,
+      classifier_model: safety.usedModel, counselor: out.reply, counselor_model: counselorModel,
       weight: updated.weight, relation: updated.relation,
       question_level: out.question_level, flags,
     });
-    console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation} phase=${mergedIntake.phase}${mergedIntake.closing_state && mergedIntake.closing_state !== "none" ? ` closing=${mergedIntake.closing_state}` : ""}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
+    console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation} phase=${mergedIntake.phase} model=${counselorModel ?? "不明"}${mergedIntake.closing_state && mergedIntake.closing_state !== "none" ? ` closing=${mergedIntake.closing_state}` : ""}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
     await sleep(1500);
   }
 
@@ -280,6 +299,11 @@ for (const persona of personas) {
     final_phase: sessState.phase, recommended_mode: sessState.recommended_mode ?? [],
     final_closing_state: sessState.closing_state ?? "none",
     flagged_turns: turnLog.filter((t) => t.flags && t.flags.length).length,
+    models_used: {
+      counselor: countBy(turnLog, (t) => t.counselor_model),
+      classifier: countBy(turnLog, (t) => t.classifier_model),
+      student: countBy(turnLog, (t) => t.student_model),
+    },
     turn_log: turnLog,
   });
   console.log("");
@@ -294,6 +318,20 @@ for (const r of personaReports) {
 }
 console.log("\nadmin.html でセッションIDを検索するか、一覧から探して会話を確認してください。");
 
+// 全ペルソナ横断の、実際に使われたモデルの内訳(検証一式・2026年9月)。
+const overallModelsUsed = { counselor: {}, classifier: {}, student: {} };
+for (const p of personaReports) {
+  for (const kind of ["counselor", "classifier", "student"]) {
+    for (const [m, c] of Object.entries(p.models_used[kind])) {
+      overallModelsUsed[kind][m] = (overallModelsUsed[kind][m] ?? 0) + c;
+    }
+  }
+}
+console.log("\n=== 実際に使われたモデルの内訳(検証一式・全ペルソナ合計) ===");
+console.log(`  相談AI本体(設定順: ${PRIMARY_MODELS.join(" → ")}): ${JSON.stringify(overallModelsUsed.counselor)}`);
+console.log(`  分類器(設定順: ${LITE_MODELS.join(" → ")}): ${JSON.stringify(overallModelsUsed.classifier)}`);
+console.log(`  生徒役(設定順: ${LITE_MODELS.join(" → ")}): ${JSON.stringify(overallModelsUsed.student)}`);
+
 const resultsDir = path.join(ROOT, "docs/test-results");
 mkdirSync(resultsDir, { recursive: true });
 const stamp = startedAt.toISOString().replace(/[:.]/g, "-");
@@ -305,6 +343,14 @@ writeFileSync(outPath, JSON.stringify({
   elapsed_ms: finishedAt - startedAt,
   turns_requested: TURNS,
   knowledge_version: version,
+  counselor_models: PRIMARY_MODELS,
+  support_models: LITE_MODELS,
+  model_usage: {
+    counts: overallModelsUsed,
+    note: "相談AI本体(counselor)・危機分類器(classifier)・生徒役(student)、それぞれ実際に" +
+      "使われたモデルIDごとの件数(検証一式・2026年9月)。2番目以降のモデルが0件でなければ、" +
+      "実行中にフォールバックが実際に発生したことを示す。",
+  },
   personas: personaReports,
 }, null, 2));
 

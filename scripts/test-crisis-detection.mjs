@@ -126,6 +126,7 @@ for (let i = 0; i < items.length; i++) {
     classifierError: r.classifierError,
     errorTag: tag,
     modelReason: r.model?.reason ?? null,
+    usedModel: r.usedModel, // 実際に判定に成功したモデルID。全滅時はnull(検証一式)。
   });
 
   // 無料枠(10RPM級)を自分から詰まらせないための間隔。連続で呼びすぎない。
@@ -228,8 +229,34 @@ const tierBOverDetectionRate = trueWatchResults.length
 const blockRate = results.length ? blockedResults.length / results.length : null;
 
 // --------------------------------------------------------------------------
+// 実際に使われたモデルの内訳(検証一式・2026年9月)。
+// classifier_models(LITE_MODELS)は「試す順番」の設定値でしかなく、実際にどのモデルが
+// 応答したか(フォールバックが実際に発生したか)はこの集計でしか分からない。
+// --------------------------------------------------------------------------
+function countBy(rows, fn) {
+  const counts = {};
+  for (const r of rows) {
+    const v = fn(r);
+    if (!v) continue;
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  return counts;
+}
+const modelUsageCounts = countBy(results, (r) => r.usedModel);
+const noModelSucceeded = results.filter((r) => !r.usedModel).length;
+
+// --------------------------------------------------------------------------
 // レポート出力
 // --------------------------------------------------------------------------
+console.log("\n=== 実際に使われたモデルの内訳(検証一式) ===");
+console.log(`  設定上のフォールバック順: ${LITE_MODELS.join(" → ")}`);
+for (const [m, c] of Object.entries(modelUsageCounts)) {
+  console.log(`  ${m}: ${c}件${m === LITE_MODELS[0] ? "" : "  ← フォールバックが発生"}`);
+}
+if (noModelSucceeded) {
+  console.log(`  全モデル失敗(キーワードのみで判定・classifierError参照): ${noModelSucceeded}件`);
+}
+
 console.log("\n=== Tier A/B分離の妥当性(検証一式 テスト1・最重要) ===");
 console.log(`  Tier A再現率(見逃してはいけない)     = ${tierARecall === null ? "—" : tierARecall.toFixed(2)} (support=${trueTierAResults.length})`);
 console.log(`  Tier A見逃し件数                       = ${tierAMissed.length} / ${trueTierAResults.length}${tierAMissed.length ? "  ★0件が望ましい。下に発話例あり" : ""}`);
@@ -297,6 +324,14 @@ const report = {
   test_set: path.relative(ROOT, SET_PATH),
   test_set_count: items.length,
   classifier_models: LITE_MODELS,
+  model_usage: {
+    counts: modelUsageCounts,
+    no_model_succeeded: noModelSucceeded,
+    note: "実際に判定に成功したモデルIDごとの件数(検証一式・2026年9月)。classifier_modelsは" +
+      "設定上のフォールバック順であり、ここが2番目以降のモデルでも0件でなければ、実行中に" +
+      "フォールバックが実際に発生したことを示す。no_model_succeededは全モデル失敗(キーワード" +
+      "一致のみで判定。classifier_error/error_tag参照)。",
+  },
   overall: {
     accuracy,
     macro_precision: macroAvg(perClass, "precision"),
@@ -339,7 +374,7 @@ const report = {
   },
   misclassified: misclassified.map((r) => ({
     text: r.text, true_label: r.trueLabel, predicted: r.predicted,
-    error_tag: r.errorTag, classifier_reason: r.modelReason,
+    error_tag: r.errorTag, classifier_reason: r.modelReason, used_model: r.usedModel,
   })),
   estimated_tokens: Math.ceil(estimatedChars / CHARS_PER_TOKEN),
   estimated_cost_note: "TEST_GEMINI_API_KEY(無料枠)での実行を想定。実費用は0円。有料枠で実行した場合はai.google.dev/gemini-api/docs/pricingの最新料金で見積もること。",
@@ -352,6 +387,7 @@ const report = {
     predicted: r.predicted, predicted_subject: r.predictedSubject, predicted_tier_a: r.predictedTierA,
     has_keyword_hit: r.hasKeywordHit,
     classifier_reason: r.modelReason,
+    used_model: r.usedModel,
     classifier_error: r.classifierError, error_tag: r.errorTag,
     correct: r.predicted === r.trueLabel,
   })),
