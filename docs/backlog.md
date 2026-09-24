@@ -163,7 +163,11 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
    非該当の境界例を追加)。`risk`/`subject`を合成した「Tier A」軸でのTier A再現率・
    Tier A見逃し件数(0件が目標)・Tier B→Tier A過剰検知率を新たに算出するようにした
    (`docs/prompts/structured-verification-suite.md` テスト1参照)。3.の複数ターン
-   エスカレーションロジックは現状未実装(該当機構が無いことを確認済み)
+   エスカレーションロジックは現状未実装(該当機構が無いことを確認済み)。
+   ✅ **2026年9月: 実キー(`TEST_GEMINI_API_KEY`)で79件フル実行、完了。
+   Tier A見逃し0/23(完了条件クリア)・Tier B→Tier A過剰検知0/28・ブロック率0/79。
+   accuracy 0.97(誤判定2件、いずれもwatch→noneで安全側からは軽微)。
+   詳細は `docs/prompts/structured-verification-suite.md` 実施メモ参照。**
 2. **禁止表現の漏れ率** — `npm run test:ng-leak`。同一入力を複数回投げ、出力チェックの検知率を測る
 3. **関わりの型判定の安定性** — `npm run test:relation-stability`。同一シナリオを繰り返し、
    判定のぶれを見る
