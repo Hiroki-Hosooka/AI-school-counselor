@@ -26,16 +26,16 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
-// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。KEY_ROTATIONは直近成功した
-// キーの位置を覚えておくための状態(毎回キー1から試して消耗させないため)。
-const KEY_POOL = requireTestGeminiKeyPool(ROOT);
+// このテストの生成呼び出しは全てPRIMARY_MODELS(相談AI本体)なので、課金設定済みの
+// 単一キーを使う(2026年9月・モデル比較検証と同じ判断。本番と同じ課金枠で測るのが
+// 本来の姿なうえ、無料枠はこのテストで過去に繰り返しレート制限により完走できなかった)。
+const KEY_POOL = requireTestGeminiKeyPaid(ROOT);
 const KEY_ROTATION = createKeyRotationState();
 requireSupabaseEnv(ROOT);
 
@@ -90,6 +90,71 @@ async function generateWithRetry(system, messages) {
     isTransientGenerateFailure,
     { state: KEY_ROTATION },
   );
+}
+
+// 人が読める詳細ログ(検証一式・2026年9月)。JSONと同じ実行から、拡張子だけ違う
+// ファイル名でペアで残す(test-persona-regression.mjsのトークログと同じ考え方)。
+// 集計値だけでなく、揺れた実際の値の並び・生の返答まで人が読める形で追える。
+function buildSummaryText({ startedAt, finishedAt, jsonFileName, perPersona, overallAvg, perIntake, modeOverallAvg, globalModelsUsed }) {
+  const lines = [];
+  lines.push("=".repeat(40));
+  lines.push("検証一式 テスト3: 関わりの型・モード判定の安定性 詳細ログ");
+  lines.push("=".repeat(40));
+  lines.push("");
+  lines.push(`実行日時: ${startedAt.toISOString()}`);
+  lines.push(`終了日時: ${finishedAt.toISOString()}`);
+  lines.push(`対応する結果JSON(全試行の生データ): ${jsonFileName}`);
+  lines.push("");
+
+  lines.push("-".repeat(40));
+  lines.push(`1. 関わりの型の安定性(平均一致率: ${overallAvg === null ? "—" : overallAvg.toFixed(2)})`);
+  lines.push("-".repeat(40));
+  for (const p of perPersona) {
+    const rate = p.agreement_rate === null ? "—" : p.agreement_rate.toFixed(2);
+    lines.push(`[${p.id}] ${p.label ?? ""} 「${p.text}」`);
+    lines.push(`  多数決=${p.majority_relation ?? "—"} 一致率=${rate} 内訳=${JSON.stringify(p.relation_counts)}`);
+    lines.push(`  実際の並び: ${JSON.stringify(p.all_relations)}`);
+    if (p.generation_failures.length) lines.push(`  生成失敗: ${JSON.stringify(p.generation_failures)}`);
+    lines.push(`  使用モデル: ${JSON.stringify(p.models_used)}`);
+    for (const a of p.attempts) {
+      if (a.generation_failed) {
+        lines.push(`    #${a.attempt} [失敗:${a.failure_cause}]`);
+      } else {
+        lines.push(`    #${a.attempt} [${a.used_model ?? "不明"}] relation=${a.relation} why=${a.why || "—"}`);
+        lines.push(`         reply: ${a.reply}`);
+      }
+    }
+    lines.push("");
+  }
+
+  lines.push("-".repeat(40));
+  lines.push(`2. モード判定の安定性(平均一致率: ${modeOverallAvg === null ? "—" : modeOverallAvg.toFixed(2)})`);
+  lines.push("-".repeat(40));
+  for (const p of perIntake) {
+    const rate = p.agreement_rate === null ? "—" : p.agreement_rate.toFixed(2);
+    lines.push(`[${p.id}] ${p.label ?? ""}(狙い:${p.target_mode_hint ?? "—"})`);
+    lines.push(`  多数決=${p.majority_mode_combo ?? "—"} 一致率=${rate} 内訳=${JSON.stringify(p.mode_combo_counts)}`);
+    lines.push(`  実際の並び: ${JSON.stringify(p.all_mode_combos)}`);
+    if (p.intake_incomplete_count > 0) lines.push(`  1ターンで完了しなかった件数: ${p.intake_incomplete_count}/${p.runs}`);
+    if (p.generation_failures.length) lines.push(`  生成失敗: ${JSON.stringify(p.generation_failures)}`);
+    lines.push(`  使用モデル: ${JSON.stringify(p.models_used)}`);
+    for (const a of p.attempts) {
+      if (a.generation_failed) {
+        lines.push(`    #${a.attempt} [失敗:${a.failure_cause}]`);
+      } else {
+        lines.push(`    #${a.attempt} [${a.used_model ?? "不明"}] mode=${a.mode_combo} intake_complete=${a.intake_complete}`);
+        lines.push(`         reply: ${a.reply}`);
+      }
+    }
+    lines.push("");
+  }
+
+  lines.push("=".repeat(40));
+  lines.push("使用モデルの内訳(両方合算)");
+  lines.push("=".repeat(40));
+  lines.push(JSON.stringify(globalModelsUsed, null, 2));
+
+  return lines.join("\n") + "\n";
 }
 
 function majorityVote(labels) {
@@ -297,7 +362,10 @@ for (const [m, c] of Object.entries(globalModelsUsed)) {
 const resultsDir = path.join(ROOT, "docs/test-results");
 mkdirSync(resultsDir, { recursive: true });
 const stamp = startedAt.toISOString().replace(/[:.]/g, "-");
-const outPath = path.join(resultsDir, `relation-stability-${stamp}.json`);
+const jsonFileName = `relation-stability-${stamp}.json`;
+const summaryFileName = `relation-stability-${stamp}-detail.txt`;
+const outPath = path.join(resultsDir, jsonFileName);
+const summaryPath = path.join(resultsDir, summaryFileName);
 
 writeFileSync(outPath, JSON.stringify({
   run_at: startedAt.toISOString(),
@@ -307,6 +375,9 @@ writeFileSync(outPath, JSON.stringify({
   mode_set: path.relative(ROOT, MODE_SET_PATH),
   repeats: REPEATS,
   generation_models: PRIMARY_MODELS,
+  // 人が読める詳細ログ(検証一式・2026年9月)。同じ実行から、拡張子だけ違うファイル名で
+  // 必ずペアで残す(buildSummaryText参照)。
+  detail_log_file: summaryFileName,
   model_usage: {
     counts: globalModelsUsed,
     note: "実際に採用された判定を生成したモデルIDごとの件数(検証一式・2026年9月。" +
@@ -327,4 +398,9 @@ writeFileSync(outPath, JSON.stringify({
   },
 }, null, 2));
 
-console.log(`\n結果を保存しました: ${path.relative(ROOT, outPath)}`);
+writeFileSync(summaryPath, buildSummaryText({
+  startedAt, finishedAt, jsonFileName, perPersona, overallAvg, perIntake, modeOverallAvg, globalModelsUsed,
+}));
+
+console.log(`\n結果(JSON)を保存しました  : ${path.relative(ROOT, outPath)}`);
+console.log(`詳細ログ(txt)を保存しました: ${path.relative(ROOT, summaryPath)}`);
