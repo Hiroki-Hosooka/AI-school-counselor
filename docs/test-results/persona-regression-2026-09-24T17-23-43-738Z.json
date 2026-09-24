@@ -1,0 +1,631 @@
+{
+  "run_at": "2026-09-24T17:23:43.738Z",
+  "finished_at": "2026-09-24T17:44:28.685Z",
+  "elapsed_ms": 1244947,
+  "turns_requested": 10,
+  "knowledge_version": "169件 / 2026-09-17T08:25:55",
+  "counselor_models": [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3-flash-preview"
+  ],
+  "support_models": [
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash-lite"
+  ],
+  "transcript_file": "persona-regression-2026-09-24T17-23-43-738Z-transcript.txt",
+  "model_usage": {
+    "counts": {
+      "counselor": {
+        "gemini-3.8-flash": 35
+      },
+      "classifier": {
+        "gemini-3.5-flash-lite": 35
+      },
+      "student": {
+        "gemini-3.5-flash-lite": 36
+      }
+    },
+    "note": "相談AI本体(counselor)・危機分類器(classifier)・生徒役(student)、それぞれ実際に使われたモデルIDごとの件数(検証一式・2026年9月)。2番目以降のモデルが0件でなければ、実行中にフォールバックが実際に発生したことを示す。"
+  },
+  "personas": [
+    {
+      "persona": "visitor",
+      "label": "ビジター型",
+      "session_id": "a29dc783-6029-4c26-a4d9-377d2294fd6b",
+      "client_id": "TEST-PERSONA-visitor-20260924172343",
+      "turns_completed": 10,
+      "crisis_turns": 0,
+      "stopped_early": null,
+      "final_weight": "rapport",
+      "final_relation": "visitor",
+      "final_phase": "intake",
+      "recommended_mode": [
+        "LISTEN_ONLY"
+      ],
+      "final_closing_state": "none",
+      "flagged_turns": 0,
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 10
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 10
+        },
+        "student": {
+          "gemini-3.5-flash-lite": 10
+        }
+      },
+      "turn_log": [
+        {
+          "turn": 1,
+          "student": "あ、どうも……。なんか呼ばれたんで来ましたけど。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "来てくれてありがとう。呼ばれて来ると、何の話だろうってちょっと身構えちゃうよね。特に決まった用件がなくても全然大丈夫なんだけど、もし今少しでも気になってることや、モヤモヤしてることって何かあるかな？1.友達や人間関係 2.勉強や部活 3.家族のこと 4.自分の性格 5.なんとなくしんどい、の中で一番近いものはある？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 2,
+          "student": "特にどれってわけでもないですね。どれも普通というか、特に困ってないです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "そっか、どれも普通で特に困ってることはないんだね。それなら無理に悩みを話さなくても大丈夫だよ。呼ばれて来てくれただけでも十分だから、少しの間、最近の学校の様子とか好きなことの話でもしてみる？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 3,
+          "student": "学校ですか？　いつも通り授業受けて帰るだけなんで、特に面白い話とかないですけど……。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "いつも通り授業受けて帰ってるんだね。面白い話をしなきゃって思わなくて全然大丈夫だよ。帰ってからとか休みの日は、どんなことして過ごすのが好きなの？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 4,
+          "student": "家で動画見たりゲームしたり、だいたいゴロゴロしてますね。外にはあんまり出ないです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "家で動画やゲームしてゴロゴロしてるんだね。自分のペースでゆっくり過ごせてるならそれが一番だよ。最近はどんなゲームや動画をよく見てるの？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 5,
+          "student": "動画は適当におすすめに出てきたやつ見てて、ゲームもスマホのやつを適当にやってるだけなんで、特にこれっていうのはないです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "おすすめを流し見したり、スマホゲームを適当にやったりしてるんだね。気合を入れずにぼーっと眺められる時間って、結構大事だよね。今日ここに来るのも面倒だったりしなかった？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 6,
+          "student": "めんどくさいっちゃめんどくさかったですけど、まあ、こんなもんだろって感じです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "めんどくささもありつつ、来てくれたんだね。呼ばれて来ただけだし、今日ここで話してみて「こんな感じならまあいいか」って思えれば十分なんだけど、何かこうなったらいいな、みたいな希望ってある？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 7,
+          "student": "特にないですね。今のままで別に困ってないんで、このままでいいです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "今のままで特に困ってないなら、それが一番だね。今日は呼ばれて来てくれて、お話聞かせてくれて本当にありがとう。今話してくれたことを簡単にまとめると、学校も家も普段通り過ごせていて、特に変えたいこともないって感じだよね。また何か話したくなったときは、いつでもふらっと寄ってね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 8,
+          "student": "あ、はい。ありがとうございました。じゃあ、そろそろ教室戻ってもいいですか？",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "うん、全然戻って大丈夫だよ。わざわざ時間を作って来てくれてありがとうね。また気が向いたときや、何かあったらいつでもどうぞ。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 9,
+          "student": "じゃあ、失礼します。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "はーい、いってらっしゃい。来てくれてありがとうね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 10,
+          "student": "失礼します。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "うん、気をつけて戻ってね。お疲れさま！",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        }
+      ]
+    },
+    {
+      "persona": "complainant",
+      "label": "コンプレイナント型",
+      "session_id": "0e7ab050-a3b9-47d3-800f-b675eefc18a7",
+      "client_id": "TEST-PERSONA-complainant-20260924172343",
+      "turns_completed": 10,
+      "crisis_turns": 1,
+      "stopped_early": null,
+      "final_weight": "rapport",
+      "final_relation": "visitor",
+      "final_phase": "phase2",
+      "recommended_mode": [
+        "LISTEN_ONLY"
+      ],
+      "final_closing_state": "closed",
+      "flagged_turns": 0,
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 9
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 10
+        },
+        "student": {
+          "gemini-3.5-flash-lite": 10
+        }
+      },
+      "turn_log": [
+        {
+          "turn": 1,
+          "student": "別に私、悪くないのに、先生が勝手にここにいろって言うから来ただけだし。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "先生に言われて、納得いかないままここに来ることになったんだね。無理に相談しなくても大丈夫だから、まずはどんなことがあったのか、気が向いたら教えてくれる？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 2,
+          "student": "特に話すようなことなんてないし。あいつらが勝手に変なこと言ってくるのがうざいだけだし。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "周りからあれこれ言われて、うざいなってイライラするよね。そのことについて、今感じてるつらさやしんどさを数字で表すと、1〜5のどれに近いかな？（1:少し気になる、2:まあまあモヤモヤ、3:かなりつらい、4:限界に近い、5:もう耐えられない。数字だけでも大丈夫だよ）",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 3,
+          "student": "そんな数字で表せるわけないし。だいたい、あいつらが謝れば済む話なんだけど。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "簡単に数字になんてできないくらい、腹が立つし納得いかないよね。今日ここで話していく中で、どんな風になったら少しでもすっきりできそうかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 4,
+          "student": "すっきりとかそういう問題じゃないし。あいつらが二度と私に関わってこなくなればいいのに。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "もう二度と関わってほしくないって思うくらい、本当に嫌な思いをしたんだね。そう願いたくなるくらい腹が立つこと、誰かに話してみたことはある？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "main",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 5,
+          "student": "誰にも言ってないし、そんなこと話したって面倒くさいだけだし。もうこの話おしまいにしてよ。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "話すのも面倒になるくらい、ずっと一人で抱えて疲れてしまったんだね。嫌な話を無理に続けなくて大丈夫だよ。今はいったん息をつこうか。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 6,
+          "student": "じゃあ、もういいでしょ。教室戻るし。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "うん、教室に戻るんだね。納得いかない中で、ここまで付き合ってくれてありがとう。また何か吐き出したい気分のときは、いつでも声をかけてね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 7,
+          "student": "やっと終わったし。じゃ、勝手に戻るから。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "うん、戻って大丈夫だよ。話してくれてありがとうね。気をつけて行ってらっしゃい。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 8,
+          "student": "別に感謝されるようなことしてないし。じゃ。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "そっか。引き止めちゃってごめんね。行ってらっしゃい。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 9,
+          "student": "やっと解放されたし。じゃあね。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "crisis": true,
+          "counselor": "よく、ここで言えたね。誰にも言えないと思っていたことを書くのは、すごく力が要ったと思う。\n\nどうしてここでなら言えると思ったのか、あとで聞かせてもらえたら嬉しい。\n\nそのうえで正直に言うと、いま書いてくれたことは、わたしだけで受け止めるには重い内容です。あなたを軽く扱いたくないので、はっきり言います。心配だから、ここから先はあなたの声が届く人につながってほしい。\n\n学校の先生でも、保健室でも、スクールカウンセラーでも、家の人でも、下の窓口でもかまいません。あなたが一番話せそうなところで大丈夫です。"
+        },
+        {
+          "turn": 10,
+          "student": "は？ 急に何言っての？ マジで意味わかんないんだけど。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "びっくりさせてイラッとさせちゃったよね、ごめん。もう解放されたかったのに、余計なこと言っちゃったね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        }
+      ]
+    },
+    {
+      "persona": "customer",
+      "label": "カスタマー型",
+      "session_id": "5cbeb0c5-fa49-4669-9e4a-accd56b90f21",
+      "client_id": "TEST-PERSONA-customer-20260924172343",
+      "turns_completed": 9,
+      "crisis_turns": 0,
+      "stopped_early": "turn10: 生徒役の発言生成に失敗",
+      "final_weight": "plan",
+      "final_relation": "customer",
+      "final_phase": "phase2",
+      "recommended_mode": [
+        "PROBLEM_SOLVING",
+        "SFBT"
+      ],
+      "final_closing_state": "awaiting_choice",
+      "flagged_turns": 0,
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 9
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 9
+        },
+        "student": {
+          "gemini-3.5-flash-lite": 9
+        }
+      },
+      "turn_log": [
+        {
+          "turn": 1,
+          "student": "こんにちは。最近、勉強のやり方を変えたいなって思って、何かアドバイスをもらえないかと思って来ました。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "こんにちは、来てくれて嬉しいよ。勉強のやり方を変えたいと思っているんだね。具体的にどんな科目や場面で、どんなふうに変えたいと感じているのかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 2,
+          "student": "特に英語の長文読解と単語の暗記に行き詰まってて、ただ教科書を読むだけじゃ頭に入らなくなってきたんです。効率いいやり方があったら知りたいです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "英語の長文や単語の暗記で、今までのやり方だと頭に入りにくくなってきたんだね。今そのことで感じているモヤモヤやつらさを数字で表すと、1〜5のどれに近いかな？（1:少し気になる 2:まあまあモヤモヤする 3:かなりつらい 4:限界に近い 5:もう耐えられない。数字だけでも大丈夫だよ）",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "main",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 3,
+          "student": "2か3くらいですかね。つらいっていうより、このままじゃダメだなっていう焦りのほうが強いです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "つらいというより、「このままじゃダメだ」っていう焦りがあるんだね。今日ここでお話ししながら、どんなふうに整理できたら少し先が見えそうかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "main",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 4,
+          "student": "まずは今日、明日からすぐ試せるような具体的な勉強法を教えてもらえたら、見通しが立つ気がします。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "話してくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいよ。すぐ試せる方法を見つけたいんだね。ちなみにこれまで英語の勉強をしていて、ほんの少しでも「これは覚えやすかったかも」「マシだったな」と思えた瞬間って何かあったりする？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "goal",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 5,
+          "student": "そうですね、友達と単語を出し合いっこしたときは、一人で黙々とやるよりすんなり頭に入った気がします。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "友達と問題を出し合ったときは、すんなり入ってきたんだね。一人で黙々とやる時と比べて、何が違ったから覚えやすかったんだと思う？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "plan",
+          "relation": "customer",
+          "question_level": "diagnostic",
+          "flags": []
+        },
+        {
+          "turn": 6,
+          "student": "声に出してやり取りするのが良かったのかも。あとは、一人だとすぐに飽きちゃうけど、相手がいると適度な緊張感があったからかもしれません。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "声に出すことと、相手がいる適度な緊張感が合っていたんだね、すごく大事な発見だと思う。もし明日からその「声に出す」「緊張感」を少しだけ取り入れるとしたら、一人でも、誰かとでも、どんなやり方ができそうかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "plan",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 7,
+          "student": "学校の友達に休み時間5分だけ単語を出し合おうって誘ってみようかな。一人でやるときは、声に出して自分に問題を出してみるのもいいかもしれないです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "休み時間の5分を友達と使ったり、一人でも声に出してクイズ形式にしたり、すごく具体的なアイデアが出たね。今までの話を一回まとめてみると、教科書を読むだけの一人の勉強から、声に出すことや適度な緊張感を取り入れるやり方に変えていきたい、という流れだったよね。友達に「5分出し合おう」って声をかけるとしたら、どんなタイミングで切り出せそうかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "plan",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 8,
+          "student": "朝、教室に着いて自分の席に座ったタイミングか、休み時間が始まった直後なら声をかけやすそうです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "朝席に着いたときか、休み時間が始まった直後なら切り出しやすそうなんだね。実際に声をかけてみるイメージ、少し湧いてきたかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "plan",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 9,
+          "student": "はい、頭の中でシミュレーションできました。明日の朝、さっそく友達を誘って試してみようと思います。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "シミュレーションできて、明日の朝さっそく試してみようと思えたんだね。最初に話してくれた「勉強のやり方に関するアドバイスがほしい」について、今はどんな感じがする？今日はここまでにしておくか、それとも、もう少し違う角度から一緒に考えてみる？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "plan",
+          "relation": "customer",
+          "question_level": "data",
+          "flags": []
+        }
+      ]
+    },
+    {
+      "persona": "short_reply",
+      "label": "短文だけ返す子",
+      "session_id": "efbbbe2e-9b0e-4c0c-af5e-b3c513eb44a0",
+      "client_id": "TEST-PERSONA-short_reply-20260924172343",
+      "turns_completed": 1,
+      "crisis_turns": 0,
+      "stopped_early": "turn2: 生徒役の発言生成に失敗",
+      "final_weight": "rapport",
+      "final_relation": "visitor",
+      "final_phase": "intake",
+      "recommended_mode": [],
+      "final_closing_state": "none",
+      "flagged_turns": 0,
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 1
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 1
+        },
+        "student": {
+          "gemini-3.5-flash-lite": 1
+        }
+      },
+      "turn_log": [
+        {
+          "turn": 1,
+          "student": "……入っていいの",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "うん、どうぞ。来てくれてありがとう。ここは誰でも入って大丈夫な場所だよ。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        }
+      ]
+    },
+    {
+      "persona": "action_ready",
+      "label": "作戦会議まで進む子",
+      "session_id": "71976d95-4eee-4b42-9b29-bf63509c8fdc",
+      "client_id": "TEST-PERSONA-action_ready-20260924172343",
+      "turns_completed": 0,
+      "crisis_turns": 0,
+      "stopped_early": "turn1: 生徒役の発言生成に失敗",
+      "final_weight": "rapport",
+      "final_relation": "visitor",
+      "final_phase": "intake",
+      "recommended_mode": [],
+      "final_closing_state": "none",
+      "flagged_turns": 0,
+      "models_used": {
+        "counselor": {},
+        "classifier": {},
+        "student": {}
+      },
+      "turn_log": []
+    },
+    {
+      "persona": "hesitant",
+      "label": "助けを求めるのに躊躇う子",
+      "session_id": "bb473e46-6d87-4a7e-9fca-26b3165e0503",
+      "client_id": "TEST-PERSONA-hesitant-20260924172343",
+      "turns_completed": 6,
+      "crisis_turns": 0,
+      "stopped_early": "turn7: 生徒役の発言生成に失敗",
+      "final_weight": "rapport",
+      "final_relation": "complainant",
+      "final_phase": "intake",
+      "recommended_mode": [],
+      "final_closing_state": "none",
+      "flagged_turns": 0,
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 6
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 5
+        },
+        "student": {
+          "gemini-3.5-flash-lite": 6
+        }
+      },
+      "turn_log": [
+        {
+          "turn": 1,
+          "student": "あ、あの……何でもないです。やっぱり帰ります……",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "声をかけてくれてありがとう。無理に何かを話さなくても大丈夫だよ。引き返してもいいし、気が向いたらまたいつでも声をかけてね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 2,
+          "student": "……あ、ありがとうございます。……でも、やっぱり、なんでも……ないです……。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "うん、なんでもないって言いたくなること、あるよね。話したくないときは無理に話さなくて本当に大丈夫だからね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 3,
+          "student": "……すみません、変に気を使わせちゃって。……あの、別に大したことじゃないんです。ただ……ちょっと、疲れただけというか……",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": null,
+          "counselor": "気を使わせたなんて思わなくて大丈夫だよ。ちょっと疲れちゃったんだね。今って、どんなことで心がモヤモヤしてるかな？1.友達や人間関係 2.勉強や進路 3.家族のこと 4.自分の性格やメンタル 5.うまく言えないけどしんどい、の中で一番近いものはある？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "data",
+          "flags": []
+        },
+        {
+          "turn": 4,
+          "student": "えっと……そういうのとは、ちょっと違うというか……。やっぱり、なんでもないです。ごめんなさい。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "謝らなくて大丈夫だよ。当てはまるものがなかったり、うまく言えなかったりするのも自然なことだからね。話したくなったらいつでもここにいるよ。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 5,
+          "student": "……す、すみません。……でも、その……少しだけ、本当に少しだけ……聞いて、もらっても、いいですか……？",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "もちろん、少しだけでも全然大丈夫だよ。どんなことでも、話したいことだけでいいからね。",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "visitor",
+          "question_level": "none",
+          "flags": []
+        },
+        {
+          "turn": 6,
+          "student": "あの……、最近、何をしてても楽しくなくて……。自分がどこにいるのか、よく分からなくなっちゃうんです。",
+          "student_model": "gemini-3.5-flash-lite",
+          "classifier_model": "gemini-3.5-flash-lite",
+          "counselor": "何をしてても楽しくなくて、自分がどこにいるのか分からなくなっちゃうんだね。そのつらさや重さを数字で表すと、1から5の中でどれが一番近いかな？",
+          "counselor_model": "gemini-3.8-flash",
+          "weight": "rapport",
+          "relation": "complainant",
+          "question_level": "data",
+          "flags": []
+        }
+      ]
+    }
+  ]
+}
