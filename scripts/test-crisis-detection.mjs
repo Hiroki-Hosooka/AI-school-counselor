@@ -111,12 +111,17 @@ for (let i = 0; i < items.length; i++) {
   const tag = errorTag(r.classifierError);
   console.log(`→ ${r.risk}${tag ? `(${tag})` : ""}`);
 
+  // Tier A = risk==="crisis" && subject==="self"(CLAUDE.md 5.12・route.tsのisSelfCrisisと同じ定義)。
+  // 検証一式 テスト1。risk単体のconfusion_matrixとは別に、この合成軸で見る。
+  const trueSubject = item.subject ?? "self";
   results.push({
     text: item.text,
     trueLabel: item.label,
     predicted: r.risk,
     trueSubject: item.subject ?? null, // 構造化面接AI統合 手順4。未指定の既存項目はselfとして扱う(下記参照)
     predictedSubject: r.subject,
+    trueTierA: item.label === "crisis" && trueSubject === "self",
+    predictedTierA: r.risk === "crisis" && r.subject === "self",
     hasKeywordHit,
     classifierError: r.classifierError,
     errorTag: tag,
@@ -200,8 +205,43 @@ const selfMisclassifiedAsOther = subjectResults.filter(
 );
 
 // --------------------------------------------------------------------------
+// Tier A/Bの分離の妥当性(検証一式 テスト1・2026年9月)。
+// risk単体のconfusion_matrixだけでは、「crisisと判定されたがsubjectがotherだった
+// (=固定応答をスキップする経路)」と「crisisと判定されsubjectもselfだった
+// (=実際にTier A固定応答になる)」が区別できない。CLAUDE.md 5.12の定義そのままに、
+// risk/subjectを合成したTier A軸で、これまでの構成変更(絶望感の表現を
+// CRISIS_WORDSから外した=Tier B化)が意図通り機能しているかを見る。
+// --------------------------------------------------------------------------
+const trueTierAResults = results.filter((r) => r.trueTierA);
+const trueWatchResults = results.filter((r) => r.trueLabel === "watch");
+
+const tierARecall = trueTierAResults.length
+  ? trueTierAResults.filter((r) => r.predictedTierA).length / trueTierAResults.length
+  : null;
+const tierAMissed = trueTierAResults.filter((r) => !r.predictedTierA);
+
+const tierBOverDetection = trueWatchResults.filter((r) => r.predictedTierA);
+const tierBOverDetectionRate = trueWatchResults.length
+  ? tierBOverDetection.length / trueWatchResults.length
+  : null;
+
+const blockRate = results.length ? blockedResults.length / results.length : null;
+
+// --------------------------------------------------------------------------
 // レポート出力
 // --------------------------------------------------------------------------
+console.log("\n=== Tier A/B分離の妥当性(検証一式 テスト1・最重要) ===");
+console.log(`  Tier A再現率(見逃してはいけない)     = ${tierARecall === null ? "—" : tierARecall.toFixed(2)} (support=${trueTierAResults.length})`);
+console.log(`  Tier A見逃し件数                       = ${tierAMissed.length} / ${trueTierAResults.length}${tierAMissed.length ? "  ★0件が望ましい。下に発話例あり" : ""}`);
+console.log(`  Tier B→Tier A 過剰検知率(下がるべき)  = ${tierBOverDetectionRate === null ? "—" : tierBOverDetectionRate.toFixed(2)} (support=${trueWatchResults.length})`);
+console.log(`  Geminiブロック率(精度とは別枠)        = ${blockRate === null ? "—" : blockRate.toFixed(2)} (${blockedResults.length}/${results.length})`);
+if (tierAMissed.length) {
+  console.log("\n  ★★★ Tier Aの見逃し(本人の危機サインが固定応答に至らなかった発話) ★★★");
+  for (const r of tierAMissed) {
+    console.log(`    「${r.text}」→ predicted=${r.predicted}/${r.predictedSubject}${r.errorTag ? `(${r.errorTag})` : ""}`);
+  }
+}
+
 console.log("\n=== クラスごとの指標 ===");
 for (const c of LABELS) {
   const p = perClass[c];
@@ -265,6 +305,21 @@ const report = {
   },
   per_class: perClass,
   confusion_matrix: confusion,
+  tier_ab: {
+    tier_a_recall: tierARecall,
+    tier_a_support: trueTierAResults.length,
+    tier_a_missed: tierAMissed.map((r) => ({
+      text: r.text, predicted: r.predicted, predicted_subject: r.predictedSubject, error_tag: r.errorTag,
+    })),
+    tier_b_over_detection_rate: tierBOverDetectionRate,
+    tier_b_support: trueWatchResults.length,
+    tier_b_over_detection_examples: tierBOverDetection.map((r) => r.text),
+    block_rate: blockRate,
+    note: "検証一式 テスト1(2026年9月)。Tier A = risk===\"crisis\" && subject===\"self\"(CLAUDE.md 5.12)。" +
+      "tier_a_recall/tier_a_missedは本人の危機サインの見逃し(0件が目標)、" +
+      "tier_b_over_detection_rateはTier B(絶望感の表現)が誤って固定応答に至った割合" +
+      "(今回の設計変更で下がっているはずの指標)を見る。",
+  },
   blocked_total: blockedResults.length,
   blocked_examples: blockedResults.map((r) => ({ text: r.text, true_label: r.trueLabel, error: r.classifierError })),
   rate_limited_after_retry: rateLimitedResults.length,

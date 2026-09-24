@@ -149,12 +149,21 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
 悪化していないかを人手を介さずに確認するため。詳細仕様は
 `docs/prompts/automated-testing-harness.md` を参照(実施メモも同ファイルに追記)。
 
+**2026年9月(構造化面接AI統合後): `docs/prompts/structured-verification-suite.md` として、
+統合後に必要な項目(Tier A/B分離の妥当性・インテーク完了率等)を加えた5本立てに更新中。
+実施メモは同ファイルに追記していく。テスト1(危機検知)は実装済み(下記1.を参照)。**
+
 **構成する4本柱(すべて実装済み)**
 
 1. **危機検知の精度** — `npm run test:crisis`。ラベル付き発話セットに対する適合率・再現率・F1、
    および Gemini 安全フィルターによるブロック率を分けて集計する(`src/classify.mjs`)。
    構造化面接AI統合 手順4以降は `subject`(self/other)の精度(全体一致率・otherの再現率・
-   本人の危機をotherと誤った件数)も併せて集計する(CLAUDE.md 5.12)
+   本人の危機をotherと誤った件数)も併せて集計する(CLAUDE.md 5.12)。
+   2026年9月(検証一式 テスト1): テストセットを71→79件に拡張(7-1のTier B該当例・
+   非該当の境界例を追加)。`risk`/`subject`を合成した「Tier A」軸でのTier A再現率・
+   Tier A見逃し件数(0件が目標)・Tier B→Tier A過剰検知率を新たに算出するようにした
+   (`docs/prompts/structured-verification-suite.md` テスト1参照)。3.の複数ターン
+   エスカレーションロジックは現状未実装(該当機構が無いことを確認済み)
 2. **禁止表現の漏れ率** — `npm run test:ng-leak`。同一入力を複数回投げ、出力チェックの検知率を測る
 3. **関わりの型判定の安定性** — `npm run test:relation-stability`。同一シナリオを繰り返し、
    判定のぶれを見る
