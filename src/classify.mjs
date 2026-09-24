@@ -25,15 +25,17 @@ export const CRISIS_REPLY =
 // 安全判定(classify)・人単位の記憶の要約用。軽いタスクなので lite モデルで十分。
 // route.ts の本生成用モデル(PRIMARY_MODELS)とは別モデルにすることで、
 // レート制限の枠も分散させている。
-// gemini-2.5-flash-liteは一度削除したが、2026年9月に復活させた(2番目の
-// フォールバックとして)。実運用のAPIキー/プロジェクトでは
-// "This model models/gemini-2.5-flash-lite is no longer available to new users" という
-// 404を受け取ったが、Google AI Studioのレート制限画面では(別プロジェクトで)
-// 無料枠の割り当てが実際に残っていることを確認した。新規プロジェクトかどうかで
-// 使えるかが分かれる可能性があるため、先頭には置かず、gemini-3.5-flash-liteが
-// 失敗した時だけ試す2番目に置く(失敗してもそのまま次(無ければ判定エラー扱い)に
-// フォールバックするだけなので、載せておいて害はない)。
-export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"];
+//
+// gemini-2.5-flash-liteは一度削除→2026年9月に復活(別プロジェクトのGoogle AI Studio
+// レート制限画面で無料枠の割り当てが残っていることを確認したため)→2026年9月・
+// モデル比較検証で再度削除。ペルソナ回帰テスト(テスト4/5)実行中に、この課金
+// プロジェクトで実際に404「no longer available to new users」を複数回受け取った
+// (gemini-3.5-flash-liteが一時的な503で失敗した直後の2番目のフォールバックとして
+// 呼ばれた際に発生。callGemini()の「一部モデルで一時的な失敗」検知が429のみ対応で
+// 503を見ていなかったため、この組み合わせで生徒役の発言生成が再試行されずに
+// 失敗する不具合も同時に発覚・修正した)。gemini-3.1-flash-liteに置き換える
+// (モデル比較検証で実際に動作・低コストを確認済み)。
+export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 
 // 2026年9月(構造化面接AI統合 手順4)に、絶望感≠危機の原則とsubject(self/other)判定を追加。
 // 「もう無理」「限界」等はここでは crisis から外し、watch(Tier B)側に明示的に含めている
@@ -157,6 +159,9 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0) {
   let lastError;
   let anyRateLimited = false;
+  // Google側の一時的な過負荷(503)も429と同じく「別キー/待てば通る可能性が高い」
+  // 一時的な失敗として扱う(2026年9月・モデル比較検証で頻発を確認)。
+  let anyOverloaded = false;
   for (const model of models) {
     try {
       const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget);
@@ -164,20 +169,26 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
     } catch (e) {
       lastError = e;
       if (e instanceof Error && e.message.includes("[RATE_LIMIT]")) anyRateLimited = true;
+      if (e instanceof Error && e.message.includes("[HTTP_503]")) anyOverloaded = true;
       console.error(`モデル ${model} が失敗、次のモデルにフォールバックします:`, e);
     }
   }
   // 全モデル失敗時、最後に試したモデルのエラーだけを投げると、そのモデルがたまたま
   // 404(退役等)のような別種の失敗だった場合に、途中の別モデルで実際に起きていた
-  // レート制限(429)の情報が消えてしまう。呼び出し側(generateReply/classify内の
-  // xxxWithRetry)は失敗理由の文字列に"[RATE_LIMIT]"が含まれるかで再試行するかを
-  // 判断しているため、これが消えると「本来なら待って再試行すれば通ったはずの失敗」が
-  // "不明なエラー"として再試行なしで確定してしまう(2026年9月、実機検証で発覚。
-  // PRIMARY_MODELS末尾のgemini-2.5-flashがこのプロジェクトで404固定のため特に起きやすい)。
-  // 誰か一人でもレート制限に当たっていれば、最終的なエラーにも[RATE_LIMIT]を引き継ぐ。
-  if (anyRateLimited && lastError instanceof Error && !lastError.message.includes("[RATE_LIMIT]")) {
+  // レート制限(429)や一時的な過負荷(503)の情報が消えてしまう。呼び出し側
+  // (generateReply/classify内のxxxWithRetry)は失敗理由の文字列に"[RATE_LIMIT]"/
+  // "[HTTP_503]"が含まれるかで再試行するかを判断しているため、これが消えると
+  // 「本来なら待って再試行すれば通ったはずの失敗」が"不明なエラー"として再試行なしで
+  // 確定してしまう(2026年9月、実機検証で発覚。当初は429のみ対応していたが、
+  // gemini-2.5-flash(-lite)が両方とも404固定になったことで、「先頭モデルが503→
+  // 次のモデルが404」という組み合わせが頻発し、503側も同じ理由でマスクされることが
+  // わかったため対応を追加した)。誰か一人でも一時的な失敗に当たっていれば、
+  // 最終的なエラーにもそのタグを引き継ぐ(両方起きていれば[RATE_LIMIT]を優先)。
+  if ((anyRateLimited || anyOverloaded) && lastError instanceof Error
+    && !lastError.message.includes("[RATE_LIMIT]") && !lastError.message.includes("[HTTP_503]")) {
+    const tag = anyRateLimited ? "[RATE_LIMIT]" : "[HTTP_503]";
     lastError = new Error(
-      `[RATE_LIMIT] 一部モデルでレート制限が発生(最後に試したモデルの失敗理由: ${lastError.message})`,
+      `${tag} 一部モデルで一時的な失敗が発生(最後に試したモデルの失敗理由: ${lastError.message})`,
     );
   }
   throw lastError;
