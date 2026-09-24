@@ -57,7 +57,11 @@ async function generateWithRetry(system, messages, maxAttempts = 4) {
     result = await generateReply(system, messages);
     if (!result.generationFailed || result.failureCause !== "レート制限(429)") return result;
     if (attempt < maxAttempts) {
-      const waitMs = 3000 * attempt;
+      // 3000→10000(2026年9月)。実機検証でPRIMARY_MODELS(4モデル)を間隔ゼロで
+      // 立て続けに試す挙動と合わさり、3秒刻みの待機では枠が戻り切らず再試行しても
+      // 429が続くケースを確認した。src/classify.mjsのcallGemini()の
+      // レート制限マスキング修正と合わせて、ここも余裕を持たせた。
+      const waitMs = 10000 * attempt;
       console.error(`    レート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
       await sleep(waitMs);
     }

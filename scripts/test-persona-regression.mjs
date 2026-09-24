@@ -98,7 +98,9 @@ async function generatePersonaLine(system, contents, maxAttempts = 4) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("[RATE_LIMIT]") && attempt < maxAttempts) {
-        const waitMs = 3000 * attempt;
+        // 3000→10000(2026年9月。理由はtest-ng-leak-rate.mjsのgenerateWithRetry参照。
+        // このファイル内の他2箇所の待機も同じ理由で揃えている)
+        const waitMs = 10000 * attempt;
         console.error(`    生徒役がレート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
         await sleep(waitMs);
         continue;
@@ -117,7 +119,7 @@ async function generateWithRetry(system, messages, maxAttempts = 4) {
     result = await generateReply(system, messages);
     if (!result.generationFailed || result.failureCause !== "レート制限(429)") return result;
     if (attempt < maxAttempts) {
-      const waitMs = 3000 * attempt;
+      const waitMs = 10000 * attempt;
       console.error(`    相談AIがレート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
       await sleep(waitMs);
     }
@@ -132,7 +134,7 @@ async function classifyWithRetry(text, maxAttempts = 4) {
     result = await classify(text);
     if (!result.classifierError || !result.classifierError.startsWith("[RATE_LIMIT]")) return result;
     if (attempt < maxAttempts) {
-      const waitMs = 3000 * attempt;
+      const waitMs = 10000 * attempt;
       console.error(`    分類器がレート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
       await sleep(waitMs);
     }

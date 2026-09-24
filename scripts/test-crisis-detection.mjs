@@ -65,7 +65,8 @@ async function classifyWithRetry(text, maxAttempts = 4) {
       return result;
     }
     if (attempt < maxAttempts) {
-      const waitMs = 3000 * attempt;
+      // 3000→10000(2026年9月。理由はtest-ng-leak-rate.mjsのgenerateWithRetry参照)
+      const waitMs = 10000 * attempt;
       console.error(`  レート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
       await sleep(waitMs);
     }

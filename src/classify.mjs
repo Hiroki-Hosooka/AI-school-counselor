@@ -154,14 +154,29 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 // 通常モデル(PRIMARY_MODELS)側は何も渡さなければ既定の0のままなので変更不要。
 export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0) {
   let lastError;
+  let anyRateLimited = false;
   for (const model of models) {
     try {
       const text = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget);
       return { text, model };
     } catch (e) {
       lastError = e;
+      if (e instanceof Error && e.message.includes("[RATE_LIMIT]")) anyRateLimited = true;
       console.error(`モデル ${model} が失敗、次のモデルにフォールバックします:`, e);
     }
+  }
+  // 全モデル失敗時、最後に試したモデルのエラーだけを投げると、そのモデルがたまたま
+  // 404(退役等)のような別種の失敗だった場合に、途中の別モデルで実際に起きていた
+  // レート制限(429)の情報が消えてしまう。呼び出し側(generateReply/classify内の
+  // xxxWithRetry)は失敗理由の文字列に"[RATE_LIMIT]"が含まれるかで再試行するかを
+  // 判断しているため、これが消えると「本来なら待って再試行すれば通ったはずの失敗」が
+  // "不明なエラー"として再試行なしで確定してしまう(2026年9月、実機検証で発覚。
+  // PRIMARY_MODELS末尾のgemini-2.5-flashがこのプロジェクトで404固定のため特に起きやすい)。
+  // 誰か一人でもレート制限に当たっていれば、最終的なエラーにも[RATE_LIMIT]を引き継ぐ。
+  if (anyRateLimited && lastError instanceof Error && !lastError.message.includes("[RATE_LIMIT]")) {
+    lastError = new Error(
+      `[RATE_LIMIT] 一部モデルでレート制限が発生(最後に試したモデルの失敗理由: ${lastError.message})`,
+    );
   }
   throw lastError;
 }
