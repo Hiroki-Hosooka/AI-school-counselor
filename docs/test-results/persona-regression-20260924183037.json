@@ -1,0 +1,80 @@
+{
+  "run_at": "2026-09-24T18:30:37.976Z",
+  "finished_at": "2026-09-24T18:36:16.263Z",
+  "elapsed_ms": 338287,
+  "stage": "smoke",
+  "repeats": 1,
+  "run_id": "20260924183037",
+  "knowledge_version": "169件 / 2026-09-17T08:25:55",
+  "counselor_models": [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3-flash-preview"
+  ],
+  "support_models": [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite"
+  ],
+  "logs_dir": "docs/test-results/persona-logs-20260924183037",
+  "budget": {
+    "limit_yen": 1000,
+    "session_cost_usd": 0.06932025,
+    "cumulative_yen_after": 591.3824799999995,
+    "budget_stop": false
+  },
+  "personas": [
+    {
+      "persona": "A3",
+      "rep": 1,
+      "label": "親に言いたいことがある子",
+      "sessions": [
+        {
+          "session_id": "64e1f388-3a9b-45ed-a599-e66048a22579",
+          "stopped_early": null,
+          "turns_completed": 13
+        }
+      ],
+      "automated": [
+        {
+          "id": "intake_within_5",
+          "desc": "インテーク(主訴・きっかけ・つらさ・なりたい姿)が5ターン以内に揃う",
+          "pass": true,
+          "detail": "5ターン目でphase2へ移行"
+        },
+        {
+          "id": "summary_within_6",
+          "desc": "5〜6ターン以内に区切りのまとめ(did_summarize)が1回以上入る",
+          "pass": false,
+          "detail": "6ターン以内にdid_summarize=trueが無い"
+        },
+        {
+          "id": "weight_plan_after_7",
+          "desc": "7ターン目以降に重心(weight)が「plan(作戦会議)」に移る",
+          "pass": true,
+          "detail": "T7でweight=plan"
+        }
+      ],
+      "intake": {
+        "completed": true,
+        "turn": 5,
+        "missing_slots": []
+      },
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 13
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 12,
+          "gemini-3.1-flash-lite": 1
+        },
+        "student": {
+          "gemini-3.5-flash-lite": 11,
+          "gemini-3.1-flash-lite": 1,
+          "(固定文)": 1
+        }
+      }
+    }
+  ]
+}
