@@ -84,7 +84,16 @@
       ],
       "repeats": 1,
       "budget_stop": false
+    },
+    {
+      "run_at": "2026-09-24T18:25:10.084Z",
+      "script": "コンテキストキャッシュ検証(直接curl)",
+      "calls": 9,
+      "cost_usd": 0.03724275000000001,
+      "cost_yen": 5.958840000000002,
+      "cumulative_yen_after": 578.0388399999997,
+      "note": "暗黙キャッシュの発動有無・閾値を実測するための直接API呼び出し(9件)。gemini-3.8-flash実測単価を使用。"
     }
   ],
-  "cumulative_yen": 572.08
+  "cumulative_yen": 578.0388399999997
 }

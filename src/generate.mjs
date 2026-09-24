@@ -438,6 +438,26 @@ const PHASE2_OUTPUT_SCHEMA = `,
   "mode_update": ["本人が自発的に進め方を変えたいと望んだ場合のみ、新しいrecommended_mode配列。希望していなければ空配列"],
   "closing_event": "none または asked または continue または close"`;
 
+// コンテキストキャッシュ(Gemini暗黙キャッシュ)について(2026年9月・persona-tests-4-5.md
+// 「費用を下げる工夫」項目5の検証結果。ユーザーの指示によりプロンプト変更を検討したが、
+// 実装は見送った)。
+//
+// 検証手順:このbuildSystem()の出力のうち、全リクエストで真に不変な部分
+// (principles/NGリスト+ハードコードされた指示文)は実測で約1800〜2200トークン
+// (原則28件+NG合計15件時点)。課金キー・gemini-3.8-flash・Gemini Developer API
+// (このプロジェクトが使っているエンドポイント)に対し、直接curlで検証した:
+//   ・約1876トークンの固定プレフィックスを同一内容で5回連続送信 → 一度も
+//     暗黙キャッシュがヒットしなかった(usageMetadata.cachedContentTokenCountが
+//     常に不在)
+//   ・約9500トークンのプレフィックスでは、3回目の呼び出しから約4080トークン分が
+//     キャッシュされた(Google公式ドキュメントが挙げるFlash系の目安値4096と近い)
+// つまり、静的部分を先頭にまとめて再構成しても、現在のナレッジ規模では
+// キャッシュの最低ライン(4000トークン強)に届かず、効果が無い。並べ替え自体には
+// 「LLMは指示の位置に多少影響を受けうる」という軽微なリスクもあるため、
+// 効果が実証できない変更として実装しなかった。
+//
+// ナレッジが増えて対象範囲(principle/ng)が4000トークン規模に近づいたら再検討する
+// (第7節のRAG導入基準「1000件を超えたら」と同じく、規模に応じて見直す性質のもの)。
 export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake) {
   const principles = rows.filter((k) => k.cat === "principle")
     .map((k) => `・${k.body}(${k.src})`).join("\n");
