@@ -148,14 +148,20 @@ async function generatePersonaLine(system, contents) {
       try {
         const r = await callGemini(LITE_MODELS, system, contents, 800, -1);
         const line = String(parseJSON(r.text).line ?? "").trim();
-        if (!line) return { ok: false, rateLimited: false, error: "生徒役の発言が空でした" };
+        if (!line) return { ok: false, retryable: true, error: "生徒役の発言が空でした" };
         return { ok: true, line, model: r.model };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, rateLimited: msg.includes("[RATE_LIMIT]") || msg.includes("[HTTP_503]"), error: msg };
+        // 429/503に加え、JSONとして読み取れなかった場合も再試行する(2026年9月・実機で
+        // 確認。thinkingBudget:-1(dynamic)のlite系モデルは稀に思考だけで終わり
+        // JSON本体を出さないことがあるが、単発の生徒発言1行のやり直しはコストも
+        // リスクも小さいため、ここで会話全体を諦めるのは過剰だった)。
+        const retryable = msg.includes("[RATE_LIMIT]") || msg.includes("[HTTP_503]")
+          || msg.includes("応答をJSONとして読み取れませんでした");
+        return { ok: false, retryable, error: msg };
       }
     },
-    (r) => !r.ok && r.rateLimited,
+    (r) => !r.ok && r.retryable,
     { label: "生徒役: ", state: STUDENT_KEY_ROTATION },
   );
   if (!result.ok) {
