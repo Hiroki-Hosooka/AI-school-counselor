@@ -168,7 +168,10 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
    Tier A見逃し0/23(完了条件クリア)・Tier B→Tier A過剰検知0/28・ブロック率0/79。
    accuracy 0.97(誤判定2件、いずれもwatch→noneで安全側からは軽微)。
    詳細は `docs/prompts/structured-verification-suite.md` 実施メモ参照。**
-2. **禁止表現の漏れ率** — `npm run test:ng-leak`。同一入力を複数回投げ、出力チェックの検知率を測る
+2. **禁止表現の漏れ率** — `npm run test:ng-leak`。同一入力を複数回投げ、出力チェックの検知率を測る。
+   2026年9月(検証一式 テスト2): `OUTPUT_NG`にSFBT・PSYCHOEDUCATION関連語の見落としを
+   発見し追加(`docs/prompts/structured-verification-suite.md` テスト2参照)。入力セットに
+   技法名開示を誘発する3件(ng11〜13)を追加。実キーでの実行は未実施(次はDB接続が要る)
 3. **関わりの型判定の安定性** — `npm run test:relation-stability`。同一シナリオを繰り返し、
    判定のぶれを見る
 4. **ペルソナ多ターン回帰テスト** — `npm run test:persona-regression`。生徒役(Flash-Lite)×
