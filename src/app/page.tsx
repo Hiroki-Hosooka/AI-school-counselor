@@ -147,6 +147,10 @@ export default function Page() {
       store.set("sc_client", cid);
     }
     clientIdRef.current = cid;
+    // localStorageはブラウザにしか無いため、useState(() => ...)の初期化関数では読めない
+    // (SSR時にサーバ側で実行され、クライアントとの値の食い違い=hydrationエラーになる)。
+    // そのため初回マウント時のeffectで読み、表示用stateに一度だけ反映している。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setClientId(cid);
     boot();
     // 初回マウント時のみ実行する
