@@ -1,0 +1,126 @@
+{
+  "description": "docs/prompts/structured-verification-suite.md テスト3(新規部分)用。フェーズ1(インテーク)の4項目が出そろった会話を6パターン用意し、recommended_modeの判定が安定しているかを見る。target_mode_hintは作成時に狙ったモードであり、正解ラベルではない(複合モードが出ても揺れではなく正常な判定として扱う)。Claudeによるsynthetic(合成)データ。",
+  "created": "2026-09-24",
+  "items": [
+    {
+      "id": "listen_only",
+      "label": "LISTEN_ONLYを狙う例",
+      "target_mode_hint": "LISTEN_ONLY",
+      "intake_before_final_turn": {
+        "chief_complaint_category": 1,
+        "onset_context": "2週間前くらいから、仲良かった友達と気まずくなって、それからずっと気になってる",
+        "distress_level": 4
+      },
+      "turns": [
+        { "role": "model", "text": "今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね(一言でもOKだよ)。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい" },
+        { "role": "user", "text": "1番の、友達・人間関係のことです" },
+        { "role": "model", "text": "そうなんだね。いつ頃から、どんなきっかけがあったか教えてもらえる?" },
+        { "role": "user", "text": "2週間前くらいから、仲良かった友達と気まずくなって、それからずっと気になってる" },
+        { "role": "model", "text": "今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな?" },
+        { "role": "user", "text": "4かな" },
+        { "role": "model", "text": "今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?" },
+        { "role": "user", "text": "特に解決してほしいわけじゃなくて、ただこの気持ちを聞いてもらえたら十分です" }
+      ]
+    },
+    {
+      "id": "cbt",
+      "label": "CBTを狙う例",
+      "target_mode_hint": "CBT",
+      "intake_before_final_turn": {
+        "chief_complaint_category": 4,
+        "onset_context": "何か少しでも注意されると、『自分は全部ダメなんだ』って一気に思い込んでしまう",
+        "distress_level": 3
+      },
+      "turns": [
+        { "role": "model", "text": "今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね(一言でもOKだよ)。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい" },
+        { "role": "user", "text": "4番、自分の性格のことです" },
+        { "role": "model", "text": "そっか。自分のどんなところが気になってる?" },
+        { "role": "user", "text": "何か少しでも注意されると、『自分は全部ダメなんだ』って一気に思い込んでしまう" },
+        { "role": "model", "text": "今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな?" },
+        { "role": "user", "text": "3くらい" },
+        { "role": "model", "text": "今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?" },
+        { "role": "user", "text": "そういう考え方のクセを、自分でも見直せるようになりたい" }
+      ]
+    },
+    {
+      "id": "sfbt",
+      "label": "SFBTを狙う例",
+      "target_mode_hint": "SFBT",
+      "intake_before_final_turn": {
+        "chief_complaint_category": 2,
+        "onset_context": "最近勉強のやる気が全然出なくて、前はもっと集中できてた気がする",
+        "distress_level": 2
+      },
+      "turns": [
+        { "role": "model", "text": "今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね(一言でもOKだよ)。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい" },
+        { "role": "user", "text": "2番、勉強のことです" },
+        { "role": "model", "text": "そうなんだね。どんな場面でそう感じる?" },
+        { "role": "user", "text": "最近勉強のやる気が全然出なくて、前はもっと集中できてた気がする" },
+        { "role": "model", "text": "今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな?" },
+        { "role": "user", "text": "2くらいかな" },
+        { "role": "model", "text": "今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?" },
+        { "role": "user", "text": "前にうまくいってたときの感覚とか、そのコツみたいなものを思い出したい" }
+      ]
+    },
+    {
+      "id": "assertion",
+      "label": "ASSERTIONを狙う例",
+      "target_mode_hint": "ASSERTION",
+      "intake_before_final_turn": {
+        "chief_complaint_category": 1,
+        "onset_context": "友達に頼まれごとをされると断れなくて、気づいたらいつも自分が我慢してる",
+        "distress_level": 3
+      },
+      "turns": [
+        { "role": "model", "text": "今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね(一言でもOKだよ)。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい" },
+        { "role": "user", "text": "1番、友達関係のことです" },
+        { "role": "model", "text": "どんな場面でそう感じることが多い?" },
+        { "role": "user", "text": "友達に頼まれごとをされると断れなくて、気づいたらいつも自分が我慢してる" },
+        { "role": "model", "text": "今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな?" },
+        { "role": "user", "text": "3くらい" },
+        { "role": "model", "text": "今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?" },
+        { "role": "user", "text": "角が立たない断り方を知りたい" }
+      ]
+    },
+    {
+      "id": "problem_solving",
+      "label": "PROBLEM_SOLVINGを狙う例",
+      "target_mode_hint": "PROBLEM_SOLVING",
+      "intake_before_final_turn": {
+        "chief_complaint_category": 2,
+        "onset_context": "テスト範囲が広すぎて、何から手をつけていいか分からなくなってる",
+        "distress_level": 2
+      },
+      "turns": [
+        { "role": "model", "text": "今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね(一言でもOKだよ)。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい" },
+        { "role": "user", "text": "2番、勉強のことです" },
+        { "role": "model", "text": "どんな場面でそう感じる?" },
+        { "role": "user", "text": "テスト範囲が広すぎて、何から手をつけていいか分からなくなってる" },
+        { "role": "model", "text": "今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな?" },
+        { "role": "user", "text": "2くらい" },
+        { "role": "model", "text": "今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?" },
+        { "role": "user", "text": "効率よく進められる勉強の計画を一緒に立ててほしい" }
+      ]
+    },
+    {
+      "id": "psychoeducation",
+      "label": "PSYCHOEDUCATIONを狙う例",
+      "target_mode_hint": "PSYCHOEDUCATION",
+      "intake_before_final_turn": {
+        "chief_complaint_category": 4,
+        "onset_context": "テスト前になると動悸がしたり、夜あまり眠れなくなったりする",
+        "distress_level": 3
+      },
+      "turns": [
+        { "role": "model", "text": "今って、どんなことで心がモヤモヤしてるかな?一番近いものを教えてね(一言でもOKだよ)。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい" },
+        { "role": "user", "text": "4番かな、自分のことです" },
+        { "role": "model", "text": "どんな様子が気になってる?" },
+        { "role": "user", "text": "テスト前になると動悸がしたり、夜あまり眠れなくなったりする" },
+        { "role": "model", "text": "今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな?" },
+        { "role": "user", "text": "3くらい" },
+        { "role": "model", "text": "今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?" },
+        { "role": "user", "text": "これって自分がおかしいのか、それとも普通のことなのか知りたい" }
+      ]
+    }
+  ]
+}

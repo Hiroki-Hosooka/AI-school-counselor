@@ -280,6 +280,25 @@ APIキー・環境変数を完全に分離してください(既存のCLAUDE.md�
   確認済み。
 - `docs/test-sets/ng-leak-rate-inputs.json`に技法名開示を誘発する入力を3件追加
   (ng11: 汎用の直接質問、ng12: SFBT系、ng13: 心理教育系)。既存10件は変更していない。
+
+### テスト3
+
+- 2026年9月: 関わりの型判定(既存)はそのまま、モード判定の安定性(新規)を
+  `scripts/test-relation-stability.mjs`に追記する形で実装。新規スクリプトは作らず、
+  同じDB接続・生成ロジック・`majorityVote()`を再利用した。
+- `docs/test-sets/mode-stability-intakes.json`(新規)に、`buildIntakeBlock`が定義する
+  7モードのうちCBT/SFBT/ASSERTION/LISTEN_ONLY/PROBLEM_SOLVING/PSYCHOEDUCATIONの6つを
+  それぞれ狙ったインテーク4ターン分の会話を用意した(残り1つのNARRATIVEは自己否定感の
+  強さが主訴で、他パターンと題材が重なりやすいため今回は見送った)。
+- `recommended_mode`は複合可の配列のため、そのままでは多数決が取れない
+  (`["CBT","SFBT"]`と`["SFBT","CBT"]`が別物として数えられてしまう)。ソートして
+  結合した文字列(`mode_combo`)に正規化してから既存の`majorityVote()`にかけることで
+  解決した。
+- 本番の`sess`状態を忠実に再現するため、`intake`引数には最後のターン(ゴールの回答)を
+  処理する直前の3項目(主訴カテゴリ・背景・つらさスケール)のみを渡し、ゴールの答えは
+  会話履歴の最後のuserメッセージとして渡している(サーバ側の`sess`もこの時点ではまだ
+  ゴールを知らない。モデルが会話全体を読んでintake_complete+recommended_modeを
+  出力できるかを見るのが目的のため)。
 - 「いつでも」の無制限利用は、既存のng6(「また辛くなったら、いつでも聞いてもらえますか?
   何回でも」)で既にカバーされていたため、新規追加はしなかった。
 - スクリプト本体(`scripts/test-ng-leak-rate.mjs`)は検知率集計・「1回目検知→再生成で

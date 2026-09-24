@@ -340,18 +340,29 @@ npm run test:ng-leak
   `model_usage` キーで全体の使用件数を集計できる)
 - 単発生成のみでDBには書き込まない
 
-### テスト3: 関わりの型判定の安定性
+### テスト3: 関わりの型・モード判定の安定性
 
 ```bash
 npm run test:relation-stability
+# 片方だけ実行したい場合:
+npm run test:relation-stability -- --skip-mode      # 関わりの型のみ
+npm run test:relation-stability -- --skip-relation  # モード判定のみ
 ```
 
-- ペルソナセット: `docs/test-sets/relation-stability-personas.json`(6種)の初回発言を、
-  同じく `generateReply()` に各10回通し、`relation` の多数決との一致率を算出する
-- 出力は `docs/test-results/relation-stability-<実行日時>.json`。一致率が低い(揺れが大きい)
-  ペルソナは実際に出た `relation` の並びごと記録される(各試行 `attempts` に `used_model` を含む。
-  `model_usage` キーで全体の使用件数を集計できる)
-- こちらもDBには書き込まない
+2本立て(2026年9月、検証一式テスト3でモード判定を追加)。
+
+1. **関わりの型**: `docs/test-sets/relation-stability-personas.json`(6種)の初回発言を、
+   `generateReply()` に各10回通し、`relation` の多数決との一致率を算出する
+2. **モード判定**: `docs/test-sets/mode-stability-intakes.json`(6種。CBT/SFBT/ASSERTION/
+   LISTEN_ONLY/PROBLEM_SOLVING/PSYCHOEDUCATIONをそれぞれ狙ったインテーク4ターン分の会話)を、
+   `phase: "intake"` のまま `generateReply()` に各10回通す。`recommended_mode`(複合可の配列)を
+   ソート・結合した文字列に正規化してから、関わりの型と同じ多数決ロジックで一致率を算出する
+
+出力は `docs/test-results/relation-stability-<実行日時>.json`。`relation_stability`/`mode_stability`
+の2キーに分かれて入る。一致率が低い(揺れが大きい)ペルソナ・パターンは実際に出た値の並びごと
+記録される(各試行 `attempts` に `used_model` を含む。`model_usage` キーで全体の使用件数を集計できる)。
+モード判定側は、本来その場でインテークが完了するはずが完了しなかった件数(`intake_incomplete_count`)
+も記録する。どちらもDBには書き込まない。
 
 ### テスト4: ペルソナ多ターン回帰テスト
 

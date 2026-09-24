@@ -172,10 +172,13 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
    2026年9月(検証一式 テスト2): `OUTPUT_NG`にSFBT・PSYCHOEDUCATION関連語の見落としを
    発見し追加(`docs/prompts/structured-verification-suite.md` テスト2参照)。入力セットに
    技法名開示を誘発する3件(ng11〜13)を追加。実キーでの実行は未実施(次はDB接続が要る)
-3. **関わりの型判定の安定性** — `npm run test:relation-stability`。同一シナリオを繰り返し、
-   判定のぶれを見る
+3. **関わりの型・モード判定の安定性** — `npm run test:relation-stability`。同一シナリオを繰り返し、
+   判定のぶれを見る。2026年9月(検証一式 テスト3): インテーク完了時のモード判定
+   (`recommended_mode`)の安定性を追加(`docs/test-sets/mode-stability-intakes.json`。
+   `docs/prompts/structured-verification-suite.md` テスト3参照)
 4. **ペルソナ多ターン回帰テスト** — `npm run test:persona-regression`。生徒役(Flash-Lite)×
-   評価対象(PRIMARY_MODELS)。`sessions`/`messages`に保存し`admin.html`から閲覧できる
+   評価対象(PRIMARY_MODELS)。`sessions`/`messages`に保存し`admin.html`から閲覧できる。
+   2026年9月: 同じ実行から人が読めるトークログ(.txt)もペアで出力するようにした
 
 ナレッジ検索・システムプロンプト構築・本生成は `src/generate.mjs` に切り出し、
 route.ts(本番)とテスト2〜4が完全に同じ関数を使う(測定対象と本番実装がずれないため)。
