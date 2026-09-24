@@ -20,13 +20,15 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, sleep } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-requireTestGeminiKey(ROOT);
+// 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
+// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
+const KEY_POOL = requireTestGeminiKeyPool(ROOT);
 requireSupabaseEnv(ROOT);
 
 // 初回セッションと同じ基準値(db/schema.sql の sessions のデフォルトに合わせる)。
@@ -49,24 +51,15 @@ const testSet = JSON.parse(readFileSync(SET_PATH, "utf8"));
 let items = testSet.items ?? [];
 if (LIMIT) items = items.slice(0, LIMIT);
 
-// レート制限は間隔を空けて再試行する。生成失敗(レート制限)はやり直し、
-// それ以外(ブロック等)はそのまま「生成失敗」として記録する。
-async function generateWithRetry(system, messages, maxAttempts = 4) {
-  let result;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    result = await generateReply(system, messages);
-    if (!result.generationFailed || result.failureCause !== "レート制限(429)") return result;
-    if (attempt < maxAttempts) {
-      // 3000→10000(2026年9月)。実機検証でPRIMARY_MODELS(4モデル)を間隔ゼロで
-      // 立て続けに試す挙動と合わさり、3秒刻みの待機では枠が戻り切らず再試行しても
-      // 429が続くケースを確認した。src/classify.mjsのcallGemini()の
-      // レート制限マスキング修正と合わせて、ここも余裕を持たせた。
-      const waitMs = 10000 * attempt;
-      console.error(`    レート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
-      await sleep(waitMs);
-    }
-  }
-  return result;
+// レート制限は複数キーを切り替えながら再試行する(2026年9月。詳細はtest-env.mjsの
+// withRateLimitRetry参照)。生成失敗(レート制限)はやり直し、それ以外(ブロック等)は
+// そのまま「生成失敗」として記録する。
+async function generateWithRetry(system, messages) {
+  return withRateLimitRetry(
+    KEY_POOL,
+    () => generateReply(system, messages),
+    (r) => r.generationFailed && r.failureCause === "レート制限(429)",
+  );
 }
 
 // flags の形から、この1回の結果を分類する。

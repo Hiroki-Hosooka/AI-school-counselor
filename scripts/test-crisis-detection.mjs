@@ -21,14 +21,16 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKey, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, withRateLimitRetry, sleep } from "./_lib/test-env.mjs";
 import { classify, LITE_MODELS } from "../src/classify.mjs";
 import { CRISIS_WORDS } from "../src/safety.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-requireTestGeminiKey(ROOT);
+// 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
+// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
+const KEY_POOL = requireTestGeminiKeyPool(ROOT);
 
 // --------------------------------------------------------------------------
 // テストセット読み込み
@@ -57,21 +59,13 @@ for (const it of items) {
 // classify() 呼び出し(レート制限は間隔を空けて再試行。ブロックは再試行しない
 // = ブロックは「事実」として記録する対象であり、レート制限のような一時障害ではないため)
 // --------------------------------------------------------------------------
-async function classifyWithRetry(text, maxAttempts = 4) {
-  let result;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    result = await classify(text);
-    if (!result.classifierError || !result.classifierError.startsWith("[RATE_LIMIT]")) {
-      return result;
-    }
-    if (attempt < maxAttempts) {
-      // 3000→10000(2026年9月。理由はtest-ng-leak-rate.mjsのgenerateWithRetry参照)
-      const waitMs = 10000 * attempt;
-      console.error(`  レート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
-      await sleep(waitMs);
-    }
-  }
-  return result; // 最終試行後もレート制限のままなら、その結果をそのまま記録する
+async function classifyWithRetry(text) {
+  return withRateLimitRetry(
+    KEY_POOL,
+    () => classify(text),
+    (r) => !!r.classifierError && r.classifierError.startsWith("[RATE_LIMIT]"),
+  );
+  // 全滅後もレート制限のままなら、その結果をそのまま記録する(withRateLimitRetryの仕様)。
 }
 
 function errorTag(err) {

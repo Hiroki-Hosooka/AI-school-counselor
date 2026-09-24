@@ -30,7 +30,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKey, requireSupabaseEnv, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, sleep } from "./_lib/test-env.mjs";
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
@@ -40,7 +40,9 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-requireTestGeminiKey(ROOT);
+// 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
+// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
+const KEY_POOL = requireTestGeminiKeyPool(ROOT);
 requireSupabaseEnv(ROOT);
 
 const turnsArg = process.argv.find((a) => a.startsWith("--turns="));
@@ -79,65 +81,57 @@ ${persona.brief}
 {"line": "生徒の発言本文"}`;
 }
 
-// 生徒役の1行を生成する。レート制限は間隔を空けて再試行。
+// 生徒役の1行を生成する。レート制限は複数キーを切り替えながら再試行する
+// (2026年9月。詳細はtest-env.mjsのwithRateLimitRetry参照)。
 // それ以外の失敗(ブロック等)はnullを返し、呼び出し側でそのペルソナの会話を打ち切る。
 // 戻り値は { line, model }(検証一式・2026年9月。callGemini()が{text, model}を返すようになった
 // のに合わせ、実際に発言を生成したモデルIDもログに残せるようにする)。
-async function generatePersonaLine(system, contents, maxAttempts = 4) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      // thinkingBudgetは-1固定(LITE_MODELSは0を受け付けないため。src/classify.mjs参照)。
-      // maxOutputTokensは150→800。-1(dynamic)は思考トークン消費が読めないため余裕を持たせた
-      // (実際の生徒発言は1〜2文の短さのまま。src/classify.mjsのcallGemini()コメント参照)。
-      const result = await callGemini(LITE_MODELS, system, contents, 800, -1);
-      const line = String(parseJSON(result.text).line ?? "").trim();
-      if (line) return { line, model: result.model };
-      throw new Error("生徒役の発言が空でした");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("[RATE_LIMIT]") && attempt < maxAttempts) {
-        // 3000→10000(2026年9月。理由はtest-ng-leak-rate.mjsのgenerateWithRetry参照。
-        // このファイル内の他2箇所の待機も同じ理由で揃えている)
-        const waitMs = 10000 * attempt;
-        console.error(`    生徒役がレート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
-        await sleep(waitMs);
-        continue;
+async function generatePersonaLine(system, contents) {
+  const result = await withRateLimitRetry(
+    KEY_POOL,
+    async () => {
+      try {
+        // thinkingBudgetは-1固定(LITE_MODELSは0を受け付けないため。src/classify.mjs参照)。
+        // maxOutputTokensは150→800。-1(dynamic)は思考トークン消費が読めないため余裕を持たせた
+        // (実際の生徒発言は1〜2文の短さのまま。src/classify.mjsのcallGemini()コメント参照)。
+        const r = await callGemini(LITE_MODELS, system, contents, 800, -1);
+        const line = String(parseJSON(r.text).line ?? "").trim();
+        if (!line) return { ok: false, rateLimited: false, error: "生徒役の発言が空でした" };
+        return { ok: true, line, model: r.model };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { ok: false, rateLimited: msg.includes("[RATE_LIMIT]"), error: msg };
       }
-      console.error("生徒役の発言生成に失敗しました:", e);
-      return null;
-    }
+    },
+    (r) => !r.ok && r.rateLimited,
+    { label: "生徒役: " },
+  );
+  if (!result.ok) {
+    console.error("生徒役の発言生成に失敗しました:", result.error);
+    return null;
   }
-  return null;
+  return { line: result.line, model: result.model };
 }
 
-// 相談AI本体の生成。レート制限は間隔を空けて再試行。
-async function generateWithRetry(system, messages, maxAttempts = 4) {
-  let result;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    result = await generateReply(system, messages);
-    if (!result.generationFailed || result.failureCause !== "レート制限(429)") return result;
-    if (attempt < maxAttempts) {
-      const waitMs = 10000 * attempt;
-      console.error(`    相談AIがレート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
-      await sleep(waitMs);
-    }
-  }
-  return result;
+// 相談AI本体の生成。レート制限は複数キーを切り替えながら再試行する。
+async function generateWithRetry(system, messages) {
+  return withRateLimitRetry(
+    KEY_POOL,
+    () => generateReply(system, messages),
+    (r) => r.generationFailed && r.failureCause === "レート制限(429)",
+    { label: "相談AI: " },
+  );
 }
 
-// 危機判定。レート制限は間隔を空けて再試行(ブロック等はそのまま記録する。テスト1と同じ考え方)。
-async function classifyWithRetry(text, maxAttempts = 4) {
-  let result;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    result = await classify(text);
-    if (!result.classifierError || !result.classifierError.startsWith("[RATE_LIMIT]")) return result;
-    if (attempt < maxAttempts) {
-      const waitMs = 10000 * attempt;
-      console.error(`    分類器がレート制限、${waitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
-      await sleep(waitMs);
-    }
-  }
-  return result;
+// 危機判定。レート制限は複数キーを切り替えながら再試行する(ブロック等はそのまま
+// 記録する。テスト1と同じ考え方)。
+async function classifyWithRetry(text) {
+  return withRateLimitRetry(
+    KEY_POOL,
+    () => classify(text),
+    (r) => !!r.classifierError && r.classifierError.startsWith("[RATE_LIMIT]"),
+    { label: "分類器: " },
+  );
 }
 
 // 実際に使われたモデルの内訳(検証一式・2026年9月)。turnLog(student_model/classifier_model/
