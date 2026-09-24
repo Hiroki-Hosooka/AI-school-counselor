@@ -1,0 +1,76 @@
+{
+  "note": "TEST_GEMINI_API_KEY_PAID(課金キー)を使った検証の累計。無料枠(TEST_GEMINI_API_KEYS)のみで行ったテスト(テスト1等)は¥0として扱う。2026年9月24日、予算台帳システム導入時に、それまでの実行をまとめて遡及記録した(先頭6件はestimated:true。台帳導入前は一部スクリプトにコスト計測機能が無かったため、実測できた同型モデルの単価から算出した概算)。以降はrecordCall/finalizeBudgetTrackerが実行のたびに自動で追記する。",
+  "usd_to_jpy_rate_used_for_seed": 160,
+  "entries": [
+    {
+      "run_at": "2026-09-24T15:17:00.000Z",
+      "script": "test-model-comparison.mjs(開発中のスモークテスト各種)",
+      "calls": 50,
+      "cost_usd": 0.20,
+      "cost_yen": 32.0,
+      "cumulative_yen_after": 32.0,
+      "estimated": true,
+      "note": "503/parseJSONバグの調査中に行った複数回の小規模スモークテストの合算概算。503で失敗した回は無料(課金なし)なので、実際に成功した回のみのコスト。"
+    },
+    {
+      "run_at": "2026-09-24T15:53:00.000Z",
+      "script": "test-model-comparison.mjs(--repeats=10。ユーザー指示により中断)",
+      "calls": 181,
+      "cost_usd": 0.743,
+      "cost_yen": 118.88,
+      "cumulative_yen_after": 150.88,
+      "estimated": true,
+      "note": "gemini-3.5-flash-lite(130回・$0.6111・確定値)+gemini-2.5-flash(130回・404で$0・確定値)+gemini-3.1-flash-lite(中断までの約51回・約$0.13・r3実行時の同モデル単価から概算)。"
+    },
+    {
+      "run_at": "2026-09-24T16-12-03.489Z",
+      "script": "test-model-comparison.mjs(--repeats=3。完走)",
+      "calls": 273,
+      "cost_usd": 1.2904,
+      "cost_yen": 206.464,
+      "cumulative_yen_after": 357.344,
+      "estimated": false,
+      "note": "7モデル×13件×3回。docs/test-results/model-comparison-2026-09-24T16-12-03-489Z.jsonの実測値。"
+    },
+    {
+      "run_at": "2026-09-24T17:32:11.971Z",
+      "script": "test-relation-stability.mjs(フル完走)",
+      "calls": 120,
+      "cost_usd": 0.55,
+      "cost_yen": 88.0,
+      "cumulative_yen_after": 445.344,
+      "estimated": true,
+      "note": "実行当時このスクリプトにコスト計測機能が無かったため、全120回がgemini-3.8-flashだった実績(docs/test-results/relation-stability-2026-09-24T17-32-11-971Z.json)に、同モデルのr3実測単価($0.00460/回)を適用して概算。"
+    },
+    {
+      "run_at": "2026-09-24T17:23:43.738Z",
+      "script": "test-persona-regression.mjs(旧仕様。4/6ペルソナが503マスキングバグで途中終了)",
+      "calls": 35,
+      "cost_usd": 0.16,
+      "cost_yen": 25.6,
+      "cumulative_yen_after": 470.944,
+      "estimated": true,
+      "note": "相談AI本体(gemini-3.8-flash)35回分。実行当時コスト計測機能が無かったため概算。docs/test-results/persona-regression-2026-09-24T17-23-43-738Z.json参照。"
+    },
+    {
+      "run_at": "2026-09-24T17:45:16.800Z",
+      "script": "test-ng-leak-rate.mjs(スモークテスト)",
+      "calls": 4,
+      "cost_usd": 0.0186,
+      "cost_yen": 2.976,
+      "cumulative_yen_after": 473.92,
+      "estimated": false
+    },
+    {
+      "run_at": "2026-09-24T17:45:52.279Z",
+      "script": "test-ng-leak-rate.mjs(フル完走)",
+      "calls": 130,
+      "cost_usd": 0.6135,
+      "cost_yen": 98.16,
+      "cumulative_yen_after": 572.08,
+      "estimated": false,
+      "note": "docs/test-results/ng-leak-rate-2026-09-24T17-45-52-279Z.jsonの実測値。"
+    }
+  ],
+  "cumulative_yen": 572.08
+}

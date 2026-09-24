@@ -407,3 +407,59 @@ group by s.id;
 --  crisis列と同じ扱いで記録する(resume/admin.htmlで再表示するため)。
 -- ----------------------------------------------------------------------------
 alter table messages add column if not exists closing boolean not null default false;
+
+-- ============================================================================
+-- 10. 合成データ(テスト用ペルソナ会話)の識別(2026年9月・ペルソナ多ターン回帰テスト新仕様)
+--
+--  実証実験が始まると、本物の生徒の会話とテスト用の合成会話がsessions/messagesに
+--  混在する。研究データとして分析する際に区別できるよう、sessionsに印を付ける。
+--
+--  is_synthetic: テストスクリプトが作ったセッションはtrue。本番(route.ts)からの
+--    セッションはこの列に触れないため、既定値のfalseのまま(明示的にtrueを
+--    立てるのはテストスクリプト側だけ)。
+--  persona_id: 使ったペルソナのid(A1〜C3等)。本番セッションはnull。
+--  run_id: そのテスト実行のID。同じ実行内のセッションをまとめて追える。
+--    C2(2回目に来る子)のように同じpersona_idで複数セッションを作る場合の
+--    区別にも使う。
+-- ============================================================================
+alter table sessions add column if not exists is_synthetic boolean not null default false;
+alter table sessions add column if not exists persona_id text;
+alter table sessions add column if not exists run_id text;
+
+create index if not exists sessions_synthetic_idx on sessions (is_synthetic);
+
+-- session_overviewにis_synthetic/persona_id/run_idを追加し、admin.htmlが
+-- 表示切替(既定で合成データを隠す)に使えるようにする。
+drop view if exists session_overview;
+create view session_overview as
+select
+  s.id, s.client_id, s.started_at, s.last_at, s.closed_at, s.relation, s.weight,
+  count(m.seq) filter (where m.role = 'ai')                                   as turn_count,
+  count(m.seq) filter (where m.role = 'ai' and not m.crisis and m.rating is null) as unrated_count,
+  coalesce(bool_or(m.crisis), false)                                          as has_crisis,
+  s.phase, s.is_synthetic, s.persona_id, s.run_id
+from sessions s
+left join messages m on m.session_id = s.id
+group by s.id;
+
+-- knowledge_score/flag_summaryは、既定で合成データ(is_synthetic=true)を除外する
+-- (集計が実際の生徒データの評価とずれないようにするため)。実データが無い
+-- knowledge行(count=0)は引き続き表示される(is_synthetic is not trueはNULLを
+-- 「合成ではない」側として扱うため、メッセージが無いナレッジ行を消さない)。
+create or replace view knowledge_score as
+select k.id, k.src, k.cat, k.body,
+       count(m.seq)          as used_count,
+       round(avg(m.rating),2) as avg_rating
+from knowledge k
+left join messages m on k.id = any(m.used) and m.rating is not null
+left join sessions s on s.id = m.session_id
+where s.is_synthetic is not true
+group by k.id, k.src, k.cat, k.body
+order by used_count desc;
+
+create or replace view flag_summary as
+select unnest(m.flags) as flag, count(*) as n
+from messages m
+left join sessions s on s.id = m.session_id
+where array_length(m.flags,1) > 0 and s.is_synthetic is not true
+group by 1 order by n desc;

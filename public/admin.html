@@ -141,6 +141,10 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       <input type="checkbox" id="showLowPriority">
       <span id="lowPriorityLabel">やり取り0件、または3往復以下で進展が無く危機でもないセッションを隠す</span>
     </label>
+    <label class="low-pri-toggle">
+      <input type="checkbox" id="showSynthetic">
+      <span id="syntheticLabel">合成データ(ペルソナテスト)を表示する</span>
+    </label>
     <div id="sessionList" class="s-list"></div>
     <div id="listEmpty" class="empty" hidden>まだセッションがありません。</div>
   </section>
@@ -187,6 +191,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var listCount = $("#listCount");
   var showLowPriorityCheckbox = $("#showLowPriority");
   var lowPriorityLabelEl = $("#lowPriorityLabel");
+  var showSyntheticCheckbox = $("#showSynthetic");
+  var syntheticLabelEl = $("#syntheticLabel");
   var sessionHeaderEl = $("#sessionHeader");
   var intakeBlockEl = $("#intakeBlock");
   var notesBlockEl = $("#notesBlock");
@@ -261,6 +267,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var sessions = [];
   var sortMode = "new";
   var showLowPriority = false;
+  // 合成データ(ペルソナテスト)は既定で隠す(2026年9月・ペルソナ多ターン回帰テスト
+  // 新仕様)。研究データとして本物の生徒の会話と混同しないための表示切替。
+  var showSynthetic = false;
 
   // 0往復(まだ何も起きていない)、または3往復以下でrelation/weightが初期値のまま
   // (=何も動いていない)、かつ危機でもないセッションを「低優先度」として扱う。
@@ -274,25 +283,43 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     return turns <= 3 && s.relation === "visitor" && s.weight === "rapport";
   }
 
+  // 合成データはhas_crisisでも常に隠す(低優先度フィルタと違い、危機を装った
+  // テスト用の発言が「本物の危機」として紛れ込んで見えることのほうが問題なため)。
+  function isSynthetic(s) {
+    return !!s.is_synthetic;
+  }
+
   function renderList() {
     var lowPriorityCount = sessions.filter(isLowPriority).length;
-    var visible = showLowPriority ? sessions : sessions.filter(function (s) { return !isLowPriority(s); });
+    var syntheticCount = sessions.filter(isSynthetic).length;
+    var visible = sessions.filter(function (s) {
+      if (!showLowPriority && isLowPriority(s)) return false;
+      if (!showSynthetic && isSynthetic(s)) return false;
+      return true;
+    });
     var sorted = visible.slice().sort(function (a, b) {
       if (sortMode === "unrated") return (b.unrated_count || 0) - (a.unrated_count || 0);
       return new Date(b.started_at) - new Date(a.started_at);
     });
+    var hiddenNote = [];
+    if (!showLowPriority && lowPriorityCount) hiddenNote.push("低優先度" + lowPriorityCount + "件");
+    if (!showSynthetic && syntheticCount) hiddenNote.push("合成データ" + syntheticCount + "件");
     listCount.textContent = sessions.length
-      ? visible.length + "件" + (!showLowPriority && lowPriorityCount ? "(低優先度" + lowPriorityCount + "件を非表示)" : "")
+      ? visible.length + "件" + (hiddenNote.length ? "(" + hiddenNote.join("・") + "を非表示)" : "")
       : "";
     lowPriorityLabelEl.textContent = lowPriorityCount
       ? "やり取り0件、または3往復以下で進展が無く危機でもないセッション(" + lowPriorityCount + "件)を隠す"
       : "やり取り0件、または3往復以下で進展が無く危機でもないセッションを隠す(現在は該当なし)";
+    syntheticLabelEl.textContent = syntheticCount
+      ? "合成データ(ペルソナテスト。" + syntheticCount + "件)を表示する"
+      : "合成データ(ペルソナテスト)を表示する(現在は該当なし)";
     listEmpty.hidden = sorted.length !== 0;
-    listEmpty.textContent = (sorted.length === 0 && !showLowPriority && lowPriorityCount)
-      ? "低優先度のセッション" + lowPriorityCount + "件のみです。上のチェックを入れると表示されます。"
+    listEmpty.textContent = (sorted.length === 0 && hiddenNote.length)
+      ? hiddenNote.join("・") + "のみです。上のチェックを入れると表示されます。"
       : "まだセッションがありません。";
     sessionListEl.innerHTML = sorted.map(function (s) {
       var badges = "";
+      if (s.is_synthetic) badges += '<span class="badge">テスト' + (s.persona_id ? "・" + esc(s.persona_id) : "") + '</span>';
       if (s.has_crisis) badges += '<span class="badge warn">危機</span>';
       if (!s.closed_at) badges += '<span class="badge open">進行中</span>';
       if (s.phase === "intake") badges += '<span class="badge">インテーク中</span>';
@@ -329,6 +356,11 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 
   showLowPriorityCheckbox.addEventListener("change", function () {
     showLowPriority = showLowPriorityCheckbox.checked;
+    renderList();
+  });
+
+  showSyntheticCheckbox.addEventListener("change", function () {
+    showSynthetic = showSyntheticCheckbox.checked;
     renderList();
   });
 

@@ -3,7 +3,8 @@
 //  .env.local/.env の軽量読み込みと、TEST_GEMINI_API_KEY の必須化(CLAUDE.md 5.10)。
 // ============================================================================
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import path from "node:path";
 
 function loadEnvFile(file) {
   if (!existsSync(file)) return;
@@ -155,4 +156,118 @@ export function isTransientGenerateFailure(r) {
 // classify()の戻り値(classifierError。生のエラー文字列)用。
 export function isTransientClassifierError(r) {
   return !!r.classifierError && (r.classifierError.startsWith("[RATE_LIMIT]") || r.classifierError.startsWith("[HTTP_503]"));
+}
+
+// ============================================================================
+//  実コスト計算 + 予算台帳(2026年9月・ペルソナテスト新仕様)
+//
+//  価格はai.google.dev/gemini-api/docs/pricingを実測した時点のもの(1Mトークンあたり・
+//  ドル)。3.6/3.7/3.8-flashは2026年内の導入価格。Google側の値上げ・値下げがあれば
+//  ここを更新すること。以前はtest-model-comparison.mjs/test-ng-leak-rate.mjsに
+//  重複して持っていたが、予算台帳が全スクリプト共通で必要になったためここに集約した。
+// ============================================================================
+export const PRICING = {
+  "gemini-3.5-flash-lite": { in: 0.30, out: 2.50 },
+  "gemini-2.5-flash": { in: 0.30, out: 2.50 },
+  "gemini-3.1-flash-lite": { in: 0.25, out: 1.50 },
+  "gemini-3.5-flash": { in: 1.50, out: 9.00 },
+  "gemini-3.6-flash": { in: 0.75, out: 3.75 },
+  "gemini-3.7-flash": { in: 0.75, out: 3.75 },
+  "gemini-3.8-flash": { in: 0.75, out: 3.75 },
+};
+
+export function costUsd(usage, model) {
+  if (!usage || !model) return 0;
+  const price = PRICING[model];
+  if (!price) return 0;
+  const inTok = usage.promptTokenCount ?? 0;
+  const outTok = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
+  return (inTok * price.in + outTok * price.out) / 1_000_000;
+}
+
+// USD→JPY換算(2026年9月24日実測。158.8〜159円台。予算の上限判定で使うため、
+// 超過側に倒れないよう少し高め・切りのいい値に丸めている)。実際のレートと
+// 大きく乖離したら更新すること。為替APIは追加していない(このプロジェクトの
+// 規模でリアルタイム性を持たせる必要が無いため)。
+export const USD_TO_JPY = 160;
+
+const LEDGER_REL_PATH = "docs/test-results/budget-ledger.json";
+
+function loadLedger(root) {
+  const p = path.join(root, LEDGER_REL_PATH);
+  if (!existsSync(p)) return { entries: [], cumulative_yen: 0 };
+  return JSON.parse(readFileSync(p, "utf8"));
+}
+
+function saveLedger(root, ledger) {
+  mkdirSync(path.dirname(path.join(root, LEDGER_REL_PATH)), { recursive: true });
+  writeFileSync(path.join(root, LEDGER_REL_PATH), JSON.stringify(ledger, null, 2));
+}
+
+// 台帳の状態を持つオブジェクトを作る。1スクリプト実行につき1つ作り、
+// 呼び出しのたびにrecordCall()で加算していく。
+export function createBudgetTracker(root) {
+  const ledger = loadLedger(root);
+  const limitYen = Number(process.env.TEST_BUDGET_YEN ?? 1000);
+  return { root, ledger, limitYen, sessionCostUsd: 0, sessionCalls: 0 };
+}
+
+export function budgetRemainingYen(tracker) {
+  return tracker.limitYen - tracker.ledger.cumulative_yen;
+}
+
+export function budgetExceeded(tracker) {
+  return budgetRemainingYen(tracker) <= 0;
+}
+
+// 1回のGemini呼び出し分を台帳(このtrackerインスタンス内。まだファイルには書かない)に加算する。
+export function recordCall(tracker, usage, model) {
+  const usd = costUsd(usage, model);
+  tracker.sessionCostUsd += usd;
+  tracker.sessionCalls += 1;
+  tracker.ledger.cumulative_yen += usd * USD_TO_JPY;
+  return usd;
+}
+
+// 実行前に、見込み額が残り予算を超えないか確認する。超える場合はここで終了する
+// (プロセスを止めるので、呼び出し元で追加のエラーハンドリングは不要)。
+// estimatedCostPerCallUsdは呼び出し元が判断する(初回は保守的な既定値、
+// 2回目以降は台帳の実績から算出するなど)。
+export function checkBudgetBeforeRun(tracker, estimatedCalls, estimatedCostPerCallUsd, label) {
+  const estimatedYen = estimatedCalls * estimatedCostPerCallUsd * USD_TO_JPY;
+  const remaining = budgetRemainingYen(tracker);
+  console.log(`[予算] 上限¥${tracker.limitYen} / 使用済み¥${Math.round(tracker.ledger.cumulative_yen)} / 残り¥${Math.round(remaining)}`);
+  console.log(`[予算] 今回(${label})の見込み: ${estimatedCalls}回 × 約$${estimatedCostPerCallUsd.toFixed(5)} ≈ ¥${Math.round(estimatedYen)}`);
+  if (estimatedYen > remaining) {
+    console.error(`[予算] 残り予算(¥${Math.round(remaining)})を超える見込みのため実行しません。`);
+    console.error(`[予算] TEST_BUDGET_YENを見直すか、実行範囲(--stage等)を縮小してください。`);
+    process.exit(1);
+  }
+}
+
+// このスクリプト実行の結果を台帳ファイルに追記する(実行の最後に1回呼ぶ)。
+export function finalizeBudgetTracker(tracker, label, extra = {}) {
+  tracker.ledger.entries.push({
+    run_at: new Date().toISOString(),
+    script: label,
+    calls: tracker.sessionCalls,
+    cost_usd: tracker.sessionCostUsd,
+    cost_yen: tracker.sessionCostUsd * USD_TO_JPY,
+    cumulative_yen_after: tracker.ledger.cumulative_yen,
+    ...extra,
+  });
+  saveLedger(tracker.root, tracker.ledger);
+  console.log(`[予算] 今回: $${tracker.sessionCostUsd.toFixed(4)}(≈¥${Math.round(tracker.sessionCostUsd * USD_TO_JPY)}) / 累計: ¥${Math.round(tracker.ledger.cumulative_yen)} / 上限¥${tracker.limitYen}`);
+  return tracker.ledger.cumulative_yen;
+}
+
+// 台帳の過去実績から、あるスクリプト(label)の1回あたり平均コスト(USD)を推定する。
+// 実績が無ければnull(呼び出し元が保守的な既定値にフォールバックする)。
+export function estimateCostPerCallFromLedger(root, label) {
+  const ledger = loadLedger(root);
+  const matching = ledger.entries.filter((e) => e.script === label && e.calls > 0);
+  if (!matching.length) return null;
+  const totalCalls = matching.reduce((s, e) => s + e.calls, 0);
+  const totalCostUsd = matching.reduce((s, e) => s + e.cost_usd, 0);
+  return totalCostUsd / totalCalls;
 }

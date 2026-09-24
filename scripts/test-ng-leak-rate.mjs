@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure, costUsd } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,25 +33,7 @@ const KEY_POOL = requireTestGeminiKeyPaid(ROOT);
 const KEY_ROTATION = createKeyRotationState();
 requireSupabaseEnv(ROOT);
 
-// 実コスト計算用(2026年9月・モデル比較検証と同じ価格表。ai.google.dev/gemini-api/docs/pricing
-// を実測した時点のもの。3.6/3.7/3.8-flashは2026年内の導入価格)。
-const PRICING = {
-  "gemini-3.5-flash-lite": { in: 0.30, out: 2.50 },
-  "gemini-2.5-flash": { in: 0.30, out: 2.50 },
-  "gemini-3.1-flash-lite": { in: 0.25, out: 1.50 },
-  "gemini-3.5-flash": { in: 1.50, out: 9.00 },
-  "gemini-3.6-flash": { in: 0.75, out: 3.75 },
-  "gemini-3.7-flash": { in: 0.75, out: 3.75 },
-  "gemini-3.8-flash": { in: 0.75, out: 3.75 },
-};
-function costUsd(usage, model) {
-  if (!usage || !model) return 0;
-  const price = PRICING[model];
-  if (!price) return 0;
-  const inTok = usage.promptTokenCount ?? 0;
-  const outTok = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
-  return (inTok * price.in + outTok * price.out) / 1_000_000;
-}
+// PRICING/costUsdはscripts/_lib/test-env.mjsに集約した(2026年9月・予算台帳導入時)。
 
 // 初回セッションと同じ基準値(db/schema.sql の sessions のデフォルトに合わせる)。
 // 「同一の入力」を単発で試すテストなので、会話履歴・人単位の記憶は使わない。

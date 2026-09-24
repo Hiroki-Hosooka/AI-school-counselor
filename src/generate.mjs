@@ -12,7 +12,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
-import { callGemini, parseJSON } from "./classify.mjs";
+import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
 //
@@ -736,4 +736,74 @@ export function applyClosingUpdate(sess, out) {
   const next = CLOSING_EVENT_TO_STATE[out.closing_event];
   if (!next) return {};
   return { closing_state: next };
+}
+
+// ============================================================================
+//  人単位の記憶(永続・要約のみ。CLAUDE.md 5.8)。
+//  2026年9月、route.tsから切り出した(ペルソナ多ターン回帰テスト新仕様のC2
+//  「2回目に来る子」で、テストスクリプト側からも同じ更新処理を呼ぶ必要が
+//  生じたため。挙動は一切変えていない、置き場所だけの移動)。
+//
+//  設計原則(CLAUDE.md 5.8と同格で守ること):
+//   ・生ログは絶対に summary に入れない。要約AIには「短く」を強制する。
+//   ・氏名・学校名などの識別情報を書かせない(session notes と同じ制約)。
+//   ・「枠組み」を壊さないため、この記憶をAIに詳しく語らせない
+//     (buildSystemの personSummary 周りの指示で制御する。このファイルの上の方)。
+// ============================================================================
+export const MEMORY_MAX_CHARS = 600; // DB側の check 制約(person_memory_len_check)とも一致させること。
+
+const SUMMARY_PROMPT =
+`あなたは、ある相談者についての「引き継ぎメモ」を更新する係です。
+学校のカウンセリングAIが、次にこの人が来たときに参照します。
+
+以下を渡します。
+1. これまでの引き継ぎメモ(無ければ空)
+2. 今回のセッションで積み上がった見立て(notes)
+
+これらを踏まえて、新しい引き継ぎメモを日本語で書いてください。
+
+厳守事項:
+・${MEMORY_MAX_CHARS}字を絶対に超えない。超えるくらいなら削る。
+・氏名・学校名・住所など、個人を特定できる情報は書かない。
+・具体的な出来事の羅列ではなく、継続して意味を持ちそうな要点だけを残す。
+　(例:抱えている大きなテーマ、繰り返し出てくるパターン、これまで試して
+　　効かなかった対処、本人のリソース、触れると閉じてしまう話題)
+・一度きりの雑談や、その場限りの感情の起伏は残さない。
+・前回のメモと今回の内容が矛盾するなら、より新しい方を採用してよい。
+・出力はメモ本文のみ。前置きや見出しを付けない。`;
+
+// dbは呼び出し元(route.ts/テストスクリプト)が持っているクライアントをそのまま渡す
+// (loadKnowledge等と違いデフォルト引数にしていない。書き込み処理のため、
+// どのDBに書くかを呼び出し元が必ず明示するべきという考え方)。
+export async function updatePersonMemory(db, clientId, sessionNotes) {
+  const hasContent = Object.values(sessionNotes ?? {}).some((v) => v && String(v).trim());
+  if (!hasContent) return; // 何も積み上がっていないセッションは要約を更新しない
+
+  const { data: existing } = await db.from("person_memory")
+    .select("summary,session_count").eq("client_id", clientId).maybeSingle();
+
+  const prompt = `# 前回までの引き継ぎメモ\n${existing?.summary || "(まだ無い)"}\n\n` +
+    `# 今回のセッションの見立て\n${JSON.stringify(sessionNotes)}`;
+
+  let newSummary = existing?.summary ?? "";
+  try {
+    // callGemini() は { text, model, usage } を返す。第5引数(thinkingBudget)は-1固定。
+    // LITE_MODELS(gemini-*-lite系)は0を受け付けず400 INVALID_ARGUMENTになるため
+    // (src/classify.mjsのcallGemini()コメント参照)。maxOutputTokensは2000。
+    // -1(dynamic)は思考トークン消費が読めないため、本文(最大MEMORY_MAX_CHARS=600字
+    // ≒400トークン)+思考分の余裕を持たせた。
+    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, -1);
+    newSummary = summaryResult.text.trim();
+  } catch (e) {
+    console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);
+    return; // 要約生成に失敗しても本体の会話は止めない。次回の更新に任せる。
+  }
+  if (newSummary.length > MEMORY_MAX_CHARS) newSummary = newSummary.slice(0, MEMORY_MAX_CHARS);
+
+  await db.from("person_memory").upsert({
+    client_id: clientId,
+    summary: newSummary,
+    session_count: (existing?.session_count ?? 0) + 1,
+    last_seen: new Date().toISOString(),
+  });
 }

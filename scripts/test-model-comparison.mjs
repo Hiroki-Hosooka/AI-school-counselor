@@ -36,7 +36,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure, PRICING, costUsd } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,15 +46,8 @@ const KEY_POOL = requireTestGeminiKeyPaid(ROOT); // [paidKey] の1要素配列
 const KEY_ROTATION = createKeyRotationState();
 requireSupabaseEnv(ROOT);
 
-const PRICING = {
-  "gemini-3.5-flash-lite": { in: 0.30, out: 2.50 },
-  "gemini-2.5-flash": { in: 0.30, out: 2.50 },
-  "gemini-3.1-flash-lite": { in: 0.25, out: 1.50 },
-  "gemini-3.5-flash": { in: 1.50, out: 9.00 },
-  "gemini-3.6-flash": { in: 0.75, out: 3.75 },
-  "gemini-3.7-flash": { in: 0.75, out: 3.75 },
-  "gemini-3.8-flash": { in: 0.75, out: 3.75 },
-};
+// PRICING/costUsdはscripts/_lib/test-env.mjsに集約した(2026年9月・予算台帳導入時。
+// 以前はここに重複して持っていた)。
 
 // lite系はthinkingBudget:0(思考を完全に無効化)を受け付けず400になる
 // (2026年9月・実機curl検証。src/classify.mjsのcallGeminiOnceのコメント参照)。
@@ -96,15 +89,6 @@ function classifyOutcome(flags) {
   if (flags[0].startsWith("生成失敗")) return "generation_failed";
   if (flags.length === 1 && flags[0] === "1回目に検知→再生成で解消") return "fixed_by_regen";
   return "still_flagged";
-}
-
-function costUsd(usage, model) {
-  if (!usage) return 0;
-  const price = PRICING[model];
-  if (!price) return 0;
-  const inTok = usage.promptTokenCount ?? 0;
-  const outTok = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
-  return (inTok * price.in + outTok * price.out) / 1_000_000;
 }
 
 async function generateWithRetry(system, messages, model) {

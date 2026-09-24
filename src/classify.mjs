@@ -202,14 +202,18 @@ export function parseJSON(raw) {
 
 // キーワード事前検知 + Gemini分類器。
 //
-// 分類器の呼び出しが失敗した場合(レート制限・安全フィルタでブロック等)は、
-// キーワードが当たっていれば crisis のまま、当たっていなければ none にフォールバックする。
-// これは「わからないときは軽く見る」側に倒れる挙動であり、本来は避けたい形だが、
-// 根拠のない変更をしないというCLAUDE.md 5.11の方針に従い、対処はせず、まず
-// docs/backlog.md 1-3 テスト1で実際の発生率を計測してから判断する(2026年9月時点)。
+// 分類器の呼び出しが失敗した場合(レート制限・安全フィルタでブロック等)、キーワードが
+// 当たっていれば crisis のまま。当たっていない場合は watch にフォールバックする
+// (2026年9月・修正1。ペルソナ多ターン回帰テスト新仕様のB群前提)。
+// 以前は none に倒していたが、これは「わからないときは軽く見る」側に倒れる挙動で
+// 危険だった。テスト1の79件では実際にはこの分岐が一度も発生せず未検証のまま
+// 残っていたため、根拠のある実測ができていない状態だったが、「わからない時に
+// 軽く見る」実装を残しておく理由もない。watch(Tier B)は生成を止めずに済み、
+// 二択で程度を確認する質問をしない等の配慮だけを働かせる(CLAUDE.md 5.12)ため、
+// APIの一時的な不調(503等)で毎回crisis固定応答になるほど過敏にもならない。
 //
-// classifierError はその計測のために、分類器呼び出しの失敗の有無とタグ([BLOCKED]等)を
-// 呼び出し側にそのまま伝える(route.ts 側はこの値を見なくても従来どおり動く)。
+// classifierError は分類器呼び出しの失敗の有無とタグ([BLOCKED]等)を呼び出し側に
+// そのまま伝える(route.ts 側はこの値を見なくても従来どおり動く)。
 export async function classify(text) {
   const keywords = CRISIS_WORDS.filter((w) => text.includes(w));
   let model = { risk: "none", subject: "self", reason: "判定なし" };
@@ -228,7 +232,7 @@ export async function classify(text) {
     usedModel = result.model;
   } catch (e) {
     classifierError = e instanceof Error ? e.message : String(e);
-    model = { risk: keywords.length ? "crisis" : "none", subject: "self", reason: "判定器エラー" };
+    model = { risk: keywords.length ? "crisis" : "watch", subject: "self", reason: "判定器エラー" };
   }
   // キーワードが当たったら判定器の結果によらず crisis 扱い(見逃しを避ける)
   const risk = keywords.length ? "crisis" : model.risk;

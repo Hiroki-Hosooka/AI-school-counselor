@@ -42,9 +42,9 @@
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { LITE_MODELS, callGemini, classify, CRISIS_REPLY } from "@/classify.mjs";
+import { classify, CRISIS_REPLY } from "@/classify.mjs";
 import {
-  loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply,
+  loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
 } from "@/generate.mjs";
 
@@ -54,8 +54,6 @@ import {
 
 const WEBHOOK = process.env.CRISIS_WEBHOOK_URL ?? "";
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_HOUR ?? "60");
-// 人単位の記憶(person_memory)の上限。DB側の check 制約(person_memory_len_check)とも一致させること。
-const MEMORY_MAX_CHARS = 600;
 // これだけ会話が途切れたら「今回は一区切り」とみなし、要約を更新する。
 const SESSION_GAP_MINUTES = 30;
 
@@ -85,71 +83,10 @@ function checkAdminToken(payload: Record<string, unknown>): boolean {
 
 // ============================================================================
 //  安全層(クライアントには置かない。CRISIS_WORDS/OUTPUT_NG は src/safety.mjs、
-//  CRISIS_REPLY/classify は src/classify.mjs)
+//  CRISIS_REPLY/classify は src/classify.mjs、人単位の記憶(updatePersonMemory)は
+//  src/generate.mjs。2026年9月、テストスクリプトからも同じ更新処理を呼べるよう
+//  generate.mjs側に切り出した。挙動は変えていない)
 // ============================================================================
-//  人単位の記憶(永続・要約のみ)
-//
-//  設計原則(CLAUDE.md 5.8と同じ考え方をここにも書く。安全層と同格で守ること):
-//   ・生ログは絶対に summary に入れない。要約AIには「短く」を強制する。
-//   ・氏名・学校名などの識別情報を書かせない(session notes と同じ制約)。
-//   ・「枠組み」を壊さないため、この記憶をAIに詳しく語らせない。
-//     buildSystem 側で「聞かれたら答える程度に留め、自分から詳細を持ち出さない」
-//     という指示を必ず添える。
-// ============================================================================
-
-const SUMMARY_PROMPT =
-`あなたは、ある相談者についての「引き継ぎメモ」を更新する係です。
-学校のカウンセリングAIが、次にこの人が来たときに参照します。
-
-以下を渡します。
-1. これまでの引き継ぎメモ(無ければ空)
-2. 今回のセッションで積み上がった見立て(notes)
-
-これらを踏まえて、新しい引き継ぎメモを日本語で書いてください。
-
-厳守事項:
-・${MEMORY_MAX_CHARS}字を絶対に超えない。超えるくらいなら削る。
-・氏名・学校名・住所など、個人を特定できる情報は書かない。
-・具体的な出来事の羅列ではなく、継続して意味を持ちそうな要点だけを残す。
-　(例:抱えている大きなテーマ、繰り返し出てくるパターン、これまで試して
-　　効かなかった対処、本人のリソース、触れると閉じてしまう話題)
-・一度きりの雑談や、その場限りの感情の起伏は残さない。
-・前回のメモと今回の内容が矛盾するなら、より新しい方を採用してよい。
-・出力はメモ本文のみ。前置きや見出しを付けない。`;
-
-async function updatePersonMemory(clientId: string, sessionNotes: Record<string, unknown>) {
-  const hasContent = Object.values(sessionNotes ?? {}).some((v) => v && String(v).trim());
-  if (!hasContent) return; // 何も積み上がっていないセッションは要約を更新しない
-
-  const db = getDb();
-  const { data: existing } = await db.from("person_memory")
-    .select("summary,session_count").eq("client_id", clientId).maybeSingle();
-
-  const prompt = `# 前回までの引き継ぎメモ\n${existing?.summary || "(まだ無い)"}\n\n` +
-    `# 今回のセッションの見立て\n${JSON.stringify(sessionNotes)}`;
-
-  let newSummary = existing?.summary ?? "";
-  try {
-    // callGemini() は { text, model } を返す(2026年9月〜。src/classify.mjs 参照)。
-    // 第5引数(thinkingBudget)は-1固定。LITE_MODELS(gemini-*-lite系)は0を受け付けず
-    // 400 INVALID_ARGUMENTになるため(src/classify.mjsのcallGemini()コメント参照)。
-    // maxOutputTokensは400→2000。-1(dynamic)は思考トークン消費が読めないため、
-    // 本文(最大MEMORY_MAX_CHARS=600字≒400トークン)+思考分の余裕を持たせた。
-    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, -1);
-    newSummary = summaryResult.text.trim();
-  } catch (e) {
-    console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);
-    return; // 要約生成に失敗しても本体の会話は止めない。次回の更新に任せる。
-  }
-  if (newSummary.length > MEMORY_MAX_CHARS) newSummary = newSummary.slice(0, MEMORY_MAX_CHARS);
-
-  await db.from("person_memory").upsert({
-    client_id: clientId,
-    summary: newSummary,
-    session_count: (existing?.session_count ?? 0) + 1,
-    last_seen: new Date().toISOString(),
-  });
-}
 
 // 危機通知。本文は送らない。
 // 未成年の相談内容を Slack 等のチャンネルに流すのは避け、
@@ -203,7 +140,7 @@ export async function POST(req: Request) {
     if (action === "admin_sessions") {
       if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
       const { data, error } = await db.from("session_overview")
-        .select("id,client_id,started_at,last_at,closed_at,relation,weight,turn_count,unrated_count,has_crisis,phase")
+        .select("id,client_id,started_at,last_at,closed_at,relation,weight,turn_count,unrated_count,has_crisis,phase,is_synthetic,persona_id,run_id")
         .order("started_at", { ascending: false });
       if (error) throw new Error(error.message);
       const sessions = (data ?? []).map((s) => ({
@@ -213,6 +150,8 @@ export async function POST(req: Request) {
         relation: s.relation, weight: s.weight,
         turn_count: s.turn_count, unrated_count: s.unrated_count, has_crisis: s.has_crisis,
         phase: s.phase,
+        // 合成データ(ペルソナテスト)の識別。admin.htmlの表示切替に使う(2026年9月)。
+        is_synthetic: s.is_synthetic, persona_id: s.persona_id, run_id: s.run_id,
       }));
       return json({ sessions });
     }
@@ -268,7 +207,7 @@ export async function POST(req: Request) {
         .order("last_at", { ascending: false }).limit(1).maybeSingle();
       if (open) {
         await db.from("sessions").update({ closed_at: new Date().toISOString() }).eq("id", open.id);
-        await updatePersonMemory(clientId, (open.notes ?? {}) as Record<string, unknown>);
+        await updatePersonMemory(db, clientId, (open.notes ?? {}) as Record<string, unknown>);
       }
 
       const rows = await loadKnowledge(db);
@@ -295,7 +234,7 @@ export async function POST(req: Request) {
       const idleMinutes = (Date.now() - new Date(s.last_at).getTime()) / 60000;
       if (idleMinutes > SESSION_GAP_MINUTES) {
         await db.from("sessions").update({ closed_at: new Date().toISOString() }).eq("id", s.id);
-        await updatePersonMemory(clientId, (s.notes ?? {}) as Record<string, unknown>);
+        await updatePersonMemory(db, clientId, (s.notes ?? {}) as Record<string, unknown>);
         return json({ session: null, messages: [] }); // クライアント側が start を呼び直す
       }
       const { data: msgs } = await db.from("messages")
