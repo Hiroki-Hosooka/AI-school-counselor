@@ -121,7 +121,26 @@
       ],
       "repeats": 1,
       "budget_stop": false
+    },
+    {
+      "run_at": "2026-09-24T19:00:25.165Z",
+      "script": "test-persona-regression.mjs(新仕様)",
+      "calls": 71,
+      "cost_usd": 0.3679755,
+      "cost_yen": 58.87608,
+      "cumulative_yen_after": 650.2585599999998,
+      "stage": "core",
+      "personas": [
+        "A2",
+        "A3",
+        "A5",
+        "B1",
+        "B5",
+        "C1"
+      ],
+      "repeats": 1,
+      "budget_stop": false
     }
   ],
-  "cumulative_yen": 591.3824799999995
+  "cumulative_yen": 650.2585599999998
 }
