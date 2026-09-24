@@ -140,7 +140,35 @@
       ],
       "repeats": 1,
       "budget_stop": false
+    },
+    {
+      "run_at": "2026-09-24T20:15:43.336Z",
+      "script": "test-persona-regression.mjs(新仕様)",
+      "calls": 363,
+      "cost_usd": 1.8006562499999998,
+      "cost_yen": 288.10499999999996,
+      "cumulative_yen_after": 938.3635600000001,
+      "stage": "full",
+      "personas": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "A7",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "C1",
+        "C2",
+        "C3"
+      ],
+      "repeats": 2,
+      "budget_stop": false
     }
   ],
-  "cumulative_yen": 650.2585599999998
+  "cumulative_yen": 938.3635600000001
 }

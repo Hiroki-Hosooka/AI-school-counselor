@@ -148,9 +148,12 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // "currently experiencing high demand")も対象にする。503は数十秒後の直接curl
 // 再現テストで同じリクエストが成功しており、リクエスト内容の問題ではなくGoogle側の
 // 一時的な状態によるものと判断した(モデル比較検証で複数モデルにまたがって頻発)。
+// 応答形式エラー(JSONとして読み取れない)も対象にする(2026年9月・ペルソナ多ターン
+// 回帰テストのfull×2実行で複数回確認。会話履歴が長くなるほど起きやすい様子で、
+// 生成そのものは成功しているため同じ会話をもう一度試せば直ることが多い)。
 // generateReply()の戻り値(failureCause)用。
 export function isTransientGenerateFailure(r) {
-  return r.generationFailed && (r.failureCause === "レート制限(429)" || r.failureCause === "サービス過負荷(503)");
+  return r.generationFailed && (r.failureCause === "レート制限(429)" || r.failureCause === "サービス過負荷(503)" || r.failureCause === "応答形式エラー");
 }
 
 // classify()の戻り値(classifierError。生のエラー文字列)用。

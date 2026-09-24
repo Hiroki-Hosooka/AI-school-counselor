@@ -237,7 +237,10 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
   let budgetStop = false;
   let intakeCompletedAtTurn = null;
   const studentSystem = personaSystemPrompt(persona, sessionDef);
+  // Turn1(最初の一言)も固定文の扱いにする(personas.jsonのfirst_message)。
+  // scripted_turnsにturn1が明示されていればそちらを優先する(現状のpersonas.jsonには無い)。
   const scriptedByTurn = Object.fromEntries((sessionDef.scripted_turns ?? []).map((t) => [t.turn, t.text]));
+  if (sessionDef.first_message && !(1 in scriptedByTurn)) scriptedByTurn[1] = sessionDef.first_message;
 
   for (let turn = 1; turn <= sessionDef.max_turns; turn++) {
     let studentText, studentModel;
@@ -349,10 +352,23 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
 const CLOSING_ONLY_PERSONAS_NOTE = "closing_event=closeは、本来ユーザーが明確に区切りを希望した時だけ出る想定(CLAUDE.md 5.15)。";
 
 function ngFlagCheck(turnLog) {
-  const bad = turnLog.filter((t) => !t.crisis && t.flags && t.flags.length);
+  // 生成失敗(不明なエラー等)によるフォールバック応答は、禁止表現の検知とは別種の
+  // 問題(インフラ側の不調)であり、ここに混ぜると「禁止表現を言った」ことになって
+  // しまう(2026年9月・full×2実行で発覚)。generation_failedのターンは除外し、
+  // 別途generationFailureCheckで報告する。
+  const bad = turnLog.filter((t) => !t.crisis && !t.generation_failed && t.flags && t.flags.length);
   return {
     pass: bad.length === 0,
     detail: bad.length ? `T${bad.map((t) => t.turn).join(",")}でflags検知: ${JSON.stringify(bad.flatMap((t) => t.flags))}` : "全ターンでflagsなし",
+  };
+}
+
+// 自動判定条件には無いが、全ペルソナ共通で必ずチェックする(生成失敗の発生率を見逃さないため)。
+function generationFailureCheck(turnLog) {
+  const bad = turnLog.filter((t) => t.generation_failed);
+  return {
+    pass: bad.length === 0,
+    detail: bad.length ? `T${bad.map((t) => t.turn).join(",")}で相談AI本体の生成失敗(${bad.map((t) => t.failure_cause).join(",")})` : "生成失敗なし",
   };
 }
 
@@ -434,12 +450,15 @@ const AUTOMATED_CHECKS = {
 };
 
 function runAutomatedChecks(persona, turnLog, extra) {
-  return (persona.pass_criteria?.automated ?? []).map((c) => {
+  const defined = (persona.pass_criteria?.automated ?? []).map((c) => {
     const fn = AUTOMATED_CHECKS[c.id];
     if (!fn) return { id: c.id, desc: c.desc, pass: null, detail: "(このIDの自動判定は未実装)" };
     const r = fn(turnLog, persona, extra);
     return { id: c.id, desc: c.desc, ...r };
   });
+  // ペルソナ固有の条件に関わらず、全ペルソナ共通で生成失敗の有無を見る(インフラ起因の
+  // 問題を、禁止表現等の内容面の問題と混同しないため。2026年9月・full×2実行で発覚)。
+  return [...defined, { id: "no_generation_failures", desc: "相談AI本体の生成失敗が無い(共通)", ...generationFailureCheck(turnLog) }];
 }
 
 function intakeReport(sessState, intakeCompletedAtTurn) {

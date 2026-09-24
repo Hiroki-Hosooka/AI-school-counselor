@@ -636,6 +636,12 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS, m
       // 頻発することを確認。数十秒後の直接curl再現テストでは成功しており、
       // リクエスト内容ではなくGoogle側の一時的な状態によるものと判断した)。
       : msg.includes("[HTTP_503]") ? "サービス過負荷(503)"
+      // 応答本文がJSONとして読み取れなかった場合(2026年9月・ペルソナ多ターン回帰
+      // テストのfull×2実行で複数回確認。会話履歴が長くなるほど起きやすい様子)。
+      // 生徒役の発言生成では同じ症状を既に再試行対象にしていた(test-persona-
+      // regression.mjsのgeneratePersonaLine)。こちらも同様に一時的な出力の
+      // 揺れとみなし、再試行対象に加える(isTransientGenerateFailure参照)。
+      : msg.includes("応答をJSONとして読み取れませんでした") ? "応答形式エラー"
       : "不明なエラー";
     out = {
       reply: "ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?",
