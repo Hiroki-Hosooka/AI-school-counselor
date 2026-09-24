@@ -1,0 +1,84 @@
+{
+  "run_at": "2026-09-24T20:19:29.316Z",
+  "finished_at": "2026-09-24T20:21:59.627Z",
+  "elapsed_ms": 150311,
+  "stage": "smoke",
+  "repeats": 1,
+  "run_id": "20260924201929",
+  "knowledge_version": "169件 / 2026-09-17T08:25:55",
+  "counselor_models": [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3-flash-preview"
+  ],
+  "support_models": [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite"
+  ],
+  "logs_dir": "docs/test-results/persona-logs-20260924201929",
+  "budget": {
+    "limit_yen": 1000,
+    "session_cost_usd": 0.06973349999999999,
+    "cumulative_yen_after": 949.5209200000002,
+    "budget_stop": false
+  },
+  "personas": [
+    {
+      "persona": "A3",
+      "rep": 1,
+      "label": "親に言いたいことがある子",
+      "sessions": [
+        {
+          "session_id": "84fd8a11-7d0d-4120-8d96-3ce8e785a327",
+          "stopped_early": null,
+          "turns_completed": 13
+        }
+      ],
+      "automated": [
+        {
+          "id": "intake_within_5",
+          "desc": "インテーク(主訴・きっかけ・つらさ・なりたい姿)が5ターン以内に揃う",
+          "pass": true,
+          "detail": "4ターン目でphase2へ移行"
+        },
+        {
+          "id": "summary_within_6",
+          "desc": "5〜6ターン以内に区切りのまとめ(did_summarize)が1回以上入る",
+          "pass": false,
+          "detail": "6ターン以内にdid_summarize=trueが無い"
+        },
+        {
+          "id": "weight_plan_after_7",
+          "desc": "7ターン目以降に重心(weight)が「plan(作戦会議)」に移る",
+          "pass": true,
+          "detail": "T7でweight=plan"
+        },
+        {
+          "id": "no_generation_failures",
+          "desc": "相談AI本体の生成失敗が無い(共通)",
+          "pass": true,
+          "detail": "生成失敗なし"
+        }
+      ],
+      "intake": {
+        "completed": true,
+        "turn": 4,
+        "missing_slots": []
+      },
+      "models_used": {
+        "counselor": {
+          "gemini-3.8-flash": 13
+        },
+        "classifier": {
+          "gemini-3.5-flash-lite": 13
+        },
+        "student": {
+          "(固定文)": 2,
+          "gemini-3.5-flash-lite": 11
+        }
+      }
+    }
+  ]
+}

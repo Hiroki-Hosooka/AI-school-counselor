@@ -1,0 +1,48 @@
+========================================
+[A3] 親に言いたいことがある子
+========================================
+設定: 高校1年。部活を辞めたいが、親に言い出せない。
+
+--- 自動判定 ---
+OK [intake_within_5] インテーク(主訴・きっかけ・つらさ・なりたい姿)が5ターン以内に揃う
+     → 4ターン目でphase2へ移行
+NG [summary_within_6] 5〜6ターン以内に区切りのまとめ(did_summarize)が1回以上入る
+     → 6ターン以内にdid_summarize=trueが無い
+OK [weight_plan_after_7] 7ターン目以降に重心(weight)が「plan(作戦会議)」に移る
+     → T7でweight=plan
+OK [no_generation_failures] 相談AI本体の生成失敗が無い(共通)
+     → 生成失敗なし
+
+--- インテーク完了 --- T4で完了
+
+----------------------------------------
+セッション1 (session_id: 84fd8a11-7d0d-4120-8d96-3ce8e785a327)
+----------------------------------------
+T1 生徒 [(固定文)]: 部活やめたいって親に言いたいけど、言えない
+T1 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 親に言いたいのに言えないの、すごく心が重くなるよね。そうやって話してくれてありがとう。いつ頃から、どんなことがきっかけで部活をやめたいって思い始めたのかな？
+T2 生徒 [gemini-3.5-flash-lite]: 夏休み明けくらいかな練習ついていけなくなってさ
+T2 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 夏休み明けから、練習についていけなくなって苦しかったんだね。今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな？
+1:少し気になる 2:まあまあモヤモヤする 3:かなりつらい 4:限界に近い 5:もう耐えられない
+T3 生徒 [gemini-3.5-flash-lite]: 3か4くらいかなあ毎朝行くの憂鬱だし
+T3 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 毎朝行くのが憂鬱になるくらい、限界に近いしんどさを抱えてるんだね。今日ここで話していく中で、どんな風になれたら少し心が楽になりそうかな？
+T4 生徒 [gemini-3.5-flash-lite]: うーん親に言えたらいいのかなでも怖いな言ってみようかな
+T4 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: 言えたらいいなと思いつつ、やっぱり怖い気持ちもあるよね。言ってみようかなって思えただけでもすごいことだよ。どんなところが一番怖いと感じる？
+T5 生徒 [gemini-3.5-flash-lite]: うーん怒られる気がするしがっかりさせたら嫌だな
+T5 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: 怒られたり、がっかりされたりするんじゃないかって思うと、すごく怖くて言い出せないよね。親御さんに伝えるとしたら、本当はどんなふうに受け止めてもらえたら嬉しいかな？
+T6 生徒 [gemini-3.5-flash-lite]: うーん否定しないで聞いてくれたらいいのになあ
+T6 AI  [gemini-3.8-flash weight=main relation=customer phase=phase2]: 否定しないで、ただそのまま聞いてほしいよね。そう思っていること、もし親御さんに話すとしたら、どんなタイミングなら少し話しやすそうかな？
+T7 生徒 [(固定文)]: ちょっと言ってみようかなって思ってきた
+T7 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: 話していく中で、言ってみようかなって気持ちが湧いてきたんだね。ここまで話してくれたことを一回まとめてみようか。練習についていけなくて毎朝憂鬱なくらいつらいこと、怒られたりがっかりされるのが怖いこと、でも否定しないで聞いてほしいこと。これらを振り返ってみて、ズレてるところはないかな？
+T8 生徒 [gemini-3.5-flash-lite]: ありがとう、やってみる
+T8 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: そう思えたの、すごく大きな一歩だね。お母さんとお父さん、どっちに相談しやすそうかな？どんなタイミングなら切り出せそうか、一緒に作戦を考えてみよう。
+T9 生徒 [gemini-3.5-flash-lite]: どっちも同じくらいかなあ、うーん、どうしよ
+T9 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: どっちも同じくらいなんだね。迷うよね。例えば、おうちの中で二人が落ち着いていそうな時間帯とか、休日のゆっくりしてる時とか、どんな場面なら少し切り出しやすそうかな？
+T10 生徒 [gemini-3.5-flash-lite]: ご飯の時とかかなあでもやっぱ気まずくなりそう
+T10 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: ご飯の時だと、そのあとの空気が気まずくなっちゃうんじゃないかって心配になるよね。じゃあ、例えばご飯を食べる前とか、食べ終わって片付けが一段落したくらいのタイミングだとどうかな？
+T11 生徒 [gemini-3.5-flash-lite]: ありがとう、やってみる
+T11 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、やってみるって思えたの本当にすごいよ。最初に話してくれた「親にやめたいと伝える怖さを整理して、言えるようになること」について、今はどんな感じがする？
+T12 生徒 [gemini-3.5-flash-lite]: ありがとう、やってみる
+T12 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、やってみようって思えたこと、本当に応援しているよ。今日はここまでにしようか、それともまだ何か一緒に考えておきたいことがある？
+T13 生徒 [gemini-3.5-flash-lite]: ありがとう、やってみる
+T13 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、やってみようって決めたんだね。本当によくここまで自分の気持ちを整理して話してくれたと思うよ。今日話した中で、ご飯の前後とかタイミングを工夫してみる作戦、持ち帰れそうかな。また話したくなったらいつでも頼ってね。応援してるよ。
+
