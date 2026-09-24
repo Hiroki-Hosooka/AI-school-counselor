@@ -6,9 +6,9 @@
       "run_at": "2026-09-24T15:17:00.000Z",
       "script": "test-model-comparison.mjs(開発中のスモークテスト各種)",
       "calls": 50,
-      "cost_usd": 0.20,
-      "cost_yen": 32.0,
-      "cumulative_yen_after": 32.0,
+      "cost_usd": 0.2,
+      "cost_yen": 32,
+      "cumulative_yen_after": 32,
       "estimated": true,
       "note": "503/parseJSONバグの調査中に行った複数回の小規模スモークテストの合算概算。503で失敗した回は無料(課金なし)なので、実際に成功した回のみのコスト。"
     },
@@ -37,7 +37,7 @@
       "script": "test-relation-stability.mjs(フル完走)",
       "calls": 120,
       "cost_usd": 0.55,
-      "cost_yen": 88.0,
+      "cost_yen": 88,
       "cumulative_yen_after": 445.344,
       "estimated": true,
       "note": "実行当時このスクリプトにコスト計測機能が無かったため、全120回がgemini-3.8-flashだった実績(docs/test-results/relation-stability-2026-09-24T17-32-11-971Z.json)に、同モデルのr3実測単価($0.00460/回)を適用して概算。"
@@ -70,6 +70,20 @@
       "cumulative_yen_after": 572.08,
       "estimated": false,
       "note": "docs/test-results/ng-leak-rate-2026-09-24T17-45-52-279Z.jsonの実測値。"
+    },
+    {
+      "run_at": "2026-09-24T18:18:54.957Z",
+      "script": "test-persona-regression.mjs(新仕様)",
+      "calls": 0,
+      "cost_usd": 0,
+      "cost_yen": 0,
+      "cumulative_yen_after": 572.08,
+      "stage": "smoke",
+      "personas": [
+        "A3"
+      ],
+      "repeats": 1,
+      "budget_stop": false
     }
   ],
   "cumulative_yen": 572.08

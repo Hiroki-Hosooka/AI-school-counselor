@@ -364,28 +364,38 @@ npm run test:relation-stability -- --skip-relation  # モード判定のみ
 モード判定側は、本来その場でインテークが完了するはずが完了しなかった件数(`intake_incomplete_count`)
 も記録する。どちらもDBには書き込まない。
 
-### テスト4: ペルソナ多ターン回帰テスト
+### テスト4/5: ペルソナ多ターン回帰テスト(インテーク完了率を統合)
+
+2026年9月、アップロードされた新仕様(persona-tests-4-5.md)に基づき全面改修。
+旧テスト4(インテーク完了率)は別実行せず、ペルソナ会話のログから同時に算出する
+(会話を二重に回すと費用も二重にかかるため)。
 
 ```bash
-npm run test:persona-regression
-# 動作確認だけなら1ペルソナ・1ターンにできる:
-npm run test:persona-regression -- --persona=visitor --turns=1
+npm run test:persona-regression                 # 既定 --stage=smoke(A3のみ1回。必ず最初に)
+npm run test:persona-regression -- --stage=core  # 毎回回す組(A2/A3/A5/B1/B5/C1)を各1回
+npm run test:persona-regression -- --stage=full  # 15例すべてを既定2回ずつ(--repeats=3で3回)
+npm run test:persona-regression -- --persona=A3  # 1件だけに絞る(--stageと併用可)
 ```
 
-- ペルソナ設定: `docs/test-sets/persona-regression-personas.json`(6種)
-- 生徒役AI(`LITE_MODELS`。無料枠)と相談AI本体(`PRIMARY_MODELS`)を10ターン会話させ、
-  本番と全く同じ形で `sessions`/`messages` に保存する。**`admin.html` から通常の会話ログと
-  同様に閲覧できる**(セッション一覧から探すか、出力されたJSONの `session_id` で特定する)
-- 実行時のナレッジ世代(`sessions.knowledge_version`)を記録する
-- 出力JSON(`docs/test-results/persona-regression-<実行日時>.json`)の各ターン(`turn_log`)に、
-  生徒役・危機分類器・相談AI本体それぞれが実際に使ったモデルID(`student_model`/
-  `classifier_model`/`counselor_model`)を記録する。ペルソナ単位(`models_used`)と
-  全ペルソナ合計(`model_usage`)の集計も入る
-- **同じ実行から、人が読める会話の書き起こし(`docs/test-results/persona-regression-
-  <実行日時>-transcript.txt`)を必ずペアで残す。** admin.htmlはログインとDB接続が要るため、
-  それ無しでもAI同士の会話をそのまま確認できるようにするため(2026年9月に対応)。
-  JSON・txt・admin.htmlの3つは `session_id`/`client_id` で相互に照合できる
-  (JSON側に `transcript_file` キーでtxtのファイル名も入れている)
+- ペルソナ設定: `docs/test-sets/personas.json`(15例。A群=通常の相談7種・B群=安全に関わるもの
+  5種・C群=関係性境界に関わるもの3種)。固定文(`scripted_turns`)は生徒役AIに生成させず
+  そのまま差し込む(表現の揺れで再現性が失われるのを防ぐため)
+- 生徒役AI(`LITE_MODELS`。無料枠)と相談AI本体(`PRIMARY_MODELS`。**課金キー**
+  `TEST_GEMINI_API_KEY_PAID`)を、ペルソナごとに複数ターン会話させ、本番と全く同じ形で
+  `sessions`/`messages` に保存する。`sessions.is_synthetic=true`・`persona_id`・`run_id`
+  を立てるため、**`admin.html` の「合成データを表示」を有効にしないと一覧に出ない**
+  (既定非表示。本物の生徒の会話と混同しないため)
+- **予算管理**: `TEST_BUDGET_YEN`(既定1000円)を実行前に確認し、超える見込みなら実行しない。
+  実行中に使い切ったらその場で打ち切り、そこまでの結果を保存する。実際の使用トークン数・
+  費用は `docs/test-results/budget-ledger.json` に累計で記録される(他の課金キー使用テストの
+  分も同じ台帳に記録される)
+- 各ペルソナの `pass_criteria.automated`(personas.json内)を会話ログから機械的に判定する。
+  `pass_criteria.visual` は自動判定せず、下記の会話ログを人間と別のGem(Geminiアプリ)で確認する
+- B群(安全に関わるペルソナ)は、判定器が失敗した際のフェイルセーフ(`src/classify.mjs`。
+  失敗時 `watch` へフォールバック。2026年9月対応済み)が前提
+- 出力: `docs/test-results/persona-regression-<runId>.json`(自動判定・インテーク完了率・
+  使用モデル・予算の集計)と、`docs/test-results/persona-logs-<runId>/<ペルソナID>.txt`
+  (ペルソナ1件=1ファイルの読みやすい会話ログ。Gemに貼り付けて分析するため)
 
 ### モデル比較(コスト・パフォーマンス。上記4本とは別枠)
 
