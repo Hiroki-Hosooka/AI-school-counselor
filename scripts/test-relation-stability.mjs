@@ -92,16 +92,24 @@ for (const persona of personas) {
 
   const relations = [];
   const generationFailures = [];
+  // 集計値(all_relations)だけでなく、10回全ての生の応答も残す
+  // (2026年9月・検証一式のログ充実要望への対応)。
+  const attempts = [];
 
   process.stdout.write(`[${persona.id}] ${persona.label ?? ""} 「${persona.text.slice(0, 20)}...」 `);
   for (let i = 0; i < REPEATS; i++) {
     const { out, generationFailed, failureCause } = await generateWithRetry(system, messages);
     if (generationFailed) {
       generationFailures.push(failureCause);
+      attempts.push({ attempt: i + 1, generation_failed: true, failure_cause: failureCause ?? null });
       process.stdout.write("!");
     } else {
       const r = VALID_RELATIONS.includes(out.relation) ? out.relation : "(不正な値)";
       relations.push(r);
+      attempts.push({
+        attempt: i + 1, generation_failed: false, relation: r,
+        reply: out.reply, hypothesis: out.hypothesis ?? "", why: out.why ?? "",
+      });
       process.stdout.write(r[0].toUpperCase());
     }
     if (i < REPEATS - 1) await sleep(1500);
@@ -118,6 +126,7 @@ for (const persona of personas) {
     agreement_rate: agreementRate,
     generation_failures: generationFailures,
     all_relations: relations,
+    attempts,
   });
 }
 

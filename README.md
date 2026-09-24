@@ -259,7 +259,25 @@ https://(デプロイ先のドメイン)/admin.html
 ## 自動テスト一式(docs/backlog.md 1-3)
 
 ナレッジやプロンプトを変えたときに悪化していないかを、人手を介さず機械的に確認するための
-テスト群。詳細仕様は `docs/prompts/automated-testing-harness.md`。4本とも実装済み。
+テスト群。もともとの4本の詳細仕様は `docs/prompts/automated-testing-harness.md`、
+構造化面接AI統合後に更新した5本の仕様(Tier A/B分離の妥当性、インテーク完了率等を追加)は
+`docs/prompts/structured-verification-suite.md`。**このテスト一式は基本的に人(あなた)が
+自分のAPIキーで実行するためのものです。** Claude(AI)自身は本番相当のGeminiキーを
+持たないサンドボックスで作業しているため、これらのテストを実際には実行できません
+(コードのロジック検証は、モックデータを使ったオフライン確認にとどまります)。
+
+**実行環境の準備(初回だけ)**
+
+```bash
+cp .env.example .env.local
+# .env.local を開いて、TEST_GEMINI_API_KEY(と、テスト2以降で使うSUPABASE_URL/
+# SUPABASE_SERVICE_ROLE_KEY)を埋める。GEMINI_API_KEY(本番用)は無くてもテストは動く
+```
+
+あとは下記の `npm run test:xxx` を打つだけです。一度キーを埋めれば、以降は
+コマンド一つで最後まで自動で進みます(人がキーを入力する以外、途中で操作は要りません)。
+5本まとめて順に流したい場合は `npm run test:all`(危機検知→禁止表現→型判定→
+ペルソナ回帰の順。一番時間のかかるペルソナ回帰は最後に実行される)。
 
 **共通の前提**
 
@@ -269,23 +287,31 @@ https://(デプロイ先のドメイン)/admin.html
 - テスト2〜4はナレッジ・会話ログを読み書きするため `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
   も必要(本番と同じものでよい。ナレッジは要配慮個人情報ではないため)
 - レート制限(429)に当たった場合は、どのテストも間隔を空けて自動再試行する
+- **どのテストも、結果のJSONに集計値だけでなく全試行の生の入出力を残す**
+  (`all_results`/`attempts` 等のキー。「正しく判定できた分」も含めて、何を入れたら
+  何が返ってきたかを後から全件読めるようにするため。2026年9月に対応)
 
-### テスト1: 危機検知の精度測定
+### テスト1: 危機検知の精度測定・Tier A/B分離の妥当性
 
 ```bash
 npm run test:crisis
 ```
 
 - テストセット: `docs/test-sets/crisis-detection.json`(none/watch/crisisを各20件以上、
-  計60件以上。現時点では `docs/interview-guide.md` 等の実データがリポジトリに無いため、
+  計79件。現時点では `docs/interview-guide.md` 等の実データがリポジトリに無いため、
   CLAUDE.mdの記述を参考にした `source: "synthetic"` の合成データ。実データが手に入ったら
   差し替え・追加すること)
 - 判定ロジックは `src/classify.mjs` の `classify()`。本番の `src/app/api/chat/route.ts` と
   完全に同じ関数を使うので、ここで測った数字がそのまま本番の実力になる
 - 出力は `docs/test-results/crisis-detection-<実行日時>.json`。クラスごとの適合率・再現率・F1、
-  **Geminiの安全フィルターにブロックされた件数(精度とは別枠)**、誤判定した発話の一覧が入る
+  **Geminiの安全フィルターにブロックされた件数(精度とは別枠)**、誤判定した発話の一覧に加え、
+  2026年9月から `risk`/`subject` を合成した「Tier A」(`risk==="crisis" && subject==="self"`。
+  CLAUDE.md 5.12)軸での **Tier A再現率・Tier A見逃し件数(0件が目標)・Tier B→Tier A
+  過剰検知率** が入る(`tier_ab` キー)。全79件の生の判定結果は `all_results` キーに入る
 - 安全フィルターにブロックされた場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件
   として記録する(レート制限とは区別する)
+- **Tier Aの見逃しが1件でもあれば、他のテストより優先して確認すること**
+  (`docs/prompts/structured-verification-suite.md` 参照)
 
 このテストの結果(特にブロック率)は、`callGeminiOnce` の `safetySettings` を緩めた判断の
 裏付けとして使う(CLAUDE.md 5.11)。結果を見ずに閾値だけ変更しないこと。

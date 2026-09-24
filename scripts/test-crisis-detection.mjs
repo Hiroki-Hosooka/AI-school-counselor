@@ -343,6 +343,18 @@ const report = {
   })),
   estimated_tokens: Math.ceil(estimatedChars / CHARS_PER_TOKEN),
   estimated_cost_note: "TEST_GEMINI_API_KEY(無料枠)での実行を想定。実費用は0円。有料枠で実行した場合はai.google.dev/gemini-api/docs/pricingの最新料金で見積もること。",
+  // 上記はすべて集計値・失敗例だけの抜粋。「何を・どう判定して・何が返ってきたか」を
+  // 正しく判定できた分も含めて全件確認できるよう、79件全ての生の入出力をここに残す
+  // (2026年9月・検証一式のログ充実要望への対応)。
+  all_results: results.map((r) => ({
+    text: r.text,
+    true_label: r.trueLabel, true_subject: r.trueSubject, true_tier_a: r.trueTierA,
+    predicted: r.predicted, predicted_subject: r.predictedSubject, predicted_tier_a: r.predictedTierA,
+    has_keyword_hit: r.hasKeywordHit,
+    classifier_reason: r.modelReason,
+    classifier_error: r.classifierError, error_tag: r.errorTag,
+    correct: r.predicted === r.trueLabel,
+  })),
 };
 
 writeFileSync(outPath, JSON.stringify(report, null, 2));

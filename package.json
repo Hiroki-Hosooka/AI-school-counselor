@@ -11,7 +11,8 @@
     "test:crisis": "node scripts/test-crisis-detection.mjs",
     "test:ng-leak": "node scripts/test-ng-leak-rate.mjs",
     "test:relation-stability": "node scripts/test-relation-stability.mjs",
-    "test:persona-regression": "node scripts/test-persona-regression.mjs"
+    "test:persona-regression": "node scripts/test-persona-regression.mjs",
+    "test:all": "npm run test:safety && npm run test:crisis && npm run test:ng-leak && npm run test:relation-stability && npm run test:persona-regression"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",

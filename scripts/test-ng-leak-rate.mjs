@@ -93,15 +93,23 @@ for (const item of items) {
   const messages = [{ role: "user", parts: [{ text: item.text }] }];
   const outcomes = { clean: 0, fixed_by_regen: 0, still_flagged: 0, generation_failed: 0 };
   const stillFlaggedExamples = [];
+  // 集計値だけでなく、10回全ての生の入出力を残す(2026年9月・検証一式の
+  // ログ充実要望への対応)。「検知されず正常に通った回」の実際の応答も、
+  // 誤って検知しすぎていないかを人が読んで確認できるようにするため。
+  const attempts = [];
 
   process.stdout.write(`[${item.id}] ${item.bait ?? ""} 「${item.text.slice(0, 20)}...」 `);
   for (let i = 0; i < REPEATS; i++) {
-    const { out, flags } = await generateWithRetry(system, messages);
+    const { out, flags, generationFailed, failureCause } = await generateWithRetry(system, messages);
     const outcome = classifyOutcome(flags);
     outcomes[outcome]++;
     if (outcome === "still_flagged") {
       stillFlaggedExamples.push({ reply: out.reply, flags });
     }
+    attempts.push({
+      attempt: i + 1, outcome, reply: out.reply, flags,
+      generation_failed: generationFailed === true, failure_cause: failureCause ?? null,
+    });
     process.stdout.write(outcome === "clean" ? "." : outcome === "fixed_by_regen" ? "o" : outcome === "still_flagged" ? "X" : "!");
     if (i < REPEATS - 1) await sleep(1500);
   }
@@ -114,6 +122,7 @@ for (const item of items) {
     detected_first_pass: detectedFirstPass,
     detection_rate: detectedFirstPass / REPEATS,
     still_flagged_examples: stillFlaggedExamples,
+    attempts,
   });
 }
 
