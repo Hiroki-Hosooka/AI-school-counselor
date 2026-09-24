@@ -30,7 +30,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure, isTransientClassifierError } from "./_lib/test-env.mjs";
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
@@ -123,7 +123,7 @@ async function generateWithRetry(system, messages) {
   return withRateLimitRetry(
     KEY_POOL,
     () => generateReply(system, messages),
-    (r) => r.generationFailed && r.failureCause === "レート制限(429)",
+    isTransientGenerateFailure,
     { label: "相談AI: ", state: COUNSELOR_KEY_ROTATION },
   );
 }
@@ -134,7 +134,7 @@ async function classifyWithRetry(text) {
   return withRateLimitRetry(
     KEY_POOL,
     () => classify(text),
-    (r) => !!r.classifierError && r.classifierError.startsWith("[RATE_LIMIT]"),
+    isTransientClassifierError,
     { label: "分類器: ", state: CLASSIFIER_KEY_ROTATION },
   );
 }

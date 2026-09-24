@@ -110,6 +110,24 @@ export async function withRateLimitRetry(keyPool, attemptFn, isRateLimited, opts
   return result;
 }
 
+// 課金設定済みの単一キー(2026年9月・モデル比較検証)。無料枠4本のプール
+// (requireTestGeminiKeyPool)とは別管理。PRIMARY_MODELS系の呼び出しはモデル選定自体が
+// 検証対象であり、フォールバックを無効化して1モデルずつ単独で呼ぶため、無料枠のような
+// レート制限による自動切り替えはそもそも起きにくい(課金アカウントはRPM上限が高い)。
+// withRateLimitRetry には[key]という1要素の配列として渡し、既存の再試行の仕組み
+// (一時的な失敗時の待機付き再試行)だけをそのまま再利用する。
+export function requireTestGeminiKeyPaid(root) {
+  loadEnvFile(`${root}/.env.local`);
+  loadEnvFile(`${root}/.env`);
+  const key = process.env.TEST_GEMINI_API_KEY_PAID;
+  if (!key) {
+    console.error("TEST_GEMINI_API_KEY_PAID が設定されていません。");
+    console.error(".env.local に TEST_GEMINI_API_KEY_PAID=... を追加してください(無料枠のキーとは別)。");
+    process.exit(1);
+  }
+  return [key];
+}
+
 // SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY は本番と同じものを使う想定
 // (ナレッジ・会話ログの読み書き自体はGemini無料枠の話とは無関係。CLAUDE.md 5.10参照)。
 export function requireSupabaseEnv(root) {
@@ -123,3 +141,18 @@ export function requireSupabaseEnv(root) {
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// withRateLimitRetry()に渡す「この結果は再試行すべきか」の共通判定(2026年9月・
+// モデル比較検証)。429(レート制限)に加え、Google側の一時的な過負荷(503
+// "currently experiencing high demand")も対象にする。503は数十秒後の直接curl
+// 再現テストで同じリクエストが成功しており、リクエスト内容の問題ではなくGoogle側の
+// 一時的な状態によるものと判断した(モデル比較検証で複数モデルにまたがって頻発)。
+// generateReply()の戻り値(failureCause)用。
+export function isTransientGenerateFailure(r) {
+  return r.generationFailed && (r.failureCause === "レート制限(429)" || r.failureCause === "サービス過負荷(503)");
+}
+
+// classify()の戻り値(classifierError。生のエラー文字列)用。
+export function isTransientClassifierError(r) {
+  return !!r.classifierError && (r.classifierError.startsWith("[RATE_LIMIT]") || r.classifierError.startsWith("[HTTP_503]"));
+}

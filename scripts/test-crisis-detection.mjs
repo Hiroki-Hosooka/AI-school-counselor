@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, isTransientClassifierError } from "./_lib/test-env.mjs";
 import { classify, LITE_MODELS } from "../src/classify.mjs";
 import { CRISIS_WORDS } from "../src/safety.mjs";
 
@@ -65,7 +65,7 @@ async function classifyWithRetry(text) {
   return withRateLimitRetry(
     KEY_POOL,
     () => classify(text),
-    (r) => !!r.classifierError && r.classifierError.startsWith("[RATE_LIMIT]"),
+    isTransientClassifierError,
     { state: KEY_ROTATION },
   );
   // 全滅後もレート制限のままなら、その結果をそのまま記録する(withRateLimitRetryの仕様)。

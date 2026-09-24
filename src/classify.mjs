@@ -129,7 +129,9 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
     const reason = d.promptFeedback?.blockReason || candidate?.finishReason || "unknown";
     throw new Error(`[BLOCKED] Gemini(${model})の応答が空でした(理由: ${reason})`);
   }
-  return text;
+  // usageMetadata(実際のトークン消費量)も返す(2026年9月・モデル比較検証)。
+  // 既存の戻り値(text)は変えず追加するだけなので、他の呼び出し元には影響しない。
+  return { text, usage: d.usageMetadata ?? null };
 }
 
 // models を上から順に試し、最初に成功したものを返す。
@@ -157,8 +159,8 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
   let anyRateLimited = false;
   for (const model of models) {
     try {
-      const text = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget);
-      return { text, model };
+      const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget);
+      return { text, model, usage };
     } catch (e) {
       lastError = e;
       if (e instanceof Error && e.message.includes("[RATE_LIMIT]")) anyRateLimited = true;

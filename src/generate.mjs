@@ -558,11 +558,31 @@ notes には氏名・学校名・住所などの識別情報を書かないこ�
 export const checkOutput = (t) =>
   OUTPUT_NG.filter((re) => re.test(t)).map((re) => String(re).slice(0, 42));
 
+// usage(usageMetadata)同士を合算する。NG検知→再生成が起きた場合、採用されるのは
+// どちらか一方のテキストだが、課金は両方の呼び出しに対して発生しているため、
+// コストを正しく見積もるには合算した値を使う必要がある(2026年9月・モデル比較検証)。
+function addUsage(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    promptTokenCount: (a.promptTokenCount ?? 0) + (b.promptTokenCount ?? 0),
+    candidatesTokenCount: (a.candidatesTokenCount ?? 0) + (b.candidatesTokenCount ?? 0),
+    thoughtsTokenCount: (a.thoughtsTokenCount ?? 0) + (b.thoughtsTokenCount ?? 0),
+    totalTokenCount: (a.totalTokenCount ?? 0) + (b.totalTokenCount ?? 0),
+  };
+}
+
 // ============================================================================
 //  本生成 + 禁止表現検知時の1回だけの再生成。
 //  route.ts の "chat" アクションと全く同じロジック(テスト2/3/4がこれを使う)。
+//
+//  maxOutputTokens/thinkingBudgetは既定値(1500/0。PRIMARY_MODELS=通常モデル向け)を
+//  変えていないので、route.ts含む既存の呼び出し元の挙動は変わらない。モデル比較検証
+//  (2026年9月)でlite系モデルを単独指定して試す場合だけ、呼び出し側が明示的に
+//  thinkingBudget:-1と大きめのmaxOutputTokensを渡す(liteはthinkingBudget:0を
+//  受け付けないため。src/classify.mjsのcallGeminiOnceのコメント参照)。
 // ============================================================================
-export async function generateReply(system, messages, models = PRIMARY_MODELS) {
+export async function generateReply(system, messages, models = PRIMARY_MODELS, maxOutputTokens = 1500, thinkingBudget = 0) {
   let out;
   let generationFailed = false;
   let failureCause = "";
@@ -570,16 +590,23 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS) {
   // 成功した場合は下でretryResult.modelに上書きする。全滅時はnull
   // (2026年9月・検証一式のログ充実要望。callGemini()のコメント参照)。
   let usedModel = null;
+  // 実際に消費したトークン(初回+再生成があれば合算。2026年9月・モデル比較検証)。
+  let usage = null;
   try {
-    const result = await callGemini(models, system, messages);
+    const result = await callGemini(models, system, messages, maxOutputTokens, thinkingBudget);
     out = parseJSON(result.text);
     usedModel = result.model;
+    usage = result.usage;
   } catch (e) {
     console.error("生成に失敗しました:", e);
     generationFailed = true;
     const msg = e instanceof Error ? e.message : String(e);
     failureCause = msg.includes("[RATE_LIMIT]") ? "レート制限(429)"
       : msg.includes("[BLOCKED]") ? "安全フィルタ等で応答が空"
+      // Google側の一時的な過負荷(2026年9月・モデル比較検証で複数モデルにまたがって
+      // 頻発することを確認。数十秒後の直接curl再現テストでは成功しており、
+      // リクエスト内容ではなくGoogle側の一時的な状態によるものと判断した)。
+      : msg.includes("[HTTP_503]") ? "サービス過負荷(503)"
       : "不明なエラー";
     out = {
       reply: "ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?",
@@ -595,8 +622,10 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS) {
     const fix = system +
       "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
     try {
-      const retryResult = await callGemini(models, fix, messages);
+      const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
       const retry = parseJSON(retryResult.text);
+      // 再生成の呼び出し自体にも課金は発生している(採用されなくても)ので必ず加算する。
+      usage = addUsage(usage, retryResult.usage);
       if (checkOutput(retry.reply ?? "").length === 0) {
         out = retry; flags = ["1回目に検知→再生成で解消"];
         usedModel = retryResult.model; // 採用されたのは再生成の方なので上書きする
@@ -604,7 +633,7 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS) {
     } catch { /* 再生成に失敗したら1回目を使い、フラグ・usedModelはそのまま残す */ }
   }
 
-  return { out, flags, generationFailed, failureCause, usedModel };
+  return { out, flags, generationFailed, failureCause, usedModel, usage };
 }
 
 // ============================================================================

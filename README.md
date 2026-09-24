@@ -386,6 +386,34 @@ npm run test:persona-regression -- --persona=visitor --turns=1
   それ無しでもAI同士の会話をそのまま確認できるようにするため(2026年9月に対応)。
   JSON・txt・admin.htmlの3つは `session_id`/`client_id` で相互に照合できる
   (JSON側に `transcript_file` キーでtxtのファイル名も入れている)
+
+### モデル比較(コスト・パフォーマンス。上記4本とは別枠)
+
+```bash
+npm run test:model-comparison
+# 対象モデルや件数を絞りたい場合:
+npm run test:model-comparison -- --limit=2 --repeats=2
+npm run test:model-comparison -- --models=gemini-3.6-flash,gemini-3.8-flash
+```
+
+`PRIMARY_MODELS` の候補モデルを、勘ではなく実測(コスト・レイテンシ・禁止表現の漏れ率)で
+選ぶための比較。上記4本(`npm run test:all`)には**含めていない**(知識・プロンプトの
+リグレッション検知が目的の4本と違い、これはモデル選定という別の目的の、都度実行するもの
+ではないツールのため)。
+
+- `TEST_GEMINI_API_KEY(S)`(無料枠プール)とは別に、課金設定済みの単一キー
+  `TEST_GEMINI_API_KEY_PAID` が必要(未設定だとエラーで止まる)。理由はCLAUDE.md 5.10参照
+  ( PRIMARY_MODELS の実力を測る検証は本番と同じ課金枠を使うべきで、無料枠は
+  そもそもモデル選定の比較対象として実力を測れるだけのレート制限が無いため)
+- 入力セットはテスト2と同じ `docs/test-sets/ng-leak-rate-inputs.json`。候補モデルそれぞれに
+  単独で(フォールバック無効)既定10回ずつ通し、モデルごとに成功率・NG漏れ率・平均/最大
+  レイテンシ・実際のトークン使用量(`usageMetadata`)・実コスト(ドル)を集計する
+- 出力は `docs/test-results/model-comparison-<実行日時>.json`。価格表(`pricing_source`)は
+  ai.google.dev/gemini-api/docs/pricingを実測した時点のもので、Google側の値上げ・
+  値下げがあれば `scripts/test-model-comparison.mjs` の `PRICING` を更新すること
+- Google側の一時的な過負荷(503 "currently experiencing high demand")も、429と同じく
+  自動で再試行する(`isTransientGenerateFailure`。2026年9月・このテストの実行中に
+  複数モデルにまたがって頻発することを確認し対応した)
 - **合成データであることが分かるように、`client_id` を `TEST-PERSONA-<ペルソナ>-<実行時刻>`
   にしている。** `admin.html` のセッション一覧では先頭8文字(`client_id_short`)が
   `TEST-PER` と表示されるため、実際の生徒の匿名IDと見た目で区別できる
