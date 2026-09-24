@@ -370,6 +370,11 @@ npm run test:persona-regression -- --persona=visitor --turns=1
   生徒役・危機分類器・相談AI本体それぞれが実際に使ったモデルID(`student_model`/
   `classifier_model`/`counselor_model`)を記録する。ペルソナ単位(`models_used`)と
   全ペルソナ合計(`model_usage`)の集計も入る
+- **同じ実行から、人が読める会話の書き起こし(`docs/test-results/persona-regression-
+  <実行日時>-transcript.txt`)を必ずペアで残す。** admin.htmlはログインとDB接続が要るため、
+  それ無しでもAI同士の会話をそのまま確認できるようにするため(2026年9月に対応)。
+  JSON・txt・admin.htmlの3つは `session_id`/`client_id` で相互に照合できる
+  (JSON側に `transcript_file` キーでtxtのファイル名も入れている)
 - **合成データであることが分かるように、`client_id` を `TEST-PERSONA-<ペルソナ>-<実行時刻>`
   にしている。** `admin.html` のセッション一覧では先頭8文字(`client_id_short`)が
   `TEST-PER` と表示されるため、実際の生徒の匿名IDと見た目で区別できる

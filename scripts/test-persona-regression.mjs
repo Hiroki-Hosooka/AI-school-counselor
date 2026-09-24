@@ -62,8 +62,6 @@ if (!personas.length) {
   process.exit(1);
 }
 
-const runId = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
-
 function personaSystemPrompt(persona) {
   return `あなたはロールプレイで、学校のカウンセリングAI(スクールカウンセリング支援AI)と話す
 中学生・高校生を演じます。docs/backlog.md 1-3(ペルソナ多ターン回帰テスト)用の合成テストです。
@@ -154,6 +152,80 @@ function countBy(rows, fn) {
   return counts;
 }
 
+// 人が読めるトークログ(検証一式・2026年9月。「AI同士の会話をログとして残す」要望への対応)。
+// admin.htmlは要ログインでDB接続が要るため、ログインなしでもAI同士の生の会話を
+// そのまま確認できるよう、結果JSONと同じ実行から、同じファイル名(拡張子だけ違う)で
+// プレーンテキストの書き起こしを必ず残す。session_id/client_idを両方に載せることで、
+// admin.htmlで見る実際のログと、このトークログ・結果JSONの3つを相互に照合できるようにする。
+function buildTranscript({ startedAt, finishedAt, version, jsonFileName, personaReports, turnsRequested }) {
+  const lines = [];
+  lines.push("=".repeat(40));
+  lines.push("検証一式 テスト4/5: ペルソナ多ターン回帰テスト トークログ");
+  lines.push("=".repeat(40));
+  lines.push("");
+  lines.push(`実行日時: ${startedAt.toISOString()}`);
+  lines.push(`終了日時: ${finishedAt.toISOString()}`);
+  lines.push(`ナレッジ世代: ${version}`);
+  lines.push(`要求ターン数: ${turnsRequested}`);
+  lines.push(`対応する結果JSON(裏側の判定・使用モデル等の全データ): ${jsonFileName}`);
+  lines.push("admin.htmlでの確認: 下記の client_id で検索すると、実データと同じ形の会話ログを閲覧できます");
+  lines.push("");
+
+  for (const r of personaReports) {
+    lines.push("-".repeat(40));
+    lines.push(`[${r.persona}] ${r.label ?? ""}`);
+    lines.push(`session_id: ${r.session_id}`);
+    lines.push(`client_id : ${r.client_id}`);
+    lines.push(
+      `完了ターン: ${r.turns_completed}/${turnsRequested}  危機分岐: ${r.crisis_turns}回  ` +
+      `禁止表現flags: ${r.flagged_turns}回${r.stopped_early ? `  途中終了: ${r.stopped_early}` : ""}`,
+    );
+    lines.push(
+      `最終状態  : relation=${r.final_relation} phase=${r.final_phase}` +
+      `${r.recommended_mode.length ? ` mode=${r.recommended_mode.join("+")}` : ""}` +
+      `${r.final_closing_state !== "none" ? ` closing=${r.final_closing_state}` : ""}`,
+    );
+    lines.push("-".repeat(40));
+    for (const t of r.turn_log) {
+      lines.push(`T${t.turn} 生徒   [model=${t.student_model ?? "不明"}]: ${t.student}`);
+      if (t.crisis) {
+        lines.push(`T${t.turn} 相談AI [判定モデル=${t.classifier_model ?? "不明"}] → 危機分岐(固定応答):`);
+        lines.push(`  ${t.counselor}`);
+      } else {
+        lines.push(
+          `T${t.turn} 相談AI [model=${t.counselor_model ?? "不明"} weight=${t.weight} ` +
+          `relation=${t.relation} question_level=${t.question_level}]: ${t.counselor}`,
+        );
+        if (t.flags && t.flags.length) lines.push(`  ⚠ flags: ${JSON.stringify(t.flags)}`);
+      }
+    }
+    lines.push("");
+  }
+
+  lines.push("=".repeat(40));
+  lines.push("まとめ");
+  lines.push("=".repeat(40));
+  for (const r of personaReports) {
+    lines.push(
+      `[${r.persona}] session=${r.session_id} 完了${r.turns_completed}/${turnsRequested}ターン ` +
+      `危機分岐${r.crisis_turns}回 flags発生${r.flagged_turns}回 最終relation=${r.final_relation} ` +
+      `phase=${r.final_phase}${r.recommended_mode.length ? ` mode=${r.recommended_mode.join("+")}` : ""}` +
+      `${r.final_closing_state !== "none" ? ` closing=${r.final_closing_state}` : ""}` +
+      `${r.stopped_early ? ` (${r.stopped_early})` : ""}`,
+    );
+  }
+  return lines.join("\n") + "\n";
+}
+
+// startedAtから直接runIdを作る(2026年9月・検証一式のログ紐付け要望への対応)。
+// 以前はrunIdを別のnew Date()から作っていたため、DBのclient_idに埋め込まれる
+// runIdと、結果JSON/トークログのファイル名の時刻がずれ得た(数秒差だが、
+// 人が見比べて照合するには不便だった)。同じstartedAtから両方を作ることで、
+// admin.htmlで見るclient_id(TEST-PERSONA-<persona>-<runId>)と、
+// docs/test-results/配下のファイル名が確実に対応するようにする。
+const startedAt = new Date();
+const runId = startedAt.toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+
 console.log(`ペルソナ: ${personas.map((p) => p.id).join(", ")} / ターン数: ${TURNS} / runId: ${runId}`);
 console.log(`生徒役モデル: ${LITE_MODELS.join(" → ")} / 相談AI本体モデル: ${PRIMARY_MODELS.join(" → ")}(ともにTEST_GEMINI_API_KEY)\n`);
 
@@ -161,7 +233,6 @@ const db = getDb();
 const rows = await loadKnowledge(db);
 const version = knowledgeVersion(rows);
 
-const startedAt = new Date();
 const personaReports = [];
 
 for (const persona of personas) {
@@ -322,6 +393,7 @@ for (const r of personaReports) {
   console.log(`  [${r.persona}] session=${r.session_id} 完了${r.turns_completed}/${TURNS}ターン 危機分岐${r.crisis_turns}回 flags発生${r.flagged_turns}回 最終relation=${r.final_relation} phase=${r.final_phase}${r.recommended_mode.length ? ` mode=${r.recommended_mode.join("+")}` : ""}${r.final_closing_state !== "none" ? ` closing=${r.final_closing_state}` : ""}${r.stopped_early ? ` (${r.stopped_early})` : ""}`);
 }
 console.log("\nadmin.html でセッションIDを検索するか、一覧から探して会話を確認してください。");
+console.log("(ログインなしで会話全文を見たい場合は、下記で保存するトークログ(.txt)も参照してください)");
 
 // 全ペルソナ横断の、実際に使われたモデルの内訳(検証一式・2026年9月)。
 const overallModelsUsed = { counselor: {}, classifier: {}, student: {} };
@@ -340,7 +412,10 @@ console.log(`  生徒役(設定順: ${LITE_MODELS.join(" → ")}): ${JSON.string
 const resultsDir = path.join(ROOT, "docs/test-results");
 mkdirSync(resultsDir, { recursive: true });
 const stamp = startedAt.toISOString().replace(/[:.]/g, "-");
-const outPath = path.join(resultsDir, `persona-regression-${stamp}.json`);
+const jsonFileName = `persona-regression-${stamp}.json`;
+const transcriptFileName = `persona-regression-${stamp}-transcript.txt`;
+const outPath = path.join(resultsDir, jsonFileName);
+const transcriptPath = path.join(resultsDir, transcriptFileName);
 
 writeFileSync(outPath, JSON.stringify({
   run_at: startedAt.toISOString(),
@@ -350,6 +425,9 @@ writeFileSync(outPath, JSON.stringify({
   knowledge_version: version,
   counselor_models: PRIMARY_MODELS,
   support_models: LITE_MODELS,
+  // 人が読めるトークログ(検証一式・2026年9月)。同じ実行から、拡張子だけ違う
+  // ファイル名で必ずペアで残す(buildTranscript参照)。
+  transcript_file: transcriptFileName,
   model_usage: {
     counts: overallModelsUsed,
     note: "相談AI本体(counselor)・危機分類器(classifier)・生徒役(student)、それぞれ実際に" +
@@ -359,4 +437,9 @@ writeFileSync(outPath, JSON.stringify({
   personas: personaReports,
 }, null, 2));
 
-console.log(`結果を保存しました: ${path.relative(ROOT, outPath)}`);
+writeFileSync(transcriptPath, buildTranscript({
+  startedAt, finishedAt, version, jsonFileName, personaReports, turnsRequested: TURNS,
+}));
+
+console.log(`結果(JSON)を保存しました  : ${path.relative(ROOT, outPath)}`);
+console.log(`トークログ(txt)を保存しました: ${path.relative(ROOT, transcriptPath)}`);
