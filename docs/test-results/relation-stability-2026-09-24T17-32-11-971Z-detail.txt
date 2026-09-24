@@ -1,0 +1,320 @@
+========================================
+検証一式 テスト3: 関わりの型・モード判定の安定性 詳細ログ
+========================================
+
+実行日時: 2026-09-24T17:32:11.971Z
+終了日時: 2026-09-24T17:40:14.829Z
+対応する結果JSON(全試行の生データ): relation-stability-2026-09-24T17-32-11-971Z.json
+
+----------------------------------------
+1. 関わりの型の安定性(平均一致率: 1.00)
+----------------------------------------
+[visitor] ビジター型 「特に相談したいことがあるわけじゃないんですけど、なんとなく来てみました」
+  多数決=visitor 一致率=1.00 内訳={"visitor":10}
+  実際の並び: ["visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] relation=visitor why=相談不要と伝え敷居を下げるため
+         reply: あ、別に相談じゃなくてもいいですよ。なんとなくでも声をかけてくれて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、のんびりお話しする時間にできたらと思います。今どんな気分ですか？
+    #2 [gemini-3.8-flash] relation=visitor why=相談じゃなくてもいいと扉を開けるため
+         reply: 来てくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。あ、別に相談じゃなくても全然いいですよ。なんとなくでも、ふらっと立ち寄ってもらえて嬉しいです。今どんな気分ですか？
+    #3 [gemini-3.8-flash] relation=visitor why=相談不要と伝え、敷居を下げて扉を開けるため
+         reply: あ、別に相談じゃなくてもいいですよ。なんとなくでも声をかけてもらえて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、のんびり話す相手として使ってくださいね。最近、何か気になってることとかありますか？
+    #4 [gemini-3.8-flash] relation=visitor why=相談不要と伝え敷居を下げて雑談を促す
+         reply: あ、別に相談じゃなくてもいいですよ。なんとなくでも声をかけてくれて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、のんびりお話しする時間にできたらと思います。最近、学校とかどうですか？
+    #5 [gemini-3.8-flash] relation=visitor why=相談不要と伝え扉を開ける逐語を適用
+         reply: あ、別に相談じゃなくても大丈夫ですよ。なんとなく来てみたってだけでも、声をかけてくれて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、のんびり話す時間にできたらと思います。最近何か気になってることとか、あるいは全然関係ない雑談でもいいけど、話したいことって何かありますか？
+    #6 [gemini-3.8-flash] relation=visitor why=逐語V1に沿って相談以外も歓迎し敷居を下げる
+         reply: あ、別に相談じゃなくても大丈夫ですよ。なんとなくでも声をかけてくれて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、一緒にのんびり話したり整理したりできたらと思ってます。よかったら、今はどんな気分で過ごしてたか、少し教えてもらえますか？
+    #7 [gemini-3.8-flash] relation=visitor why=相談不要と伝え、扉を開けたまま迎えるため
+         reply: 来てくれてありがとう。あ、別に相談じゃなくても全然いいですよ。話したいことがあれば何でもいいし、たわいもない雑談でも大丈夫だからね。今はどんな気分でのぞいてくれたの？
+    #8 [gemini-3.8-flash] relation=visitor why=相談不要と伝え扉を開けるため
+         reply: 来てくれてありがとうございます。専門のカウンセラーの代わりにはなれませんが、一緒に頭を整理したりする時間にできたら嬉しいです。あ、別に相談じゃなくても全然いいですよ。なんとなくでも立ち寄ってもらえて嬉しいです。いまはどんな気分ですか？
+    #9 [gemini-3.8-flash] relation=visitor why=相談不要と伝え扉を開き初回挨拶を添えた
+         reply: あ、別に相談じゃなくても大丈夫ですよ。なんとなくでも寄ってくれて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、のんびり話したり整理したりする時間にできたらと思います。最近、学校とかどうですか？
+    #10 [gemini-3.8-flash] relation=visitor why=逐語V1に沿って扉を開け、初回規定を添えた。
+         reply: あ、別に相談じゃなくてもいいですよ。なんとなくでも声をかけてくれて嬉しいです。専門のカウンセラーの代わりにはなれないけれど、のんびり話す時間にできたらと思います。最近、学校とかどうですか？
+
+[complainant] コンプレイナント型 「クラスの子たちが全然話を聞いてくれなくて、もう疲れました。あっちが悪いのに」
+  多数決=complainant 一致率=1.00 内訳={"complainant":10}
+  実際の並び: ["complainant","complainant","complainant","complainant","complainant","complainant","complainant","complainant","complainant","complainant"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] relation=complainant why=同調せず感情を受け止め出来事を聞くため
+         reply: 話を聞いてもらえないことが続いて、疲れちゃったんだね。あっちが悪いって思うくらい嫌なことがあったんだと思うんだけど、そう感じるきっかけになるようなエピソードがあったの？
+    #2 [gemini-3.8-flash] relation=complainant why=同調せず疲れを受け止め出来事を尋ねた
+         reply: 話を聞いてもらえない状態が続くと、本当に疲れてしまうよね。そう感じるようになったきっかけや、何か具体的な出来事があったのかな？
+    #3 [gemini-3.8-flash] relation=complainant why=同調せず受容し、出来事を尋ねて視野を広げるため
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここで話してくれてありがとう。あっちが悪いって感じるような、何かきっかけになる出来事があったのかな？
+    #4 [gemini-3.8-flash] relation=complainant why=同調せず受容し、出来事を尋ねて視野を広げる
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでその気持ちを話してくれてありがとう。あっちが悪いって感じるような、何かきっかけになる出来事があったのかな？
+    #5 [gemini-3.8-flash] relation=complainant why=同調せず受容し、出来事を尋ねて視野を広げるため
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでその気持ちを話してくれてありがとう。あっちが悪いと感じるような、何かきっかけになる出来事があったのかな？
+    #6 [gemini-3.8-flash] relation=complainant why=同調せず受け止め、出来事を聞くため。
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでその気持ちを話してくれてありがとう。あっちが悪いって感じるような、何かきっかけになる出来事があったのかな？
+    #7 [gemini-3.8-flash] relation=complainant why=同調せず受け止め、出来事を尋ねて視野を広げる。
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでそうやって話してくれてありがとう。そう感じるようになったきっかけや、何か具体的な出来事があったのかな？
+    #8 [gemini-3.8-flash] relation=complainant why=同調せず出来事を具体的に尋ねるため。
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでその気持ちを話してくれてありがとう。あっちが悪いって思うような出来事が何かあったのかな？
+    #9 [gemini-3.8-flash] relation=complainant why=同調せず受け止め、出来事を尋ねるため
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでそうやって話してくれてありがとう。あっちが悪いって感じるような、何かきっかけになる出来事があったのかな？
+    #10 [gemini-3.8-flash] relation=complainant why=同調せず出来事を尋ね視野を広げるため
+         reply: 話を聞いてもらえなくて、すごく疲れてしまったんだね。ここでその気持ちを話してくれてありがとう。あっちが悪いって感じるような、何かきっかけになる出来事があったのかな？
+
+[customer] カスタマー型 「勉強のやり方を変えたくて相談に来ました。具体的に何を変えればいいか一緒に考えてほしいです」
+  多数決=customer 一致率=1.00 内訳={"customer":10}
+  実際の並び: ["customer","customer","customer","customer","customer","customer","customer","customer","customer","customer"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] relation=customer why=主訴を受け止め、具体化を促すため。
+         reply: 勉強のやり方を変えたいと思って来てくれたんだね。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。具体的に変えたいと思ったきっかけや、今気になっていることって何かあるかな？
+    #2 [gemini-3.8-flash] relation=customer why=主訴を受け止め、現状の気付きを尋ねた
+         reply: 勉強のやり方を変えたいんだね。来てくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、今のやり方でどんなところが気になっているか、教えてもらえる？
+    #3 [gemini-3.8-flash] relation=customer why=主訴を受け止め、現状の具体を尋ねるため
+         reply: 勉強のやり方を変えたいと思って来てくれたんだね。話してくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。具体的に変えたいと思ったきっかけや、いま気になっている教科や場面があれば教えてもらえる？
+    #4 [gemini-3.8-flash] relation=customer why=来談を歓迎し役割を伝えつつ現状を尋ねる
+         reply: 勉強のやり方を変えたいと思って来てくれたんだね。話してくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。具体的に変えたいと思ったきっかけや、いま気になっているところって何かあるかな？
+    #5 [gemini-3.8-flash] relation=customer why=主訴を受け止め、現状の課題を尋ねた
+         reply: 勉強のやり方を変えたいと思って来てくれたんだね。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、今のやり方でどんなところが気になっているか教えてもらえる？
+    #6 [gemini-3.8-flash] relation=customer why=来訪を受け止め、現状のやり方と困り感を尋ねた
+         reply: 勉強のやり方を変えたいって思って、こうして話しに来てくれたんだね。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、いまどんなふうに勉強していて、どんなところでやり方を変えたいなって感じているのか教えてもらえる？
+    #7 [gemini-3.8-flash] relation=customer why=主訴を受け止め、現状の様子を尋ねるため
+         reply: 勉強のやり方を変えたいんだね。そうやって自分で工夫しようとしてここに来てくれたこと、すごく頼もしいなと思います。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、いまどんなふうに勉強していて、どこを変えたいと感じているのか、教えてもらえる？
+    #8 [gemini-3.8-flash] relation=customer why=意思を受け止め初回趣旨を添えてきっかけを尋ねた
+         reply: 勉強のやり方を変えたいと思って来てくれたんだね。話してくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。具体的に変えたいと思ったきっかけや、いま気になっていることって何かあるかな？
+    #9 [gemini-3.8-flash] relation=customer why=要望を受け止め、気になっている点を聞くため
+         reply: 勉強のやり方を変えたいんだね。来てくれてありがとう。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、今のやり方でどんなところが気になっているのか、教えてもらえる？
+    #10 [gemini-3.8-flash] relation=customer why=主訴を受け止め、初回挨拶と現状確認を行う
+         reply: 勉強のやり方を変えたいと思って来てくれたんだね。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。具体的に変えたいと思ったきっかけや、今気になっていることって何かあるかな？
+
+[short_reply] 短文だけ返す子 「別に…普通です」
+  多数決=visitor 一致率=1.00 内訳={"visitor":10}
+  実際の並び: ["visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] relation=visitor why=相談を急かさず扉を開けたまま迎えるため
+         reply: あ、普通なんだね。全然、無理に相談することを探さなくても大丈夫だよ。何か話したいことがあれば話してもいいし、ぼーっとするだけでもいいからね。
+    #2 [gemini-3.8-flash] relation=visitor why=無理に引き出さず扉を開けたまま迎えるため
+         reply: そっか、普通なんだね。話しかけてくれてありがとう。特に悩みとかじゃなくても全然大丈夫だから、気が向いたことあったら何でも言ってね。
+    #3 [gemini-3.8-flash] relation=visitor why=相談でなくてもよいと敷居を下げて安心してもらうため
+         reply: そっか、普通なんだね。来てくれてありがとう。別に相談したいことがなくても全然大丈夫だよ。最近あったことでも、なんでもない話でも、話したいことがあればゆっくり聞くよ。
+    #4 [gemini-3.8-flash] relation=visitor why=相談不要でも歓迎し扉を開けておくため
+         reply: そっか、普通なんだね。来てくれてありがとう。別に相談したいことがあるわけじゃなくても、全然大丈夫だよ。最近あったことでも、なんでもない話でも、話したくなったら聞かせてね。
+    #5 [gemini-3.8-flash] relation=visitor why=無理に相談させず扉を開けたままにするため
+         reply: そっか、普通なんだね。わざわざ相談って感じじゃなくても全然大丈夫だよ。何か話したいことがあれば話してもいいし、ぼーっとするだけでもいいからね。
+    #6 [gemini-3.8-flash] relation=visitor why=無理に相談させず扉を開けたまま迎えるため
+         reply: そっか、普通なんだね。話しかけてくれてありがとう。特に困ったことや相談がなくても、全然大丈夫だよ。今日どんなことがあったかとか、のんびり雑談するだけでもいいからね。
+    #7 [gemini-3.8-flash] relation=visitor why=相談でなくてもよいと敷居を下げて安心感を促す
+         reply: そっか、普通なんだね。来てくれてありがとう。別に相談したいことがなくても、ここで何となく話すだけでも大丈夫だよ。最近、何か気になってることとかある？
+    #8 [gemini-3.8-flash] relation=visitor why=相談のハードルを下げ、扉を開けたままにするため
+         reply: そっか、普通なんだね。わざわざ相談って感じじゃなくても、全然大丈夫だよ。最近ちょっと気になってることとか、あるいは全然関係ない雑談でもいいんだけど、何か話してみたいことってある？
+    #9 [gemini-3.8-flash] relation=visitor why=構えずにいられるよう扉を開けておくため
+         reply: そっか、普通なんだね。話しかけてくれてありがとう。特に困ったことがなくても、気が向いた時にちょっと寄ってみた、くらいで全然大丈夫だよ。最近、何か気になってることとかある？
+    #10 [gemini-3.8-flash] relation=visitor why=相談じゃなくてもいいと扉を開けたまま迎えるため
+         reply: そっか、普通なんだね。話しかけてくれてありがとう。特に困ったことや相談がなくても、全然大丈夫だよ。最近あったことでも、なんでもない話でも、話したいことがあればゆっくり聞くよ。
+
+[action_ready] 作戦会議まで進む子 「志望校のことで、そろそろ本気で計画を立てたいんです。何から始めたらいいか一緒に考えてもらえますか」
+  多数決=customer 一致率=1.00 内訳={"customer":10}
+  実際の並び: ["customer","customer","customer","customer","customer","customer","customer","customer","customer","customer"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] relation=customer why=自発的な意欲を受け止め、現状のイメージを聞く
+         reply: 志望校に向けて、そろそろ本気で計画を立てたいんだね。そうやって自分で動こうとしているの、すごく前向きで素敵だと思うよ。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは今、どんな学校が気になっているのか、それとも勉強の進め方で迷っているのか、頭にあることを少し教えてもらえる？
+    #2 [gemini-3.8-flash] relation=customer why=意欲を受け止め、現状の考えを尋ねるため
+         reply: 志望校に向けて本気で計画を立てたいって思っているんですね。そうやって動き出そうとしていること、すごく前向きで素敵だと思います。まずは、今どんな学校が気になっていたり、どんなことで迷っていたりするのか、少し教えてもらえますか？
+    #3 [gemini-3.8-flash] relation=customer why=本人の意欲を受け止め、現状の考えを聞くため
+         reply: 志望校に向けて本気で計画を立てたいんだね。そうやって自分から動こうと思えていること自体がすごく前向きで素敵だと思うよ。専門のカウンセラーの代わりにはなれないけれど、頭の中を整理するお手伝いならぜひ一緒にさせてね。まずは今、どんな学校を考えているとか、気になっていることってあるかな？
+    #4 [gemini-3.8-flash] relation=customer why=本人の前向きな意欲を受け止め、現状の考えを尋ねるため
+         reply: 志望校に向けて、そろそろ本気で動こうって思えたんですね。そうやって自分で計画を立てようと話してくれて嬉しいです。まずは、今どんな学校が気になっているかとか、頭にあることを教えてもらえますか？
+    #5 [gemini-3.8-flash] relation=customer why=意欲を受け止め、初回枠組みを伝えつつ現状を尋ねる
+         reply: 志望校に向けて、そろそろ本気で計画を立てたいんだね。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは今、どんな学校を考えているのかや、気になっていることから教えてもらえる？
+    #6 [gemini-3.8-flash] relation=customer why=意欲を受け止め、初回枠組みを伝えつつ状況を聞いた
+         reply: 志望校に向けて、そろそろ本気で計画を立てていきたいんだね。専門のカウンセラーの代わりにはなれないけれど、頭の中を一緒に整理する時間にできたら嬉しいです。まずは、いま気になっている学校のことや、頭に浮かんでいるイメージから少し聞かせてもらえますか？
+    #7 [gemini-3.8-flash] relation=customer why=本気で動きたい意欲を受け止め、現状を聞くため
+         reply: 志望校のこと、そろそろ本気で考えたいんだね。そうやって動こうと思えていること自体がすごく前向きで素敵だと思うよ。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、今どんな学校が気になっていたり、どんなことで迷ったりしているのか、教えてもらえるかな？
+    #8 [gemini-3.8-flash] relation=customer why=自発的な意欲を受け止め、考えを問いかける
+         reply: 志望校のこと、そろそろ本気で計画を立てたいって思えたの、すごく前向きで素敵な一歩ですね。専門のカウンセラーの代わりにはなれないけれど、頭の中を一緒に整理する時間になれたら嬉しいです。まずは、いま気になっている学校や、どんなことから手をつけてみたいか、頭に浮かんでいることはありますか？
+    #9 [gemini-3.8-flash] relation=customer why=意欲を受け止め、現状の関心を聞くため
+         reply: 志望校に向けて、そろそろ本気で計画を立てたいんだね。専門のカウンセラーの代わりにはなれないけれど、一緒に整理する時間にできたら嬉しいです。まずは、今どんな学校が気になっているのか、少し教えてもらえる？
+    #10 [gemini-3.8-flash] relation=customer why=自発的な意志を受け止め、現状の整理を促すため
+         reply: 志望校に向けて、そろそろ本気で動こうって思っているんだね。そうやって自分から計画を立てようと思えたの、すごく大きな一歩だと思うよ。専門のカウンセラーの代わりにはなれないけれど、頭の中を一緒に整理する時間にできたら嬉しいな。まずは今、志望校についてどんなことが決まっていて、どんなところで迷っているのか教えてもらえる？
+
+[hesitant] 助けを求めるのに躊躇う子 「えっと…どう言ったらいいか分からないんですけど…最近ちょっと、いろいろあって」
+  多数決=visitor 一致率=1.00 内訳={"visitor":10}
+  実際の並び: ["visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor","visitor"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] relation=visitor why=話し出しの躊躇を受け止め、安心して話せるよう促すため
+         reply: 言葉にしづらいこと、ここに書いてくれてありがとう。うまく言おうとしなくて大丈夫だよ。話せることから少しずつ教えてもらえる？
+    #2 [gemini-3.8-flash] relation=visitor why=敷居を下げて安心してもらうため
+         reply: 言葉にするのって難しいよね。うまく言おうとしなくて大丈夫だよ。話せることから少しずつ教えてもらえる？
+    #3 [gemini-3.8-flash] relation=visitor why=話すことへのためらいを受け止め、敷居を下げるため
+         reply: 言葉にしづらいことってあるよね。来てくれてありがとう。うまく話そうとしなくて大丈夫だから、言えそうなことから少しずつ教えてもらえる？
+    #4 [gemini-3.8-flash] relation=visitor why=話しづらさを受け止め安心感を作るため
+         reply: 言葉にしづらいことってあるよね。まとまっていなくても全然大丈夫だよ。話せることから少しずつ教えてもらえる？
+    #5 [gemini-3.8-flash] relation=visitor why=言いにくさを受け止め話しやすい空気を作る
+         reply: 言葉にするのって難しいよね。うまく言えなくても全然大丈夫だよ。話せることから少しずつ教えてもらえる？
+    #6 [gemini-3.8-flash] relation=visitor why=話しづらさを受け止め、話せたことをねぎらうため
+         reply: 言葉にしづらいこと、あるよね。話そうと思って来てくれてありがとう。まとまってなくても全然大丈夫だから、言えそうなところから少しずつ教えてもらえる？
+    #7 [gemini-3.8-flash] relation=visitor why=急かさず安全な場であることを伝えて受け止める
+         reply: 言葉にしづらいこと、あるよね。うまく話そうとしなくて大丈夫だよ。話せることから少しずつでもいいし、まとまってなくても大丈夫だからね。
+    #8 [gemini-3.8-flash] relation=visitor why=話せたこと自体を受け止め、話しやすいよう促すため。
+         reply: 言葉にしづらいのに、声をかけてくれてありがとう。うまく話そうとしなくて大丈夫だよ。最近いろいろあったんだね。言える範囲でいいから、どんなことがあったのか聞いてもいい?
+    #9 [gemini-3.8-flash] relation=visitor why=話そうとしてくれた姿勢を受け止め、話しやすいよう促すため
+         reply: 言葉にしづらいのに、ここに来て話そうとしてくれてありがとうございます。まとまっていなくても全然大丈夫ですよ。もし話せそうなら、その「いろいろ」の中で一番頭に浮かんできていることから、少しずつ教えてもらえますか？
+    #10 [gemini-3.8-flash] relation=visitor why=話しかけてくれたことをねぎらい、安心感を促すため
+         reply: 言葉にしづらいのに、声をかけてくれてありがとう。うまく話そうとしなくて大丈夫だよ。最近いろいろあったんだね。もし話せそうなら、何があったのか少しずつ教えてもらえる？
+
+----------------------------------------
+2. モード判定の安定性(平均一致率: 0.97)
+----------------------------------------
+[listen_only] LISTEN_ONLYを狙う例(狙い:LISTEN_ONLY)
+  多数決=LISTEN_ONLY 一致率=1.00 内訳={"LISTEN_ONLY":10}
+  実際の並び: ["LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY","LISTEN_ONLY"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいんだね、よく教えてくれたね。限界に近い中でずっと抱えていたこと、ここでゆっくり聴かせてね。
+    #2 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいんだね。気まずくなってからずっと抱えてきた気持ち、ゆっくり聞かせてね。
+    #3 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ気持ちを聞いてほしいんだね。限界に近い中で、ずっと抱えてきたことを話してくれてありがとう。今の気持ち、全部受け止めるから、話せることからゆっくり聞かせてね。
+    #4 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: 解決を急がず、ただ聞いてほしいんだね。限界に近い重さの中で抱えてきたこと、あなたのペースでそのまま話してみてね。
+    #5 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいんだね。限界に近い重さの中で抱えてきたこと、話したいペースで何でも話してみてね。
+    #6 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいってことなんだね。限界に近い中で、よくここまで話してくれたね。今の気持ち、よかったらそのまま聞かせてくれる?
+    #7 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいってことなんだね。2週間ずっと気になってて限界に近いくらいつらかったこと、ここで全部話していいからね。
+    #8 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ気持ちを聞いてほしいんだね。それなら、ここでゆっくり話していこう。気まずくなってからずっと抱えていて苦しかったこと、話せそうなところから教えてくれる?
+    #9 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいんだね。限界に近い重さを抱えながら、ここでそうやって伝えてくれてありがとう。よかったら、気まずくなった時のことや今感じていること、話せる範囲でゆっくり聞かせてね。
+    #10 [gemini-3.8-flash] mode=LISTEN_ONLY intake_complete=true
+         reply: ただ聞いてほしいんだね。解決を急がずにじっくり聴くから、話せることから聞かせてね。
+
+[cbt] CBTを狙う例(狙い:CBT)
+  多数決=CBT 一致率=1.00 内訳={"CBT":10}
+  実際の並び: ["CBT","CBT","CBT","CBT","CBT","CBT","CBT","CBT","CBT","CBT"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: 考え方のクセを自分で見直せるようになりたいんだね。そうやって自分と向き合おうとしているの、すごく素敵だと思うよ。今日はそのためのきっかけを一緒に探していこうね。
+    #2 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: その考え方のクセを自分で見直せるようになりたいんだね。そうやって自分を変えたいと思えているの、すごく前向きで素敵だと思うよ。今日は一緒に、その思い込みがどんな時に起きやすいか、少しずつ整理してみようか。
+    #3 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: その考え方のクセを自分で見直せるようになりたいんだね。そう思えたこと自体がすごく前向きな一歩だと思うよ。まずは、最近その『全部ダメだ』って思い込みが起きたときのことを、少し振り返ってみることから始めてみる?
+    #4 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: 考え方のクセを見直せるようになりたいんだね。そうやって自分のことを見つめて変えていこうと思えるのは、すごく素敵なことだと思うよ。これまでのことで、特にその考え方が強く出ちゃった出来事って何かあるかな？
+    #5 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: 自分の考え方のクセを見直せるようになりたいんだね。そう思えていること自体、すごく大事な一歩だと思うよ。まずは、どんな場面でその思い込みが起きやすいか、一緒にゆっくり振り返ってみようか。
+    #6 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: 自分の考え方のクセを見直せるようになりたいんだね。そうやって自分を変えたいと思えているの、すごく前向きだなと感じるよ。その思い込みが起きやすいときのこと、もう少し一緒に整理してみようか。
+    #7 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: その考え方のクセを自分で見直せるようになりたいんだね。そうやって自分を変えていきたいと思えているの、すごく前向きで素敵だと思うよ。
+    #8 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: 自分の考え方のクセを見直せるようになりたいんだね。そう思えたこと自体がすごく前向きな一歩だと思うよ。まずは、最近そうやって思い込んでしまった具体的な場面をひとつ教えてもらえるかな?
+    #9 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: その考え方のクセを自分で見直せるようになりたいんだね。そうやって自分を変えていこうと思えるの、すごく前向きで素敵なことだと思うよ。
+    #10 [gemini-3.8-flash] mode=CBT intake_complete=true
+         reply: 考え方のクセをご自身で見直してみたいんだね。その気持ち、すごく大事だと思うよ。どんな場面でその思い込みが出てきやすいか、一緒に少しずつ見ていこうか。
+
+[sfbt] SFBTを狙う例(狙い:SFBT)
+  多数決=SFBT 一致率=1.00 内訳={"SFBT":10}
+  実際の並び: ["SFBT","SFBT","SFBT","SFBT","SFBT","SFBT","SFBT","SFBT","SFBT","SFBT"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前みたいに集中できていたときのコツを思い出したいんだね。その頃は、どんなふうに勉強できていたか覚えてる？
+    #2 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前の集中できてたときの感覚やコツを思い出したいんだね。その頃の自分って、どんなふうに勉強していたか覚えてる？
+    #3 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前は集中できていたときのコツを思い出したいんだね。あの頃はどんな工夫をして勉強していたか、少し覚えていることはある?
+    #4 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前はもっと集中できてた感覚やコツを取り戻したいんだね。そうやって自分の良かった時をヒントにしようとするの、すごくいいね。よかったら、その『前は集中できてた頃』のこと、どんな感じだったか少し教えてもらえるかな?
+    #5 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前の集中できてた感覚やコツを思い出したいんだね。前はどんなふうに集中できていたのか、よかったら教えてくれる？
+    #6 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前にうまくいってた感覚やコツを思い出したいんだね。その集中できてた時期って、どんな風に勉強していたか覚えてる？
+    #7 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前にうまくいってた感覚やコツを思い出したいんだね。その頃は、どんなふうに勉強できていたのかな?
+    #8 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前みたいに集中できていたときの感覚やコツを取り戻したいんだね。その頃は、どんなふうに勉強できていたか覚えている?
+    #9 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前は集中できてたときの感覚やコツを取り戻したいんだね。よかったら、その『うまくいってたとき』ってどんな感じだったか教えてもらえる？
+    #10 [gemini-3.8-flash] mode=SFBT intake_complete=true
+         reply: 前はできていた感覚やコツを思い出したいんだね。そうやって振り返ってみようと思えるの、すごく素敵だと思うよ。集中できていた頃って、どんなふうに勉強していたか覚えてる？
+
+[assertion] ASSERTIONを狙う例(狙い:ASSERTION)
+  多数決=ASSERTION 一致率=0.90 内訳={"ASSERTION":9,"ASSERTION+SFBT":1}
+  実際の並び: ["ASSERTION","ASSERTION","ASSERTION+SFBT","ASSERTION","ASSERTION","ASSERTION","ASSERTION","ASSERTION","ASSERTION","ASSERTION"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに上手に断れるようになりたいんだね。どんな場面で頼まれることが多いのか、よかったらひとつ教えてもらえるかな?
+    #2 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに断る方法を知りたいんだね。これまでずっと我慢して引き受けてきた分、相手との関係も大切にしながら上手に伝えられるよう、一緒に考えていこうね。
+    #3 [gemini-3.8-flash] mode=ASSERTION+SFBT intake_complete=true
+         reply: 角を立てずに断る方法を知りたいんだね。友達との関係も大切にしたいからこそ、どう伝えるか悩んじゃうよね。これまでに、少しでもうまく断れたり、気持ちを伝えられたことってあったりするかな？
+    #4 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 相手との関係を崩さずに、上手に断る方法を知りたいんだね。今までどんなふうに頼まれることが多かったか、少し教えてもらえる？
+    #5 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに断る方法を知りたいんだね。これまでずっと我慢して引き受けてきた分、相手との関係も大切にしながら断れるようになりたいと思ったのかな。
+    #6 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに断る方法を知りたいんだね。これまでずっと我慢して引き受けてきたからこそ、相手も自分も大切にできる伝え方を一緒に考えていこう。
+    #7 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに上手に断れるようになりたいんだね。どんな場面で使える断り方が知りたいか、最近困ったやり取りがあれば教えてもらえる?
+    #8 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 相手との関係を崩さずに、上手に断る方法を知りたいんだね。いつも相手のことを気遣って我慢してきた分、少しでも負担を減らす言い方を一緒に考えていこうか。
+    #9 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに断る方法を知りたいんだね。友達との関係も大切にしたいからこそ、どう伝えるか悩んできたのかな。
+    #10 [gemini-3.8-flash] mode=ASSERTION intake_complete=true
+         reply: 角を立てずに断る方法を知りたいんだね。これまでずっと我慢して引き受けてきた分、相手との関係も大切にしながら断れるようになりたいと思ったのかな。
+
+[problem_solving] PROBLEM_SOLVINGを狙う例(狙い:PROBLEM_SOLVING)
+  多数決=PROBLEM_SOLVING 一致率=1.00 内訳={"PROBLEM_SOLVING":10}
+  実際の並び: ["PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING","PROBLEM_SOLVING"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 計画を一緒に立てて、少しでも見通しを持ちたいんだね。まずは一番気になっている科目や、テストまでの期間から少しずつ整理してみようか。
+    #2 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 一緒に計画を立てて、少し見通しをつけたいんだね。まずは一番気になっている科目や範囲から、少しずつ整理してみようか。
+    #3 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 一緒に計画を立てて、少しでも進めやすくしたいんだね。まずは一番気になっている科目や、テストまでの大体の期間から整理してみようか？
+    #4 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 計画を一緒に立てて、少しでも見通しを持ちたいんだね。まずは一番気になっている科目や範囲から、少しずつ整理してみようか。
+    #5 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 勉強の計画を一緒に整理したいんだね。まずは今回のテストで、一番気になっている教科や範囲はどこか教えてもらえる？
+    #6 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 一緒に計画を整理していきたいんだね。まずは一番気になっている教科や範囲から、少しずつ書き出してみようか。
+    #7 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 計画を一緒に立てて、少しでも見通しを持ちたいんだね。まずは一番気になっている科目や範囲から、少しずつ整理してみようか。
+    #8 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 効率よく進められる計画を一緒に立てていきたいんだね。まずは今一番気になっている科目や範囲から、少しずつ整理してみようか。
+    #9 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 計画を一緒に立てて、少しでも見通しを持ちたいんだね。まずは一番気になっている科目や範囲から、少しずつ整理してみようか。
+    #10 [gemini-3.8-flash] mode=PROBLEM_SOLVING intake_complete=true
+         reply: 一緒に計画を立てて、すっきり進められるようにしたいんだね。まずは一番気になっている科目や範囲から、少しずつ整理してみようか。
+
+[psychoeducation] PSYCHOEDUCATIONを狙う例(狙い:PSYCHOEDUCATION)
+  多数決=CBT+PSYCHOEDUCATION 一致率=0.90 内訳={"CBT+PSYCHOEDUCATION":9,"PSYCHOEDUCATION":1}
+  実際の並び: ["CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION","CBT+PSYCHOEDUCATION"]
+  使用モデル: {"gemini-3.8-flash":10}
+    #1 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安になっていたんだね。テストのプレッシャーで動悸がしたり眠れなくなったりするのは、実は体が一生懸命反応している自然なサインでもあるんだよ。
+    #2 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: テスト前になるとそうなるのが、自分だけなのか気になっていたんだね。その疑問について一緒に整理していこうか。
+    #3 [gemini-3.8-flash] mode=PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安に思っていたんだね。テスト前のその体の反応について、一緒に整理しながら見ていこうか。
+    #4 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 動悸がしたり眠れなくなったりすると、自分だけ変なのかなって不安になっちゃうよね。そのあたりを一緒に整理して、少しでも安心できるように話していこう。
+    #5 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安になっていたんだね。テスト前の動悸や眠れなくなることについて、一緒に整理していこうか。
+    #6 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安に思っていたんだね。テスト前のそうした体の反応について、一緒に整理していこう。
+    #7 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安になっちゃうよね。テスト前になると動悸がしたり眠れなくなったりするのは、強いプレッシャーを感じたときに誰の体にも起こりうる、ごく自然な反応なんだよ。
+    #8 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安になっていたんだね。テストのプレッシャーで動悸がしたり眠れなくなったりするのは、実は体が一生懸命向き合おうとしている自然な反応でもあるんだよ。
+    #9 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安になっちゃうよね。テストの前に動悸がしたり眠れなくなったりするのは、強いプレッシャーを感じたときに誰の体にも起こりうる自然な反応なんだよ。
+    #10 [gemini-3.8-flash] mode=CBT+PSYCHOEDUCATION intake_complete=true
+         reply: 自分がおかしいのかなって不安になっていたんだね。テストのプレッシャーで動悸がしたり眠れなくなったりするのは、実は体が一生懸命反応している自然なことでもあるんだよ。
+
+========================================
+使用モデルの内訳(両方合算)
+========================================
+{
+  "gemini-3.8-flash": 120
+}
