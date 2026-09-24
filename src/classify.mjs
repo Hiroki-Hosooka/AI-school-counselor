@@ -89,7 +89,7 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 //  この閾値はCLAUDE.md 5.11の対象。緩めた判断の裏付け(ブロック率の実測)が、
 //  まさにこのファイルを使うテスト1(scripts/test-crisis-detection.mjs)の役目。
 // ============================================================================
-async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens) {
+async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -103,7 +103,7 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
         contents,
         generationConfig: {
           maxOutputTokens, responseMimeType: "application/json",
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingBudget },
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
@@ -144,11 +144,19 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 // 最終的にどのモデルが応答したかが呼び出し元から分からなかった。classify()/
 // generateReply()/人単位の記憶要約(route.ts)/テストスクリプトの生徒役生成が、
 // 各ログに「使用したモデル」を残せるよう、成功したモデルIDも一緒に返す。
-export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500) {
+//
+// thinkingBudget の既定値は0(2026年9月・重要)。ただし gemini-*-lite 系のモデルは
+// thinkingBudget:0(思考を完全に無効化)を受け付けず、400 INVALID_ARGUMENT になる
+// ことを2026年9月、TEST_GEMINI_API_KEYでの実機検証(curlでの直接呼び出し)で確認した
+// (gemini-3.5-flash・gemini-3-flash-preview等、liteでない通常モデルでは0のまま有効)。
+// -1("dynamic"。モデルに任せる)は検証した全モデルで有効だったため、LITE_MODELSを渡す
+// 呼び出し側(classify()・人単位の記憶要約・テストの生徒役生成)は明示的に-1を渡すこと。
+// 通常モデル(PRIMARY_MODELS)側は何も渡さなければ既定の0のままなので変更不要。
+export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0) {
   let lastError;
   for (const model of models) {
     try {
-      const text = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens);
+      const text = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget);
       return { text, model };
     } catch (e) {
       lastError = e;
@@ -183,7 +191,11 @@ export async function classify(text) {
   // 失敗した場合はnull(2026年9月・検証一式のログ充実要望)。
   let usedModel = null;
   try {
-    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 200);
+    // maxOutputTokensは200→1024(2026年9月)。thinkingBudget:-1(dynamic)は実際の
+    // 思考トークン消費量が読めず(実機検証でCLASSIFIER_PROMPTに対し191〜224トークン
+    // 消費を確認)、200では思考だけで使い切りJSON本体がMAX_TOKENSで尻切れになっていた。
+    // 出力自体は20〜30トークンの小さなJSONなので、1024は十分な余裕を持たせた値。
+    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 1024, -1);
     model = parseJSON(result.text);
     usedModel = result.model;
   } catch (e) {

@@ -88,7 +88,10 @@ ${persona.brief}
 async function generatePersonaLine(system, contents, maxAttempts = 4) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const result = await callGemini(LITE_MODELS, system, contents, 150);
+      // thinkingBudgetは-1固定(LITE_MODELSは0を受け付けないため。src/classify.mjs参照)。
+      // maxOutputTokensは150→800。-1(dynamic)は思考トークン消費が読めないため余裕を持たせた
+      // (実際の生徒発言は1〜2文の短さのまま。src/classify.mjsのcallGemini()コメント参照)。
+      const result = await callGemini(LITE_MODELS, system, contents, 800, -1);
       const line = String(parseJSON(result.text).line ?? "").trim();
       if (line) return { line, model: result.model };
       throw new Error("生徒役の発言が空でした");

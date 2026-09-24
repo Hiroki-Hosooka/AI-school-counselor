@@ -131,7 +131,11 @@ async function updatePersonMemory(clientId: string, sessionNotes: Record<string,
   let newSummary = existing?.summary ?? "";
   try {
     // callGemini() は { text, model } を返す(2026年9月〜。src/classify.mjs 参照)。
-    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 400);
+    // 第5引数(thinkingBudget)は-1固定。LITE_MODELS(gemini-*-lite系)は0を受け付けず
+    // 400 INVALID_ARGUMENTになるため(src/classify.mjsのcallGemini()コメント参照)。
+    // maxOutputTokensは400→2000。-1(dynamic)は思考トークン消費が読めないため、
+    // 本文(最大MEMORY_MAX_CHARS=600字≒400トークン)+思考分の余裕を持たせた。
+    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, -1);
     newSummary = summaryResult.text.trim();
   } catch (e) {
     console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);

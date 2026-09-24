@@ -20,7 +20,13 @@ import { callGemini, parseJSON } from "./classify.mjs";
 // 「テキスト出力モデル」として無料枠の割り当てがある(RPM等が0/0でない)ことを確認済み。
 // プレビュー版だが、3.5と2.5の間のフォールバックとして使う
 // (https://ai.google.dev/gemini-api/docs/gemini-3 で実在・無料枠ありを確認)。
-export const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
+// gemini-3.6-flash(2026年9月に追加): TEST_GEMINI_API_KEYでの実機検証(curl直接呼び出し)で、
+// gemini-2.5-flashがこのプロジェクトで404「no longer available to new users」になっており、
+// Gemini APIのエラーメッセージ自体がgemini-3.6-flashへの切り替えを推奨していることを確認した。
+// gemini-3.6-flashは直接呼び出しで実在・正常応答を確認済み(モデル退役に伴う後継、
+// gemini-2.5-flash-liteと同様のパターン)。2.5-flashは古いプロジェクトではまだ動く可能性が
+// あるため削除はせず、退役間際の2.5-flashより前に3.6-flashを試すようにしている。
+export const PRIMARY_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.6-flash", "gemini-2.5-flash"];
 
 // ----------------------------------------------------------------------------
 // DBクライアント。route.ts自身の(型付きの)getDb()とは別に、テストスクリプトからも
