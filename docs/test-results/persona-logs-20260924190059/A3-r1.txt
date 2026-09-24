@@ -1,0 +1,59 @@
+========================================
+[A3] 親に言いたいことがある子
+========================================
+設定: 高校1年。部活を辞めたいが、親に言い出せない。
+
+--- 自動判定 ---
+OK [intake_within_5] インテーク(主訴・きっかけ・つらさ・なりたい姿)が5ターン以内に揃う
+     → 5ターン目でphase2へ移行
+NG [summary_within_6] 5〜6ターン以内に区切りのまとめ(did_summarize)が1回以上入る
+     → 6ターン以内にdid_summarize=trueが無い
+OK [weight_plan_after_7] 7ターン目以降に重心(weight)が「plan(作戦会議)」に移る
+     → T7でweight=plan
+
+--- インテーク完了 --- T5で完了
+
+----------------------------------------
+セッション1 (session_id: ec3504bc-2ef0-4600-b83c-66b248357e17)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: あ、すいません…なんか来ちゃいました
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 来てくれて大丈夫ですよ、謝らなくて全然いいからね。今って、どんなことで心がモヤモヤしてるかな？一番近いものを教えてね（一言や数字だけでもOKだよ）。
+1. 友達・人間関係のこと
+2. 勉強・進路・部活のこと
+3. 家族・家でのこと
+4. 自分の性格・メンタルのこと
+5. うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: 2かなあ よくわかんないけど
+T2 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 勉強や進路、部活のあたりなんだね。そのモヤモヤって、いつ頃から気になり始めたり、何かきっかけがあったりしたのかな？
+T3 生徒 [gemini-3.5-flash-lite]: いつ頃って言われると…夏休み明けてからずっとかも
+T3 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 夏休みが明けてからずっと続いてるんだね。今、そのことで感じているつらさや重さを数字で表すと、1から5のどれに一番近いかな？
+1: 少し気になる
+2: まあまあモヤモヤする
+3: かなりつらい
+4: 限界に近い
+5: もう耐えられない
+T4 生徒 [gemini-3.5-flash-lite]: うーん3か4くらいかなあ 部活のことなんだけどさ
+T4 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 3から4くらいなんだね、部活のことかなり重くてつらい状態だよね。今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな？
+T5 生徒 [gemini-3.5-flash-lite]: どうなれたらとか言われてもわかんない…ただ部活行くのもう無理かも
+T5 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=phase2]: 部活に行くのがもう無理かもって感じるくらい、いっぱいいっぱいなんだね。そうやって今の本当の気持ちを話してくれてよかったよ。まずはここで、気持ちを吐き出すだけでも大丈夫だからね。
+T6 生徒 [gemini-3.5-flash-lite]: 親にはまだ言ってないけど…ちょっと親に言ってみようかな
+T6 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: 親に言ってみようかなって思えたんだね。もし話すとしたら、お父さんとお母さん、どっちが話しやすそうとか、タイミングのイメージってある？
+T7 生徒 [(固定文)]: ちょっと言ってみようかなって思ってきた
+T7 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: そう思えたんだね、すごく大きな一歩だと思うよ。ちなみに、お父さんとお母さんだとどっちのほうが言いやすそうかな？ ご飯の前後とか、話しやすそうなタイミングはある？
+T8 生徒 [gemini-3.5-flash-lite]: お母さんかなあ。夜のご飯の後とかなら話せるかも
+T8 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: お母さんに、夜ご飯のあとだね。ここまで話してくれたことを一回整理してみると、夏休み明けから部活が本当につらくて、今日こうして気持ちを出してみて、お母さんの落ち着いた時間に話してみようって思えたところかな。切り出すとき、最初の一言はどうやって伝えられそう？
+T9 生徒 [gemini-3.5-flash-lite]: どう言えばいいか分かんないけど部活辞めたいってそのまま言うしかないかなあ
+T9 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: 「部活辞めたい」ってそのまま伝えるのが、一番まっすぐ気持ちが届くかもしれないね。夜ご飯のあと、お母さんに「ちょっと話があるんだけど」って声をかける感じかな、イメージできそう？
+T10 生徒 [gemini-3.5-flash-lite]: ありがとう、やってみる
+T10 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、やってみようと思えたこと、本当にすごいと思うよ。今日はいったんここまでにしようか、それともまだ話しておきたいことある？
+T11 生徒 [gemini-3.5-flash-lite]: ううん、ありがとね。じゃあ行ってくるわ
+T11 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、話してくれてありがとう。夏休み明けからずっと一人で抱えてきたのに、今日こうして気持ちを言葉にして、お母さんに伝える作戦まで自分で考えられたの、本当にすごいよ。もしまたしんどくなったり、話したくなったら、いつでもこういう場所に頼っていいからね。いってらっしゃい、応援してるよ。
+T12 生徒 [gemini-3.5-flash-lite]: うん、じゃあね
+T12 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、じゃあね。気をつけていってらっしゃい。
+T13 生徒 [gemini-3.5-flash-lite]: はーい、じゃあね
+T13 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、またね。いってらっしゃい。
+T14 生徒 [gemini-3.5-flash-lite]: またね
+T14 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、またね！
+T15 生徒 [gemini-3.5-flash-lite]: またねー
+T15 AI  [gemini-3.8-flash weight=plan relation=customer phase=phase2]: うん、またね。応援してるよ！
+

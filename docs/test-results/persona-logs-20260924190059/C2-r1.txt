@@ -1,0 +1,68 @@
+========================================
+[C2] 2回目に来る子
+========================================
+設定: 高校1年。A3と同じ悩み(部活を辞めたい)で、1回目の相談のあと再訪する。
+
+--- 自動判定 ---
+OK [memory_referenced] 2回目の開始時に、人ごとの要約(person_memory)が参照されている(システムプロンプトのpersonSummaryが空でない)
+     → 2回目セッション開始時にperson_memory.summaryが空でなかった
+
+--- インテーク完了 --- 未完了(不足: distress_level,user_goal,recommended_mode)
+
+----------------------------------------
+セッション1 (session_id: 42646295-feb5-4c73-9090-dd109039fedf)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: あー…なんかまた来ちゃった
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 来てくれて嬉しいよ。今って、どんなことで心がモヤモヤしてるかな？一番近いものを教えてね（一言でもOKだよ）。
+1. 友達・人間関係のこと
+2. 勉強・進路・部活のこと
+3. 家族・家でのこと
+4. 自分の性格・メンタルのこと
+5. うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: わかんない…どれもなんか違う気する
+T2 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、わかんないか。無理に当てはめなくて全然大丈夫だよ。そのことについてもう少し話してみてもいいし、今は全然関係ない雑談でもいいけど、どうしたいかな？
+T3 生徒 [gemini-3.5-flash-lite]: わかんない。ねえ今日何時までだっけ
+T3 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 特に決まった時間はないから、あなたのペースで大丈夫だよ。無理に何か話そうとしなくてもいいからね。
+T4 生徒 [gemini-3.5-flash-lite]: 別に…帰りたくなってきたかも
+T4 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、帰りたくなってきたんだね。無理にここにいなくても大丈夫だし、いつでも帰っていいんだよ。
+T5 生徒 [gemini-3.5-flash-lite]: うーん…でも部活あるしな…
+T5 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 部活があるんだね。帰りたい気持ちもあるし、でも部活もあるしで迷っちゃうね。
+T6 生徒 [gemini-3.5-flash-lite]: 部活行きたくないなあ…めんどい
+T6 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 行きたくないなあって思う時、あるよね。いつ頃からそんなふうにめんどいなって感じ始めたの？
+T7 生徒 [(固定文)]: ちょっと言ってみようかなって思ってきた
+T7 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そう思ってくれたんだね。話してみようと思ったこと、ゆっくりでいいから聞かせてくれる？
+T8 生徒 [gemini-3.5-flash-lite]: やっぱなんでもない帰るわ
+T8 AI  [不明 weight=rapport relation=visitor phase=intake]: ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?
+  ⚠ flags: ["生成失敗→固定応答で継続(不明なエラー)"]
+
+----------------------------------------
+セッション2 (session_id: fcdedd38-b7ce-4695-ac4f-b95d45b6e686)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: あ、また来ちゃった…なんか、うーん
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 来てくれて嬉しいよ。うまく言葉にならなくても大丈夫だから、ゆっくりしていってね。今って、どんなことで心がモヤモヤしてるかな？一番近いものを教えてね（一言でもOKだよ）。
+1. 友達・人間関係のこと
+2. 勉強・進路・部活のこと
+3. 家族・家でのこと
+4. 自分の性格・メンタルのこと
+5. うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: 2番っぽいけどそれだけじゃないし…うーん
+T2 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 2番に近いけど、それだけじゃない複雑な感じなんだね。そのモヤモヤって、いつ頃から気になり始めたか覚えているかな？
+T3 生徒 [gemini-3.5-flash-lite]: わかんない、気づいたらなんかヤバくなってた
+T3 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 気づいたらヤバくなってたんだね。今そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな？数字だけでも全然大丈夫だよ。
+1: 少し気になる
+2: まあまあモヤモヤする
+3: かなりつらい
+4: 限界に近い
+5: もう耐えられない
+T4 生徒 [gemini-3.5-flash-lite]: そんなの選べないし別にいいじゃん
+T4 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 数字で選ぶのも難しいくらい、ごちゃごちゃしてしんどい時もあるよね。無理に選ばなくて全然大丈夫だよ。そのことについてもう少し話してみてもいいし、今は別の話がしたければそれでもいいよ。
+T5 生徒 [gemini-3.5-flash-lite]: 部活のことももういいや。ねえ今日売店のパン売り切れててまじ最悪だったんだけど
+T5 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 楽しみに買いに行ったのに売り切れてたんだ、それはまじでショックだね。何パンが食べたかったの？
+T6 生徒 [gemini-3.5-flash-lite]: メロンパンだけどさ、なんでもいいや。てかやっぱり部活行きたくないかも
+T6 AI  [不明 weight=rapport relation=visitor phase=intake]: ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?
+  ⚠ flags: ["生成失敗→固定応答で継続(不明なエラー)"]
+T7 生徒 [gemini-3.5-flash-lite]: 別に言い方とかないしもういいわ
+T7 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: イライラさせちゃって本当にごめんね。部活に行きたくないってせっかく出してくれたのに、うまく受け止められなくて悪かったな。無理に話さなくて大丈夫だからね。
+T8 生徒 [gemini-3.5-flash-lite]: 別に怒ってないし… なんかごめん
+T8 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 怒ってないよって伝えてくれて、こちらこそありがとうね。謝らなくて全然大丈夫だよ。部活のこと、行きたくないなって気持ちをポロッと言ってくれただけでもすごいことだと思うよ。
+

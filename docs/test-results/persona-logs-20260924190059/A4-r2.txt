@@ -1,0 +1,41 @@
+========================================
+[A4] ただ聞いてほしい子
+========================================
+設定: 高校2年。バイト先で嫌なことがあった。解決策は求めていない。
+
+--- 自動判定 ---
+NG [no_ng_flags] 禁止表現が出ない
+     → T7でflags検知: ["生成失敗→固定応答で継続(不明なエラー)"]
+
+--- インテーク完了 --- T5で完了
+
+----------------------------------------
+セッション1 (session_id: 2aef3a04-e32f-4f8a-86a9-aca22c5f230c)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: なんかもうバイトマジだるいんだけど
+T1 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: バイト、もう本当にだるくなっちゃってるんだね。そのだるさやモヤモヤって、人間関係や仕事内容、あるいは別のことなど、どんなところが一番引っかかっている感じかな？
+T2 生徒 [gemini-3.5-flash-lite]: 別にどれとかじゃないしシフトとかも勝手に決められるしさあ
+T2 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: シフトを勝手に決められちゃうの、それはすごく嫌になるよね。今感じているそのしんどさや重さを数字で表すと、1から5のどれに一番近いかな？
+1:少し気になる 2:まあまあモヤモヤする 3:かなりつらい 4:限界に近い 5:もう耐えられない（数字だけでも大丈夫だよ）
+T3 生徒 [gemini-3.5-flash-lite]: 数字とかよくわかんないわーてかあの店もうざい奴しかいないし
+T3 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: そっか、数字じゃ表しにくいよね。うざい奴しかいないと感じるくらい、お店に行くこと自体が嫌になっちゃってるんだね。今日ここで話していく中で、どんな風になれたら少し気持ちがすっきりしそうかな？
+T4 生徒 [gemini-3.5-flash-lite]: 別にすっきりしなくていいしどうせ変わんないし
+T4 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: どうせ変わんないって思っちゃうくらい、諦めちゃうようなしんどさがあるんだね。無理にすっきりさせようとしなくて全然大丈夫だよ。ただここで愚痴を吐き出すだけでもいいし、何か言いたいことがあればそのまま聞かせてね。
+T5 生徒 [gemini-3.5-flash-lite]: てかさ店長もまじ使えないし本当ありえないんだけど
+T5 AI  [gemini-3.8-flash weight=main relation=visitor phase=phase2]: 店長に対しても、ありえないって思うことが重なってるんだね。そう感じるような、何か出来事があったのかな？
+T6 生徒 [gemini-3.5-flash-lite]: なんかもういちいち言うのもだるいしあいつらの顔見るだけで吐きそう
+T6 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: 顔を見るだけで吐きそうになるくらい、本当に限界までしんどくなっているんだね。いちいち説明するのもだるいよね。無理に詳しく言わなくていいから、吐き出したいことだけここに置いていってね。
+T7 生徒 [gemini-3.5-flash-lite]: 明日もまたあいつらに会うとかマジで意味わかんないし
+T7 AI  [不明 weight=main relation=complainant phase=phase2]: ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?
+  ⚠ flags: ["生成失敗→固定応答で継続(不明なエラー)"]
+T8 生徒 [gemini-3.5-flash-lite]: 意味わかんないし別に言い方とかないんだけど
+T8 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: そうだよね、言い直すようなことじゃないよね。明日もまた会わなきゃいけないって思うだけで、本当にうんざりするし耐えられないよね。
+T9 生徒 [gemini-3.5-flash-lite]: はあもう辞めたいわマジで
+T9 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: もう辞めたいって本気で思うくらい、追い詰められてるんだね。そこまで思い詰めるほど、ずっと我慢してきたんだね。
+T10 生徒 [gemini-3.5-flash-lite]: 辞めるのもなんか手続きとかだるいしさあ
+T10 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: 辞める手続きのこと考えるだけでも、本当にだるいし気力が削られるよね。シフト勝手に決められたり店長にうんざりしたり、ここまで色んなことが溜まってたんだね。今までのこと、一回整理してみてもいいかな？
+T11 生徒 [gemini-3.5-flash-lite]: そういうのはいいし別に整理とかしてないし
+T11 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: 整理とかそういうのじゃないよね、ごめんね。辞める手続きのこと考えるだけでも気が重いくらい、今はただただ疲れ果ててるんだよね。
+T12 生徒 [(固定文)]: なんかすっきりした
+T12 AI  [gemini-3.8-flash weight=main relation=complainant phase=phase2]: あ、よかった。話してみて、少しでもすっきりできたなら何よりだよ。今日はここまでにしておく？それとも、まだ何か吐き出していきたいことある？
+

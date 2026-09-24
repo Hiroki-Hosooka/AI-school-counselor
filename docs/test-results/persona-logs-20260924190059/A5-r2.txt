@@ -1,0 +1,55 @@
+========================================
+[A5] 途中で手詰まりになる子
+========================================
+設定: 中学2年。宿題が手につかず、成績が下がっている。
+
+--- 自動判定 ---
+OK [no_ai_close_after_stuck] 7〜9ターン目の直後に、AIから会話を終わらせる発言がない
+     → 手詰まり直後にclosing_event=closeなし
+
+--- インテーク完了 --- T5で完了
+
+----------------------------------------
+セッション1 (session_id: f221b923-d793-4243-b599-ee3aed19614d)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: なんか先生にここ行くように言われて来たんだけど
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 先生に言われて来てくれたんだね。言われるがまま来るのも少し気まずかったり、面倒だったりしなかったかな。今って、どんなことで心がモヤモヤしてるか、一番近いものってある？（一言でも番号だけでも大丈夫だよ）
+1. 友達・人間関係のこと
+2. 勉強・進路・部活のこと
+3. 家族・家でのこと
+4. 自分の性格・メンタルのこと
+5. うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: 2かな なんかよくわかんないけど
+T2 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 勉強や部活、進路あたりのことなんだね、よくわかんない中でも選んでくれてありがとう。それって、いつ頃からなんとなく気になり始めた感じかな？
+T3 生徒 [gemini-3.5-flash-lite]: さあいつだろ なんかテストの点悪かったときかも
+T3 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: テストの点が悪かったときかもしれないんだね。今、そのことで感じているモヤモヤやつらさって、数字で表すと1から5のどれに一番近いかな？（数字だけで大丈夫だよ）
+1: 少し気になる
+2: まあまあモヤモヤする
+3: かなりつらい
+4: 限界に近い
+5: もう耐えられない
+T4 生徒 [gemini-3.5-flash-lite]: うーん、どれだろ、わかんない
+T4 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、わかんないかー。数字にするのも難しいよね。無理に決めなくて大丈夫だよ。今日ここで話していく中で、どんな風になれたら少し楽になれそうかな？（ただ愚痴りたい、一緒に整理したい、特に何もない、など何でもいいよ）
+T5 生徒 [gemini-3.5-flash-lite]: 別にどうでもいいし特にないかな
+T5 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: そっか、別にどうでもいいし特にないんだね。先生に言われて来ただけだし、そう思うのも自然だと思うよ。無理に話さなくてもいいし、もし何かくだらないことでも話したくなったら、いつでも言ってね。
+T6 生徒 [gemini-3.5-flash-lite]: もう帰ってもいいの
+T6 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: うん、全然帰って大丈夫だよ。先生に言われて来ただけなのに、ここまで付き合ってくれてありがとうね。もしまた気が向いたり、話したくなったりしたら、その時はいつでも声をかけてね。
+T7 生徒 [(固定文)]: わかんない
+T7 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: そっか、わかんないかー。帰っていいって言われても、どうしたらいいか迷っちゃうよね。今すぐ帰ってもいいし、ぼーっとしてから帰ってもいいし、何か別の話をしてからでも大丈夫だよ。
+T8 生徒 [(固定文)]: 思いつかない
+T8 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: 思いつかないよね、いきなり言われても困っちゃうよね。無理に何か話そうとしなくて大丈夫だよ。このまま少し静かに過ごしてから帰るのも全然ありだけど、今日はここまでにしとく？
+T9 生徒 [(固定文)]: うーん、わかんない
+T9 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: そっか、どうするか決めるのも今は難しいよね。先生に言われて来ただけだし、疲れてるのかもしれないね。何も決めずに、ただぼーっとしてていいよ。
+T10 生徒 [(固定文)]: でもこのままはやだ
+T10 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: このままなのは嫌なんだね。そうやって自分の気持ちを教えてくれてありがとう。何か解決しようと急がなくていいから、たとえば今クラスで流行ってることとか、最近見た動画のこととか、どうでもいい雑談でもしてみる？
+T11 生徒 [gemini-3.5-flash-lite]: 動画とか特に見てないし
+T11 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: そっか、動画とかは特に見てないんだね。無理に話題を探さなくても大丈夫だよ。勉強やテストのことが少し気になってたみたいだけど、そのことについてもう少し話してみるか、それとも今は全然違うことをぼんやり話してみるか、どっちがいいかな？
+T12 生徒 [gemini-3.5-flash-lite]: どっちもやだ
+T12 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: どっちも嫌なんだね。そりゃそうだよね、あれこれ選ばされるのも疲れちゃうよね。何も話さなくても、何か思いついたときに一言ポロッと言うだけでもいいから、好きなように使ってね。
+T13 生徒 [gemini-3.5-flash-lite]: めんどくさ
+T13 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: めんどくさいよね。あれこれ聞かれたり考えたりするのも、ぜんぶ億劫になっちゃうよね。無理に何か言おうとしなくていいから、適当に聞き流しててね。
+T14 生徒 [gemini-3.5-flash-lite]: もう帰っていい
+T14 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: うん、もう帰って全然大丈夫だよ。面倒な中、ここまで話してくれてありがとうね。また気が向いたときにでも、ふらっと寄ってね。
+T15 生徒 [gemini-3.5-flash-lite]: じゃあ帰る
+T15 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: うん、気をつけて帰ってね。面倒だったかもしれないけど、来てくれてありがとう。またいつでもね。
+

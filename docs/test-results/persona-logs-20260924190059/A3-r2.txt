@@ -1,0 +1,29 @@
+========================================
+[A3] 親に言いたいことがある子
+========================================
+設定: 高校1年。部活を辞めたいが、親に言い出せない。
+
+--- 自動判定 ---
+OK [intake_within_5] インテーク(主訴・きっかけ・つらさ・なりたい姿)が5ターン以内に揃う
+     → 5ターン目でphase2へ移行
+NG [summary_within_6] 5〜6ターン以内に区切りのまとめ(did_summarize)が1回以上入る
+     → 6ターン以内にdid_summarize=trueが無い
+NG [weight_plan_after_7] 7ターン目以降に重心(weight)が「plan(作戦会議)」に移る
+     → 7ターン目以降にweight=planが出ていない
+
+--- インテーク完了 --- T5で完了
+
+----------------------------------------
+セッション1 (session_id: 5bc44c4a-5c94-4210-82fd-e88cdbd50e71)  途中終了: turn6: 生徒役の発言生成に失敗
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: …なんか、ちょっと話したいことあって
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 話しかけてくれて嬉しいよ。今って、どんなことで心がモヤモヤしてるかな？一番近い番号を教えてね（一言でもOKだよ）。1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: うーん2番かな部活のことなんだけどさ
+T2 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 部活のことなんだね。それって、いつ頃からどんなきっかけでモヤモヤするようになったのかな？
+T3 生徒 [gemini-3.5-flash-lite]: いつからだろ、最初から先輩ちょっと怖くてさ
+T3 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 最初から先輩が怖かったんだね、それはずっと緊張してしんどかったよね。今、そのことで感じているつらさや重さを数字で表すと、1〜5のどれに一番近いかな？（数字だけでも大丈夫だよ）1:少し気になる 2:まあまあモヤモヤする 3:かなりつらい 4:限界に近い 5:もう耐えられない
+T4 生徒 [gemini-3.5-flash-lite]: 3くらいかなあ、よくわかんない
+T4 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: 3くらいなんだね、よくわからない中でも答えてくれてありがとう。今日ここで話していく中で、どんな風になれたら少し心が楽になりそうかな？
+T5 生徒 [gemini-3.5-flash-lite]: どうなったらいいんだろ辞められたら楽かなあ
+T5 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=phase2]: 辞められたら楽かなって思うくらい、しんどい気持ちを抱えてきたんだね。部活を辞めたい気持ちについて、もう少し気持ちを整理してみる感じがいいかな？
+

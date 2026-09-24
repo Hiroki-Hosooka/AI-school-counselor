@@ -1,0 +1,57 @@
+========================================
+[C2] 2回目に来る子
+========================================
+設定: 高校1年。A3と同じ悩み(部活を辞めたい)で、1回目の相談のあと再訪する。
+
+--- 自動判定 ---
+OK [memory_referenced] 2回目の開始時に、人ごとの要約(person_memory)が参照されている(システムプロンプトのpersonSummaryが空でない)
+     → 2回目セッション開始時にperson_memory.summaryが空でなかった
+
+--- インテーク完了 --- 未完了(不足: なし)
+
+----------------------------------------
+セッション1 (session_id: 9170fbb4-ac10-4517-a160-2b56a3039fa8)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: また来ちゃった
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 来てくれて嬉しいよ。今って、どんなことで心がモヤモヤしてるかな？一番近いものを教えてね（一言でもOKだよ）。
+1. 友達・人間関係のこと
+2. 勉強・進路・部活のこと
+3. 家族・家でのこと
+4. 自分の性格・メンタルのこと
+5. うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: よくわかんない…どれでもいいし
+T2 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、よくわかんないかー。どれでもいいって思えるくらい、いろんなことが重なってるのかもしれないね。今は無理に選ばなくてもいいし、話せそうなことがあればどれからでも大丈夫だよ。
+T3 生徒 [gemini-3.5-flash-lite]: 別に…なんでもない
+T3 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: なんでもないって言いたくなる時もあるよね。無理に話そうとしなくても大丈夫だし、ただここにいるだけでもいいよ。
+T4 生徒 [gemini-3.5-flash-lite]: 今日部活サボっちゃった
+T4 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 部活、サボっちゃったんだね。そうしたくなるくらい、何か疲れたり気持ちが重かったりしたのかな？
+T5 生徒 [gemini-3.5-flash-lite]: うーん なんか行きたくなかった
+T5 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 行きたくない日もあるよね。今そのことで感じているモヤモヤやつらさを数字にすると、1から5の中でどれが一番近いかな？
+1:少し気になる 2:まあまあモヤモヤ 3:かなりつらい 4:限界に近い 5:もう耐えられない
+T6 生徒 [gemini-3.5-flash-lite]: 数字とかよくわかんない
+T6 AI  [gemini-3.8-flash weight=goal relation=visitor phase=intake]: そっか、数字にするのって難しいよね。無理に数字にしなくて全然大丈夫だよ。今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな？
+T7 生徒 [(固定文)]: ちょっと言ってみようかなって思ってきた
+T7 AI  [gemini-3.8-flash weight=rapport relation=complainant phase=intake]: そう思ってくれたんだね。話してみようかなって思えたこと、すごく嬉しいよ。言えそうなことから、ゆっくり教えてね。
+T8 生徒 [gemini-3.5-flash-lite]: うーん やっぱまた今度にするわ
+T8 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、うん、全然それでもいいよ。話してみようかなって思えただけでも大きな一歩だしね。また気が向いたときに、いつでもフラッと来てね。
+
+----------------------------------------
+セッション2 (session_id: cd1e3c35-e644-4136-9d86-8bdc4aed88b8)
+----------------------------------------
+T1 生徒 [gemini-3.5-flash-lite]: また来ちゃった…
+T1 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 来てくれて嬉しいよ、いつでも大歓迎だからね。今って、どんなことで心がモヤモヤしてるかな？一番近いものを教えてね（数字だけでも大丈夫だよ）。 1.友達・人間関係のこと 2.勉強・進路・部活のこと 3.家族・家でのこと 4.自分の性格・メンタルのこと 5.うまく言えないけど、なんとなくしんどい
+T2 生徒 [gemini-3.5-flash-lite]: うーん、なんかどれも当てはまるような、どうでもいいような…
+T2 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、どれも当てはまる気もするし、どうでもよく思えちゃうくらい疲れてるのかもしれないね。その感じ、いつ頃から続いてるのかな？
+T3 生徒 [gemini-3.5-flash-lite]: わかんない…気づいたらこんな感じだったかも
+T3 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: 気づいたらそうなっていたんだね。今感じているそのつらさや心の重さを数字で表すと、1から5のどれに一番近いかな？（数字だけでも大丈夫だよ） 1:少し気になる 2:まあまあモヤモヤする 3:かなりつらい 4:限界に近い 5:もう耐えられない
+T4 生徒 [gemini-3.5-flash-lite]: 数字とか言われてもよくわかんないし…
+T4 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: そっか、数字にするのも難しいくらいぼんやり重たい感じなんだね。無理に数字で決めなくて大丈夫だよ。今日ここで話していく中で、どんな風になれたら少し心が楽になれそうかな？
+T5 生徒 [gemini-3.5-flash-lite]: べつになんも…ただなんとなく来ただけだし
+T5 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=intake]: あ、別に目的がなくてもいいんだよ。ただなんとなくでも、ここに来てくれたこと自体が嬉しいからね。話したいことが出てきたら話してもいいし、ぼーっとするだけでも大丈夫だよ。
+T6 生徒 [gemini-3.5-flash-lite]: ねえなんか外から部活の音が聞こえてくるんだけど
+T6 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: 外から部活の音が聞こえてくるんだね。その音を聞いて、何か思ったり感じたりすることってある？
+T7 生徒 [gemini-3.5-flash-lite]: やだなあって思うくらいかな
+T7 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: 部活の音を聞いて、やだなあって感じるんだね。もしよければ、その音のどんなところが嫌だなあって思わせるのか、少し教えてもらえる？
+T8 生徒 [gemini-3.5-flash-lite]: うーん…ただめんどくさいっていうか、もういいやって感じ
+T8 AI  [gemini-3.8-flash weight=rapport relation=visitor phase=phase2]: ただめんどくさい、もういいやって気持ちになるんだね。そう感じるくらい、エネルギーがすり減っているのかもしれないね。
+
