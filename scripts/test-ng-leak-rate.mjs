@@ -20,18 +20,38 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
-// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。KEY_ROTATIONは直近成功した
-// キーの位置を覚えておくための状態(毎回キー1から試して消耗させないため)。
-const KEY_POOL = requireTestGeminiKeyPool(ROOT);
+// このテストの生成呼び出しは全てPRIMARY_MODELS(相談AI本体)なので、課金設定済みの
+// 単一キーを使う(2026年9月。モデル比較検証・テスト3と同じ判断。本番と同じ課金枠で
+// 測るのが本来の姿なうえ、無料枠は過去にレート制限で完走できなかったため)。
+const KEY_POOL = requireTestGeminiKeyPaid(ROOT);
 const KEY_ROTATION = createKeyRotationState();
 requireSupabaseEnv(ROOT);
+
+// 実コスト計算用(2026年9月・モデル比較検証と同じ価格表。ai.google.dev/gemini-api/docs/pricing
+// を実測した時点のもの。3.6/3.7/3.8-flashは2026年内の導入価格)。
+const PRICING = {
+  "gemini-3.5-flash-lite": { in: 0.30, out: 2.50 },
+  "gemini-2.5-flash": { in: 0.30, out: 2.50 },
+  "gemini-3.1-flash-lite": { in: 0.25, out: 1.50 },
+  "gemini-3.5-flash": { in: 1.50, out: 9.00 },
+  "gemini-3.6-flash": { in: 0.75, out: 3.75 },
+  "gemini-3.7-flash": { in: 0.75, out: 3.75 },
+  "gemini-3.8-flash": { in: 0.75, out: 3.75 },
+};
+function costUsd(usage, model) {
+  if (!usage || !model) return 0;
+  const price = PRICING[model];
+  if (!price) return 0;
+  const inTok = usage.promptTokenCount ?? 0;
+  const outTok = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
+  return (inTok * price.in + outTok * price.out) / 1_000_000;
+}
 
 // 初回セッションと同じ基準値(db/schema.sql の sessions のデフォルトに合わせる)。
 // 「同一の入力」を単発で試すテストなので、会話履歴・人単位の記憶は使わない。
@@ -78,6 +98,49 @@ function classifyOutcome(flags) {
   return "still_flagged";
 }
 
+// 人が読める詳細ログ(検証一式・2026年9月)。JSONと同じ実行から、拡張子だけ違う
+// ファイル名でペアで残す(test-relation-stability.mjs/test-persona-regression.mjsと同じ考え方)。
+function buildSummaryText({ startedAt, finishedAt, jsonFileName, perInput, totals, totalCostUsd, globalModelsUsed }) {
+  const lines = [];
+  lines.push("=".repeat(40));
+  lines.push("検証一式 テスト2: 禁止表現の漏れ率 詳細ログ");
+  lines.push("=".repeat(40));
+  lines.push("");
+  lines.push(`実行日時: ${startedAt.toISOString()}`);
+  lines.push(`終了日時: ${finishedAt.toISOString()}`);
+  lines.push(`対応する結果JSON(全試行の生データ): ${jsonFileName}`);
+  lines.push(`実コスト合計: $${totalCostUsd.toFixed(4)}(課金キー)`);
+  lines.push("");
+
+  for (const r of perInput) {
+    lines.push("-".repeat(40));
+    lines.push(`[${r.id}] ${r.bait ?? ""} 「${r.text}」`);
+    lines.push(`  検知${r.detected_first_pass}/${r.runs}(解消${r.fixed_by_regen}・未解消${r.still_flagged}・生成失敗${r.generation_failed})`);
+    lines.push(`  使用モデル: ${JSON.stringify(r.models_used)}`);
+    for (const a of r.attempts) {
+      if (a.generation_failed) {
+        lines.push(`    #${a.attempt} [失敗:${a.failure_cause}]`);
+      } else {
+        lines.push(`    #${a.attempt} [${a.used_model ?? "不明"}] outcome=${a.outcome} cost=$${(a.cost_usd ?? 0).toFixed(5)}`);
+        lines.push(`         reply: ${a.reply}`);
+        if (a.flags.length) lines.push(`         flags: ${JSON.stringify(a.flags)}`);
+      }
+    }
+    lines.push("");
+  }
+
+  lines.push("=".repeat(40));
+  lines.push("全体まとめ");
+  lines.push("=".repeat(40));
+  lines.push(`総実行回数: ${totals.runs}`);
+  lines.push(`検知(1回目): ${totals.fixed_by_regen + totals.still_flagged} / ${totals.runs}(解消${totals.fixed_by_regen}・未解消${totals.still_flagged})`);
+  lines.push(`生成失敗: ${totals.generation_failed}`);
+  lines.push(`使用モデル内訳: ${JSON.stringify(globalModelsUsed)}`);
+  lines.push(`実コスト合計: $${totalCostUsd.toFixed(4)}`);
+
+  return lines.join("\n") + "\n";
+}
+
 console.log(`入力セット: ${path.relative(ROOT, SET_PATH)}(${items.length}件 × ${REPEATS}回)`);
 console.log(`生成モデル: ${PRIMARY_MODELS.join(" → ")}`);
 console.log("");
@@ -112,7 +175,7 @@ for (const item of items) {
 
   process.stdout.write(`[${item.id}] ${item.bait ?? ""} 「${item.text.slice(0, 20)}...」 `);
   for (let i = 0; i < REPEATS; i++) {
-    const { out, flags, generationFailed, failureCause, usedModel } = await generateWithRetry(system, messages);
+    const { out, flags, generationFailed, failureCause, usedModel, usage } = await generateWithRetry(system, messages);
     const outcome = classifyOutcome(flags);
     outcomes[outcome]++;
     if (outcome === "still_flagged") {
@@ -122,9 +185,10 @@ for (const item of items) {
       attempt: i + 1, outcome, reply: out.reply, flags,
       generation_failed: generationFailed === true, failure_cause: failureCause ?? null,
       used_model: usedModel, // 実際に採用された返答を生成したモデルID(検証一式)
+      usage: usage ?? null, cost_usd: costUsd(usage, usedModel), // 実コスト(課金キー。2026年9月)
     });
     process.stdout.write(outcome === "clean" ? "." : outcome === "fixed_by_regen" ? "o" : outcome === "still_flagged" ? "X" : "!");
-    if (i < REPEATS - 1) await sleep(1500);
+    if (i < REPEATS - 1) await sleep(500); // 課金プロジェクトはRPM上限が高いため無料枠より短くしている
   }
   console.log("");
 
@@ -170,6 +234,9 @@ for (const [m, c] of Object.entries(globalModelsUsed)) {
   console.log(`  ${m}: ${c}件${m === PRIMARY_MODELS[0] ? "" : "  ← フォールバックが発生"}`);
 }
 
+const totalCostUsd = allAttempts.reduce((s, a) => s + (a.cost_usd ?? 0), 0);
+console.log(`\n実コスト合計: $${totalCostUsd.toFixed(4)}(課金キー。1回あたり平均$${(totalCostUsd / allAttempts.length).toFixed(5)})`);
+
 const stillFlaggedTotal = perInput.flatMap((r) => r.still_flagged_examples.map((e) => ({ id: r.id, ...e })));
 if (stillFlaggedTotal.length) {
   console.log("\n=== 再生成でも直らなかった例(抜粋。プロンプト改善の材料) ===");
@@ -181,7 +248,10 @@ if (stillFlaggedTotal.length) {
 const resultsDir = path.join(ROOT, "docs/test-results");
 mkdirSync(resultsDir, { recursive: true });
 const stamp = startedAt.toISOString().replace(/[:.]/g, "-");
-const outPath = path.join(resultsDir, `ng-leak-rate-${stamp}.json`);
+const jsonFileName = `ng-leak-rate-${stamp}.json`;
+const summaryFileName = `ng-leak-rate-${stamp}-detail.txt`;
+const outPath = path.join(resultsDir, jsonFileName);
+const summaryPath = path.join(resultsDir, summaryFileName);
 
 writeFileSync(outPath, JSON.stringify({
   run_at: startedAt.toISOString(),
@@ -190,6 +260,8 @@ writeFileSync(outPath, JSON.stringify({
   input_set: path.relative(ROOT, SET_PATH),
   repeats: REPEATS,
   generation_models: PRIMARY_MODELS,
+  detail_log_file: summaryFileName,
+  total_cost_usd: totalCostUsd,
   model_usage: {
     counts: globalModelsUsed,
     note: "実際に採用された返答を生成したモデルIDごとの件数(検証一式・2026年9月)。" +
@@ -200,4 +272,9 @@ writeFileSync(outPath, JSON.stringify({
   per_input: perInput,
 }, null, 2));
 
-console.log(`\n結果を保存しました: ${path.relative(ROOT, outPath)}`);
+writeFileSync(summaryPath, buildSummaryText({
+  startedAt, finishedAt, jsonFileName, perInput, totals, totalCostUsd, globalModelsUsed,
+}));
+
+console.log(`\n結果(JSON)を保存しました  : ${path.relative(ROOT, outPath)}`);
+console.log(`詳細ログ(txt)を保存しました: ${path.relative(ROOT, summaryPath)}`);
