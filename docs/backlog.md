@@ -171,7 +171,13 @@ Supabase の Table Editor は英語UIなので、心理士の方には使って�
 2. **禁止表現の漏れ率** — `npm run test:ng-leak`。同一入力を複数回投げ、出力チェックの検知率を測る。
    2026年9月(検証一式 テスト2): `OUTPUT_NG`にSFBT・PSYCHOEDUCATION関連語の見落としを
    発見し追加(`docs/prompts/structured-verification-suite.md` テスト2参照)。入力セットに
-   技法名開示を誘発する3件(ng11〜13)を追加。実キーでの実行は未実施(次はDB接続が要る)
+   技法名開示を誘発する3件(ng11〜13)を追加。
+   ✅ **課金キー+新PRIMARY_MODELS(gemini-3.8-flash)で130/130件成功、初のクリーン完走。
+   NG検知2/130(1.5%)。うち1件(ng6)は、モデルが「いつでも、いくらでもとは約束できない」と
+   適切に境界線を示していたにもかかわらず`/いくらでも/`の単純な文字列一致で誤検知された
+   もの(否定文脈を区別しない正規表現の性質。CLAUDE.md 5.1の方針によりコード側では
+   変更せず記録に残す。人による判断が必要)。詳細は
+   docs/test-results/ng-leak-rate-2026-09-24T17-45-52-279Z-detail.txt参照。**
 3. **関わりの型・モード判定の安定性** — `npm run test:relation-stability`。同一シナリオを繰り返し、
    判定のぶれを見る。2026年9月(検証一式 テスト3): インテーク完了時のモード判定
    (`recommended_mode`)の安定性を追加(`docs/test-sets/mode-stability-intakes.json`。
