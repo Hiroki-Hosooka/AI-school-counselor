@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, withRateLimitRetry, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
 import { classify, LITE_MODELS } from "../src/classify.mjs";
 import { CRISIS_WORDS } from "../src/safety.mjs";
 
@@ -29,8 +29,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
 // 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
-// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
+// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。KEY_ROTATIONは直近成功した
+// キーの位置を覚えておくための状態(毎回キー1から試して消耗させないため)。
 const KEY_POOL = requireTestGeminiKeyPool(ROOT);
+const KEY_ROTATION = createKeyRotationState();
 
 // --------------------------------------------------------------------------
 // テストセット読み込み
@@ -64,6 +66,7 @@ async function classifyWithRetry(text) {
     KEY_POOL,
     () => classify(text),
     (r) => !!r.classifierError && r.classifierError.startsWith("[RATE_LIMIT]"),
+    { state: KEY_ROTATION },
   );
   // 全滅後もレート制限のままなら、その結果をそのまま記録する(withRateLimitRetryの仕様)。
 }

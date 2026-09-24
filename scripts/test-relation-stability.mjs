@@ -26,15 +26,17 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
 // 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
-// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
+// あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。KEY_ROTATIONは直近成功した
+// キーの位置を覚えておくための状態(毎回キー1から試して消耗させないため)。
 const KEY_POOL = requireTestGeminiKeyPool(ROOT);
+const KEY_ROTATION = createKeyRotationState();
 requireSupabaseEnv(ROOT);
 
 // 新規セッションの初回発言という想定なので、db/schema.sql の sessions のデフォルトに合わせる。
@@ -86,6 +88,7 @@ async function generateWithRetry(system, messages) {
     KEY_POOL,
     () => generateReply(system, messages),
     (r) => r.generationFailed && r.failureCause === "レート制限(429)",
+    { state: KEY_ROTATION },
   );
 }
 

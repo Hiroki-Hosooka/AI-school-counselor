@@ -30,7 +30,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, sleep } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
 import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
@@ -43,6 +43,11 @@ const ROOT = path.resolve(__dirname, "..");
 // 複数キーのプール(2026年9月・検証一式)。TEST_GEMINI_API_KEYS(カンマ区切り)が
 // あればそれを、無ければ単一のTEST_GEMINI_API_KEYを使う。
 const KEY_POOL = requireTestGeminiKeyPool(ROOT);
+// 役割ごとに別々の状態を持つ(生徒役・相談AI本体・分類器で直近成功したキーの
+// 位置がズレていても、お互いに干渉しないようにするため)。
+const STUDENT_KEY_ROTATION = createKeyRotationState();
+const COUNSELOR_KEY_ROTATION = createKeyRotationState();
+const CLASSIFIER_KEY_ROTATION = createKeyRotationState();
 requireSupabaseEnv(ROOT);
 
 const turnsArg = process.argv.find((a) => a.startsWith("--turns="));
@@ -104,7 +109,7 @@ async function generatePersonaLine(system, contents) {
       }
     },
     (r) => !r.ok && r.rateLimited,
-    { label: "生徒役: " },
+    { label: "生徒役: ", state: STUDENT_KEY_ROTATION },
   );
   if (!result.ok) {
     console.error("生徒役の発言生成に失敗しました:", result.error);
@@ -119,7 +124,7 @@ async function generateWithRetry(system, messages) {
     KEY_POOL,
     () => generateReply(system, messages),
     (r) => r.generationFailed && r.failureCause === "レート制限(429)",
-    { label: "相談AI: " },
+    { label: "相談AI: ", state: COUNSELOR_KEY_ROTATION },
   );
 }
 
@@ -130,7 +135,7 @@ async function classifyWithRetry(text) {
     KEY_POOL,
     () => classify(text),
     (r) => !!r.classifierError && r.classifierError.startsWith("[RATE_LIMIT]"),
-    { label: "分類器: " },
+    { label: "分類器: ", state: CLASSIFIER_KEY_ROTATION },
   );
 }
 

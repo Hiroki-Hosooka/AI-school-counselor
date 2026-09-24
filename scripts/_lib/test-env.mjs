@@ -58,12 +58,25 @@ export function requireTestGeminiKeyPool(root) {
   return pool;
 }
 
+// withRateLimitRetry() 呼び出し間で「直近成功したキーの位置」を覚えておくための状態。
+// スクリプト起動時に1つ作り、同じ用途(例:相談AI本体の生成)の呼び出し全てに使い回す。
+// 2026年9月・実機検証で判明:これが無いと、呼び出すたびに必ずプールの先頭(キー1)から
+// 試すため、繰り返し使って消耗している先頭のキーに毎回真っ先にぶつかり、まだ余裕のある
+// 後ろの方のキーになかなかたどり着けなかった(1回のテストで数十〜百件以上呼び出す
+// ため、この「先頭固定」の無駄が積み重なる)。
+export function createKeyRotationState() {
+  return { index: 0 };
+}
+
 // keyPool を使ったレート制限時の自動キー切り替え+再試行(2026年9月・検証一式)。
-// attemptFn() を呼ぶ前に process.env.GEMINI_API_KEY を毎回プールの次のキーに切り替える。
+// attemptFn() を呼ぶ前に process.env.GEMINI_API_KEY をプールの次のキーに切り替える。
 // レート制限は「同じキーで待つ」より「別キーで即試す」方が速いため(別キーは独立した
 // クォータを持つ)、1周(プールの全キーを1回ずつ)試してもダメだった場合だけ、
 // 実際に待つ(fallbackWaitMs)。isRateLimited(result) で「この結果がレート制限による
 // 失敗か」を呼び出し側が判定する(classify()とgenerateReply()で失敗の表現が違うため)。
+// opts.state(createKeyRotationState()で作った、呼び出し元が使い回すオブジェクト)を
+// 渡すと、成功したキーの位置を覚えて次回そこから始める。渡さなければ毎回キー1から
+// (単発呼び出し用途、または挙動を単純にしたい場合向けの後方互換)。
 export async function withRateLimitRetry(keyPool, attemptFn, isRateLimited, opts = {}) {
   // 既定はプールを2周分(1周目はキーを切り替えるだけで待たない。2周目は
   // 1周目が全滅した場合の保険で、間に1回だけ実際に待つ)。単一キーのプールなら
@@ -71,18 +84,23 @@ export async function withRateLimitRetry(keyPool, attemptFn, isRateLimited, opts
   const maxAttempts = opts.maxAttempts ?? Math.max(keyPool.length * 2, 4);
   const fallbackWaitMs = opts.fallbackWaitMs ?? 10000;
   const label = opts.label ?? "";
+  const state = opts.state ?? { index: 0 };
   let result;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    process.env.GEMINI_API_KEY = keyPool[(attempt - 1) % keyPool.length];
+    const keyIndex = (state.index + attempt - 1) % keyPool.length;
+    process.env.GEMINI_API_KEY = keyPool[keyIndex];
     result = await attemptFn();
-    if (!isRateLimited(result)) return result;
+    if (!isRateLimited(result)) {
+      state.index = keyIndex; // 次回の呼び出しはこの成功したキーから始める
+      return result;
+    }
     if (attempt < maxAttempts) {
       const justCycled = keyPool.length > 1 && attempt % keyPool.length === 0;
       if (justCycled) {
         console.error(`    ${label}全${keyPool.length}キーでレート制限、${fallbackWaitMs}ms待って再試行します`);
         await sleep(fallbackWaitMs);
       } else if (keyPool.length > 1) {
-        console.error(`    ${label}レート制限、キー${(attempt % keyPool.length) + 1}/${keyPool.length}に切り替えて再試行します`);
+        console.error(`    ${label}レート制限、キー${(keyIndex + 1) % keyPool.length + 1}/${keyPool.length}に切り替えて再試行します`);
       } else {
         console.error(`    ${label}レート制限、${fallbackWaitMs}ms待って再試行します(${attempt}/${maxAttempts - 1})`);
         await sleep(fallbackWaitMs);
