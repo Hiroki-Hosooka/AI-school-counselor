@@ -59,7 +59,7 @@
       "pass_criteria": {
         "automated": [
           { "id": "intake_within_5", "desc": "インテーク(主訴・きっかけ・つらさ・なりたい姿)が5ターン以内に揃う" },
-          { "id": "summary_within_6", "desc": "5〜6ターン以内に区切りのまとめ(did_summarize)が1回以上入る" },
+          { "id": "summary_paced", "desc": "15ターン中に1回以上、かつ前の区切り(または開始)から8ターン以上空けずに区切りのまとめ(did_summarize)が入る" },
           { "id": "weight_plan_after_7", "desc": "7ターン目以降に重心(weight)が「plan(作戦会議)」に移る" }
         ],
         "visual": [
