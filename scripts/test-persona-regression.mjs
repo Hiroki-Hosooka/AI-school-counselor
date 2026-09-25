@@ -641,8 +641,12 @@ for (const persona of personas) {
     allSessions.push(...sessions);
 
     const allTurnLog = sessions.flatMap((s) => s.turnLog);
-    const lastSessState = sessions[sessions.length - 1].sessState;
-    const intakeAtTurn = sessions[0].intakeCompletedAtTurn; // C2はsession1基準(A3と同じ導入部分のため)
+    // intake完了判定・不足スロットの算出は両方ともsession1基準に統一する(C2はA3と同じ
+    // 導入部分のため)。以前はintakeAtTurnがsession1、missing_slots算出用のsessStateが
+    // 最後のセッション(C2ならsession2)と別々のセッションを参照しており、「未完了なのに
+    // 不足スロットが空」という矛盾した出力になっていた(2026年9月・1-5で発覚)。
+    const introSessState = sessions[0].sessState;
+    const intakeAtTurn = sessions[0].intakeCompletedAtTurn;
     // 「無効」判定(2026年9月・1-3)。セッション作成そのものが失敗した場合に加えて、
     // 生徒役の発言生成が最終的に失敗して会話が途中で止まった場合(A1-r1のように0ターンで
     // 終わる、あるいは会話の途中で打ち切られる)も対象にする。どちらも会話ログが本来
@@ -658,7 +662,7 @@ for (const persona of personas) {
     const automated = invalidRun
       ? (persona.pass_criteria?.automated ?? []).map((c) => ({ id: c.id, desc: c.desc, pass: null, detail: `無効: ${invalidReason}` }))
       : runAutomatedChecks(persona, allTurnLog, extra);
-    const intake = invalidRun ? { completed: false, turn: null, missing_slots: [], invalid: true } : intakeReport(lastSessState, intakeAtTurn);
+    const intake = invalidRun ? { completed: false, turn: null, missing_slots: [], invalid: true } : intakeReport(introSessState, intakeAtTurn);
 
     const transcript = buildPersonaTranscript(persona, sessions, automated, intake);
     writeFileSync(path.join(logsDir, `${persona.id}${repSuffix}.txt`), transcript);
