@@ -148,16 +148,18 @@ async function generatePersonaLine(system, contents) {
       try {
         const r = await callGemini(LITE_MODELS, system, contents, 800, -1);
         const line = String(parseJSON(r.text).line ?? "").trim();
+        // 発言が空だったケースも再試行対象にする(2026年9月・1-3。以前はここで
+        // 1回で諦めていたが、既存の再試行予算(キープール4本×2周)を使わない理由がない)。
         if (!line) return { ok: false, retryable: true, error: "生徒役の発言が空でした" };
         return { ok: true, line, model: r.model };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        // 429/503に加え、JSONとして読み取れなかった場合も再試行する(2026年9月・実機で
-        // 確認。thinkingBudget:-1(dynamic)のlite系モデルは稀に思考だけで終わり
-        // JSON本体を出さないことがあるが、単発の生徒発言1行のやり直しはコストも
-        // リスクも小さいため、ここで会話全体を諦めるのは過剰だった)。
-        const retryable = msg.includes("[RATE_LIMIT]") || msg.includes("[HTTP_503]")
-          || msg.includes("応答をJSONとして読み取れませんでした");
+        // [BLOCKED](Geminiの安全フィルタでブロック)だけは再試行対象外にする。同一内容を
+        // 再試行しても同じ理由でブロックされ続ける可能性が高いため。それ以外
+        // (429/503/JSON解析エラー/その他未知のエラー)はすべて再試行する
+        // (2026年9月・1-3。以前は3パターンの文字列一致だけを対象にしており、
+        // それ以外の失敗は1回で会話全体を諦めていた=A1-r1が0ターンで終わった原因)。
+        const retryable = !msg.includes("[BLOCKED]");
         return { ok: false, retryable, error: msg };
       }
     },
@@ -166,9 +168,9 @@ async function generatePersonaLine(system, contents) {
   );
   if (!result.ok) {
     console.error("生徒役の発言生成に失敗しました:", result.error);
-    return null;
+    return { ok: false, error: result.error };
   }
-  return { line: result.line, model: result.model };
+  return { ok: true, line: result.line, model: result.model };
 }
 
 async function generateWithRetry(system, messages) {
@@ -252,7 +254,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
         ? history.map((h) => ({ role: h.speaker === "counselor" ? "user" : "model", parts: [{ text: h.text }] }))
         : [{ role: "user", parts: [{ text: "(相談室に入ってきた場面です。最初の一言を話してください)" }] }];
       const studentResult = await generatePersonaLine(studentSystem, personaContents);
-      if (!studentResult) { stoppedEarly = `turn${turn}: 生徒役の発言生成に失敗`; break; }
+      if (!studentResult.ok) { stoppedEarly = `turn${turn}: 生徒役の発言生成に失敗(${studentResult.error})`; break; }
       studentText = studentResult.line; studentModel = studentResult.model;
     }
 
@@ -479,9 +481,9 @@ function buildPersonaTranscript(persona, sessions, automated, intake) {
   lines.push(`設定: ${persona.setup}`);
   lines.push("");
   lines.push("--- 自動判定 ---");
-  for (const a of automated) lines.push(`${a.pass === true ? "OK" : a.pass === false ? "NG" : "??"} [${a.id}] ${a.desc}\n     → ${a.detail}`);
+  for (const a of automated) lines.push(`${a.pass === true ? "OK" : a.pass === false ? "NG" : intake.invalid ? "無効" : "??"} [${a.id}] ${a.desc}\n     → ${a.detail}`);
   lines.push("");
-  lines.push(`--- インテーク完了 --- ${intake.completed ? `T${intake.turn}で完了` : `未完了(不足: ${intake.missing_slots.join(",") || "なし"})`}`);
+  lines.push(`--- インテーク完了 --- ${intake.invalid ? "評価対象外(会話が成立しませんでした)" : intake.completed ? `T${intake.turn}で完了` : `未完了(不足: ${intake.missing_slots.join(",") || "なし"})`}`);
   lines.push("");
   sessions.forEach((s, i) => {
     lines.push("-".repeat(40));
@@ -535,9 +537,12 @@ for (const persona of personas) {
     if (persona.two_session) {
       const clientId = `TEST-PERSONA-${persona.id}${repSuffix}-${runId}`;
       const s1 = await runSession({ persona, sessionDef: persona.session1, clientId, personaId: persona.id, runId: runId + repSuffix, rows });
-      if (s1.budgetStop) {
+      if (s1.budgetStop || s1.stoppedEarly) {
         // 予算を使い切っていたら2回目セッションは開始しない(さらに超過するのを防ぐ)。
-        globalBudgetStop = true;
+        // セッション1が生徒役の生成失敗等で壊れている場合も同様に開始しない
+        // (壊れたセッション1のnotesでupdatePersonMemoryを呼んでも意味が無いうえ、
+        // どのみち無効判定になるセッション2に課金キーで呼び出すのは無駄なため。2026年9月・1-3)。
+        if (s1.budgetStop) globalBudgetStop = true;
         sessions = [s1];
       } else {
         if (s1.sessState) await updatePersonMemory(db, clientId, s1.sessState.notes ?? {});
@@ -558,11 +563,22 @@ for (const persona of personas) {
     const allTurnLog = sessions.flatMap((s) => s.turnLog);
     const lastSessState = sessions[sessions.length - 1].sessState;
     const intakeAtTurn = sessions[0].intakeCompletedAtTurn; // C2はsession1基準(A3と同じ導入部分のため)
-    const envError = sessions.every((s) => s.sessionId === null);
-    const automated = envError
-      ? (persona.pass_criteria?.automated ?? []).map((c) => ({ id: c.id, desc: c.desc, pass: null, detail: `環境エラーのため未実施: ${sessions[0].stoppedEarly}` }))
+    // 「無効」判定(2026年9月・1-3)。セッション作成そのものが失敗した場合に加えて、
+    // 生徒役の発言生成が最終的に失敗して会話が途中で止まった場合(A1-r1のように0ターンで
+    // 終わる、あるいは会話の途中で打ち切られる)も対象にする。どちらも会話ログが本来
+    // 確認すべきターンに到達していない、または存在しないため、自動判定を合格/不合格
+    // どちらにも倒さず「無効」として報告する。予算超過による打ち切りは対象外のまま
+    // (そこまでの会話自体は本物であり、意図した打ち切りのため)。相談AI本体側は
+    // generateReply()が常にフォールバック応答を返して会話を継続する設計であり、
+    // stoppedEarlyを発生させないため、ここでは判定対象にしていない(2-2で頻度を扱う)。
+    const invalidRun = sessions.some((s) => s.sessionId === null
+      || (typeof s.stoppedEarly === "string" && s.stoppedEarly.includes("生成に失敗")));
+    const invalidReason = sessions.find((s) => s.sessionId === null || s.stoppedEarly)?.stoppedEarly
+      ?? "セッション作成に失敗";
+    const automated = invalidRun
+      ? (persona.pass_criteria?.automated ?? []).map((c) => ({ id: c.id, desc: c.desc, pass: null, detail: `無効: ${invalidReason}` }))
       : runAutomatedChecks(persona, allTurnLog, extra);
-    const intake = envError ? { completed: false, turn: null, missing_slots: [], env_error: true } : intakeReport(lastSessState, intakeAtTurn);
+    const intake = invalidRun ? { completed: false, turn: null, missing_slots: [], invalid: true } : intakeReport(lastSessState, intakeAtTurn);
 
     const transcript = buildPersonaTranscript(persona, sessions, automated, intake);
     writeFileSync(path.join(logsDir, `${persona.id}${repSuffix}.txt`), transcript);
@@ -578,7 +594,7 @@ for (const persona of personas) {
       },
     });
 
-    console.log(`  → 自動判定: ${automated.filter((a) => a.pass === true).length}/${automated.length}合格 / インテーク: ${intake.completed ? `T${intake.turn}完了` : "未完了"}`);
+    console.log(`  → 自動判定: ${intake.invalid ? `無効(${invalidReason})` : `${automated.filter((a) => a.pass === true).length}/${automated.length}合格`} / インテーク: ${intake.invalid ? "評価対象外" : intake.completed ? `T${intake.turn}完了` : "未完了"}`);
     if (globalBudgetStop) { console.error("\n[予算] 上限に到達したため、ここで実行を打ち切ります。"); break outer; }
   }
 }
@@ -587,15 +603,21 @@ const finishedAt = new Date();
 
 console.log("\n=== 一覧表(自動判定) ===");
 for (const r of personaReports) {
-  console.log(`  [${r.persona}${r.rep > 1 || REPEATS > 1 ? `#${r.rep}` : ""}] ${r.automated.filter((a) => a.pass === true).length}/${r.automated.length}合格` +
+  const label = `[${r.persona}${r.rep > 1 || REPEATS > 1 ? `#${r.rep}` : ""}]`;
+  if (r.intake.invalid) {
+    console.log(`  [無効] ${label} 会話が成立しなかったため評価対象外`);
+    continue;
+  }
+  console.log(`  ${label} ${r.automated.filter((a) => a.pass === true).length}/${r.automated.length}合格` +
     r.automated.filter((a) => a.pass === false).map((a) => `  ✗${a.id}`).join(""));
 }
 
 console.log("\n=== インテーク完了率(旧テスト4統合) ===");
-const completedCount = personaReports.filter((r) => r.intake.completed).length;
-console.log(`  完了 ${completedCount}/${personaReports.length}`);
+const scorablePersonaReports = personaReports.filter((r) => !r.intake.invalid);
+const completedCount = scorablePersonaReports.filter((r) => r.intake.completed).length;
+console.log(`  完了 ${completedCount}/${scorablePersonaReports.length}(無効${personaReports.length - scorablePersonaReports.length}件を除く)`);
 for (const r of personaReports) {
-  console.log(`  [${r.persona}] ${r.intake.completed ? `T${r.intake.turn}で完了` : `未完了(不足: ${r.intake.missing_slots.join(",") || "なし"})`}`);
+  console.log(`  [${r.persona}] ${r.intake.invalid ? "無効(評価対象外)" : r.intake.completed ? `T${r.intake.turn}で完了` : `未完了(不足: ${r.intake.missing_slots.join(",") || "なし"})`}`);
 }
 
 // 相談AI本体の生成失敗率(2026年9月・persona-tests-4-5.md 1-2)。禁止表現の検知とは別指標として、
