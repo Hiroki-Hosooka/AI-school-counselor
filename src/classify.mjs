@@ -7,13 +7,12 @@
 //  ここを本番用とテスト用で分岐させると測定の意味が無くなる。route.ts 側だけの
 //  都合でこのファイルに手を入れないこと。
 //
-//  CRISIS_WORDS(キーワード事前検知)は出力チェックと共有するため src/safety.mjs のまま
-//  (一致の判定も、慣用表現の除外を含めて src/safety.mjs の crisisKeywordHits() に置いている)。
+//  CRISIS_WORDS(キーワード事前検知)は出力チェックと共有するため src/safety.mjs のまま。
 //  scripts/test-persona-regression.mjs(テスト4)が危機分岐を忠実に再現するために
 //  CRISIS_REPLY もここに置く。
 // ============================================================================
 
-import { crisisKeywordHits } from "./safety.mjs";
+import { CRISIS_WORDS } from "./safety.mjs";
 
 // 危機判定時の固定応答(生成は完全にスキップする。CLAUDE.md 5.2)。文言を変える場合は
 // この分岐の意図(態度だけを示し、手順には踏み込まない)を壊していないか確認すること。
@@ -44,20 +43,9 @@ export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 // 安全についての発言を、相談者自身の危機と取り違えないための判定(03_共通グランドルール
 // _両条件共通.txt 7-5)。route.ts 側は risk==="crisis" && subject==="self" のときだけ
 // 生成をスキップする(CLAUDE.md 5.2 の対象は self のみ)。
-//
-// 2026年9月・2-3で「入力の形式」「文脈の使い方」「慣用的な誇張表現」を追加。
-// 以前は判定する発言だけを渡していたため、ペルソナ回帰テストB1-r2で、面談を早く終えたいという
-// 意味の「別にどうとかないし早く終わってほしい」が危機と判定された(直前のAIの問いかけが
-// 分類器に見えていなかった)。慣用的な誇張表現の項は、src/safety.mjs の crisisKeywordHits() が
-// キーワード一致から外した形(恥ずかしさ・気まずさの慣用表現)を、分類器が正しく扱えるようにするためのもの。
 const CLASSIFIER_PROMPT =
 `あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
 {"risk":"none|watch|crisis","subject":"self|other","reason":"20字以内"}
-
-入力の形式:
-【直前までの会話】相談者とAIの直前のやりとり(文脈。判定の対象ではない)
-【判定する発言】相談者の最新の発言
-判定するのは【判定する発言】だけです。
 
 risk の基準:
 crisis: 自殺念慮・自傷(方法や実行への言及を含む)、生命に関わる暴力の被害・加害、虐待、性被害、
@@ -70,23 +58,6 @@ none  : 通常の相談。「わからない」「決められない」等の判
 
 重要な原則:絶望感・無力感の表現(「話しても無駄」「何をしても変わらない」等)は、それ単独では
 crisis のサインではない。自殺念慮を明示していない限り、watch までにとどめること。
-
-文脈の使い方:
-・【直前までの会話】は、【判定する発言】が何を指しているかを読み取るためにだけ使う。
-  例えば「早く終わってほしい」「もう帰りたい」が、このやりとり(面談)を早く終えたいという意味なのか、
-  自分の生活や人生についての意味なのかを、直前のAIの問いかけや流れから判断する。
-  このやりとりを終えたい・この場を離れたいという意味だと文脈から明らかに読み取れるなら、それだけでは crisis ではない。
-・文脈の中にある過去の発言の危険度を、そのまま【判定する発言】に引き継がない(過去の発言は、そのときに別に判定済み)。
-  ただし【判定する発言】が、文脈の中の危機的な発言を肯定したり言い直したりしている場合
-  (「本気だよ」「さっきのはほんとのこと」等)は、その内容で判定する。
-・文脈を理由に risk を下げてよいのは、発言が相談者自身の命や安全についてのものではないと、文脈から明らかに読み取れる場合だけ。
-
-慣用的な誇張表現:
-・「恥ずかしすぎて消えたい」「気まずくて死にたい」「消えたいくらい恥ずかしい」のように、出来事の恥ずかしさや
-  気まずさを強めて言うための慣用的な言い方(その場から逃げ出したい、の意味)は、それ単独では自殺念慮ではない。
-・一方、自分自身や生きていることへの恥(「こんな自分が恥ずかしくて消えたい」)や、つらさ・苦しさ・疲れ・孤独と
-  結びついた「消えたい」「死にたい」(「つらすぎて消えたい」「死にたいくらい苦しい」等)は、誇張の形をとっていても
-  crisis とすること。恥ずかしさの表現と一緒にほかの危機のサインがある場合も crisis とする。
 
 subject の基準(発言が誰の安全についてか):
 self : 相談者自身についての発言。
@@ -243,31 +214,8 @@ export function parseJSON(raw) {
 //
 // classifierError は分類器呼び出しの失敗の有無とタグ([BLOCKED]等)を呼び出し側に
 // そのまま伝える(route.ts 側はこの値を見なくても従来どおり動く)。
-//
-// recentMessages(2026年9月・2-3): 判定する発言より前の、直近のやりとり。古い順の
-// { role: "user" | "ai", text } の配列(role は messages テーブルと同じ値)。末尾の
-// CLASSIFIER_CONTEXT_MESSAGES 件だけを文脈として分類器に渡す。判定の対象はあくまで text で、
-// キーワード事前検知も text にしか行わない(文脈の中のAI自身の言葉でTier Aにならないように)。
-// 省略時(空配列)は会話の最初の発言として判定する。
-export const CLASSIFIER_CONTEXT_MESSAGES = 4;
-// 文脈の1件あたりの上限文字数。長い発言は末尾(判定する発言に近い側)を残す。
-const CONTEXT_CHARS_PER_MESSAGE = 400;
-
-function buildClassifierInput(text, recentMessages) {
-  const lines = (recentMessages ?? [])
-    .filter((m) => m && typeof m.text === "string" && m.text.trim())
-    .slice(-CLASSIFIER_CONTEXT_MESSAGES)
-    .map((m) => {
-      const flat = m.text.replace(/\s+/g, " ").trim();
-      const clipped = flat.length > CONTEXT_CHARS_PER_MESSAGE ? `…${flat.slice(-CONTEXT_CHARS_PER_MESSAGE)}` : flat;
-      return `${m.role === "ai" ? "AI" : "相談者"}: ${clipped}`;
-    });
-  return `【直前までの会話】\n${lines.length ? lines.join("\n") : "(なし。これが最初の発言)"}\n\n【判定する発言】\n${text}`;
-}
-
-export async function classify(text, recentMessages = []) {
-  // idiomExempted: 慣用表現(「恥ずかしすぎて消えたい」等)としてキーワード一致から外した箇所(記録用)
-  const { keywords, idiomExempted } = crisisKeywordHits(text);
+export async function classify(text) {
+  const keywords = CRISIS_WORDS.filter((w) => text.includes(w));
   let model = { risk: "none", subject: "self", reason: "判定なし" };
   let classifierError = null;
   // 実際に判定に成功したモデルID(LITE_MODELSのどれか)。既存の"model"は判定器が返した
@@ -279,22 +227,17 @@ export async function classify(text, recentMessages = []) {
     // 思考トークン消費量が読めず(実機検証でCLASSIFIER_PROMPTに対し191〜224トークン
     // 消費を確認)、200では思考だけで使い切りJSON本体がMAX_TOKENSで尻切れになっていた。
     // 出力自体は20〜30トークンの小さなJSONなので、1024は十分な余裕を持たせた値。
-    const input = buildClassifierInput(text, recentMessages);
-    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text: input }] }], 1024, -1);
+    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 1024, -1);
     model = parseJSON(result.text);
     usedModel = result.model;
   } catch (e) {
     classifierError = e instanceof Error ? e.message : String(e);
-    // 慣用表現としてキーワード一致から外した発言でも、判定器が使えないときは crisis に倒す
-    // (外したのは「分類器に判断させる」ためであり、判断できないなら従来どおりの扱いに戻す)。
-    model = {
-      risk: keywords.length || idiomExempted.length ? "crisis" : "watch", subject: "self", reason: "判定器エラー",
-    };
+    model = { risk: keywords.length ? "crisis" : "watch", subject: "self", reason: "判定器エラー" };
   }
   // キーワードが当たったら判定器の結果によらず crisis 扱い(見逃しを避ける)
   const risk = keywords.length ? "crisis" : model.risk;
   // subject が "other" と明示的に判定された場合のみ other。それ以外(不正値・判定器エラー含む)は
   // 安全側の self に倒す(第三者の話だと誤って軽く扱うことを避けるため。CLAUDE.md 5.2 の対象は self のみ)。
   const subject = model.subject === "other" ? "other" : "self";
-  return { risk, keywords, subject, model, classifierError, usedModel, idiomExempted };
+  return { risk, keywords, subject, model, classifierError, usedModel };
 }

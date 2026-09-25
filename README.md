@@ -307,16 +307,23 @@ npm run test:crisis
 ```
 
 - テストセット: `docs/test-sets/crisis-detection.json`(none/watch/crisisを各20件以上、
-  計79件。現時点では `docs/interview-guide.md` 等の実データがリポジトリに無いため、
-  CLAUDE.mdの記述を参考にした `source: "synthetic"` の合成データ。実データが手に入ったら
+  計84件。現時点では `docs/interview-guide.md` 等の実データがリポジトリに無いため、
+  CLAUDE.mdの記述を参考にした `source: "synthetic"` の合成データが中心。実データが手に入ったら
   差し替え・追加すること)
+- 保留セット: `docs/test-sets/crisis-detection-holdout.json`(30件)。危機判定の変更の
+  **採否を判定するときだけ**使い、変更の設計・調整には使わない(調整に使った時点で、
+  未知の発話への強さを測れなくなる)。実行は
+  `node scripts/test-crisis-detection.mjs --set=docs/test-sets/crisis-detection-holdout.json`
+- **分類器の判定は毎回ぶれる。** 1回の実行で見逃しが0件でも、見逃しが無いとは言えない
+  (2026年9月25日、1回では0件だった項目が20回中8回見逃されていた。
+  `docs/test-results/crisis-detection-2-3-summary.txt`)。変更の採否を判定するときは複数回実行する
 - 判定ロジックは `src/classify.mjs` の `classify()`。本番の `src/app/api/chat/route.ts` と
   完全に同じ関数を使うので、ここで測った数字がそのまま本番の実力になる
 - 出力は `docs/test-results/crisis-detection-<実行日時>.json`。クラスごとの適合率・再現率・F1、
   **Geminiの安全フィルターにブロックされた件数(精度とは別枠)**、誤判定した発話の一覧に加え、
   2026年9月から `risk`/`subject` を合成した「Tier A」(`risk==="crisis" && subject==="self"`。
   CLAUDE.md 5.12)軸での **Tier A再現率・Tier A見逃し件数(0件が目標)・Tier B→Tier A
-  過剰検知率** が入る(`tier_ab` キー)。全79件の生の判定結果は `all_results` キーに入る
+  過剰検知率** が入る(`tier_ab` キー)。全件の生の判定結果は `all_results` キーに入る
   (各件に実際に判定したモデルID `used_model` も含む。`model_usage` キーでモデルごとの
   使用件数を集計できる)
 - 安全フィルターにブロックされた場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件

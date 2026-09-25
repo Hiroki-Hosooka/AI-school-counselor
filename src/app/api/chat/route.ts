@@ -42,7 +42,7 @@
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { classify, CRISIS_REPLY, CLASSIFIER_CONTEXT_MESSAGES } from "@/classify.mjs";
+import { classify, CRISIS_REPLY } from "@/classify.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
@@ -276,28 +276,12 @@ export async function POST(req: Request) {
       // 「友人等、第三者の安全への懸念(other)」と、曖昧な危機サイン(watch=Tier B)は、
       // どちらも生成は続けつつ、この1ターンだけ safetyContext で AI の応答の仕方を絞り込む
       // (src/generate.mjs の buildSystem 参照)。
-      //
-      // 分類器には、今回の発言より前の直近のやりとりも文脈として渡す(2026年9月・2-3)。
-      // 直前のAIの問いかけが見えないと、「早く終わってほしい」(=この面談を早く終えたい)の
-      // ような発言を危機と取り違えるため。Tier Aの固定応答も、生徒に実際に見えた言葉として含める。
-      let recentQuery = db.from("messages").select("role,body").eq("session_id", sessionId);
-      if (userMsg?.seq != null) recentQuery = recentQuery.lt("seq", userMsg.seq);
-      const { data: recent } = await recentQuery
-        .order("seq", { ascending: false }).limit(CLASSIFIER_CONTEXT_MESSAGES);
-      const classifierContext = (recent ?? []).reverse()
-        .map((m: { role: string; body: string }) => ({ role: m.role === "ai" ? "ai" : "user", text: m.body }));
-      const safety = await classify(text, classifierContext);
+      const safety = await classify(text);
       const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
-      // 慣用表現(「恥ずかしすぎて消えたい」等)としてキーワード一致から外した場合は、
-      // 分類器が none と判定しても safety_events に残す(2-3。以前ならキーワード一致だけで
-      // Tier Aになっていた発言なので、判断が妥当だったかを後から人が確認できるようにする)。
-      // 外した箇所は「(慣用表現として除外)」を付けて keywords 列に入れる。
-      const idiomExempted: string[] = safety.idiomExempted ?? [];
-      if (safety.risk !== "none" || idiomExempted.length) {
+      if (safety.risk !== "none") {
         const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
         await db.from("safety_events").insert({
-          session_id: sessionId, risk: safety.risk, subject: safety.subject,
-          keywords: [...safety.keywords, ...idiomExempted.map((p) => `(慣用表現として除外)${p}`)],
+          session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: safety.keywords,
           model_risk: safety.model.risk, model_reason: safety.model.reason, notified,
         });
       }

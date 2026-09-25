@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, isTransientClassifierError } from "./_lib/test-env.mjs";
 import { classify, LITE_MODELS } from "../src/classify.mjs";
-import { crisisKeywordHits } from "../src/safety.mjs";
+import { CRISIS_WORDS } from "../src/safety.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -55,23 +55,16 @@ for (const it of items) {
     console.error(`不正なラベル "${it.label}"(${it.text})。none/watch/crisis のいずれかにしてください。`);
     process.exit(1);
   }
-  // context(2026年9月・2-3): 判定する発言より前のやりとり。古い順の {role:"ai"|"user", text}。
-  // 省略時は会話の最初の発言として判定する(本番のroute.tsと同じ)。
-  if (it.context !== undefined && (!Array.isArray(it.context)
-    || it.context.some((m) => !m || !["ai", "user"].includes(m.role) || typeof m.text !== "string"))) {
-    console.error(`不正な context(${it.text})。{"role":"ai"|"user","text":"..."} の配列にしてください。`);
-    process.exit(1);
-  }
 }
 
 // --------------------------------------------------------------------------
 // classify() 呼び出し(レート制限は間隔を空けて再試行。ブロックは再試行しない
 // = ブロックは「事実」として記録する対象であり、レート制限のような一時障害ではないため)
 // --------------------------------------------------------------------------
-async function classifyWithRetry(text, context) {
+async function classifyWithRetry(text) {
   return withRateLimitRetry(
     KEY_POOL,
-    () => classify(text, context),
+    () => classify(text),
     isTransientClassifierError,
     { state: KEY_ROTATION },
   );
@@ -107,12 +100,10 @@ let estimatedChars = 0;
 
 for (let i = 0; i < items.length; i++) {
   const item = items[i];
-  // 本番と同じキーワード事前検知(慣用表現の除外を含む。src/safety.mjs の crisisKeywordHits)。
-  const hasKeywordHit = crisisKeywordHits(item.text).keywords.length > 0;
-  const context = item.context ?? [];
-  process.stdout.write(`[${i + 1}/${items.length}] ${item.label.padEnd(6)} ${context.length ? "(文脈あり)" : ""}「${item.text.slice(0, 24)}...」 `);
+  const hasKeywordHit = CRISIS_WORDS.some((w) => item.text.includes(w));
+  process.stdout.write(`[${i + 1}/${items.length}] ${item.label.padEnd(6)} 「${item.text.slice(0, 24)}...」 `);
 
-  const r = await classifyWithRetry(item.text, context);
+  const r = await classifyWithRetry(item.text);
   estimatedChars += item.text.length + (r.model?.reason?.length ?? 0);
 
   const tag = errorTag(r.classifierError);
@@ -123,8 +114,6 @@ for (let i = 0; i < items.length; i++) {
   const trueSubject = item.subject ?? "self";
   results.push({
     text: item.text,
-    context,
-    idiomExempted: r.idiomExempted ?? [],
     trueLabel: item.label,
     predicted: r.risk,
     trueSubject: item.subject ?? null, // 構造化面接AI統合 手順4。未指定の既存項目はselfとして扱う(下記参照)
@@ -311,14 +300,6 @@ if (otherErrorResults.length) {
   console.log(`  その他のエラー件数: ${otherErrorResults.length}`);
 }
 
-const idiomExemptedResults = results.filter((r) => r.idiomExempted.length);
-if (idiomExemptedResults.length) {
-  console.log("\n=== 慣用表現としてキーワード一致から除外した発話(2-3。分類器の判定に委ねた) ===");
-  for (const r of idiomExemptedResults) {
-    console.log(`  [正解=${r.trueLabel} → 判定=${r.predicted}${r.predictedTierA ? "(Tier A)" : ""}] 「${r.text}」 除外:「${r.idiomExempted.join("、")}」`);
-  }
-}
-
 if (misclassified.length) {
   console.log("\n=== 誤判定した発話(抜粋) ===");
   for (const r of misclassified) {
@@ -398,15 +379,8 @@ const report = {
   // 上記はすべて集計値・失敗例だけの抜粋。「何を・どう判定して・何が返ってきたか」を
   // 正しく判定できた分も含めて全件確認できるよう、79件全ての生の入出力をここに残す
   // (2026年9月・検証一式のログ充実要望への対応)。
-  // 慣用表現としてキーワード一致から外した項目と、そのときの分類器の判定(2026年9月・2-3)。
-  idiom_exempted: results.filter((r) => r.idiomExempted.length).map((r) => ({
-    text: r.text, exempted: r.idiomExempted, true_label: r.trueLabel,
-    predicted: r.predicted, predicted_tier_a: r.predictedTierA, classifier_reason: r.modelReason,
-  })),
   all_results: results.map((r) => ({
     text: r.text,
-    context: r.context.length ? r.context : undefined,
-    idiom_exempted: r.idiomExempted.length ? r.idiomExempted : undefined,
     true_label: r.trueLabel, true_subject: r.trueSubject, true_tier_a: r.trueTierA,
     predicted: r.predicted, predicted_subject: r.predictedSubject, predicted_tier_a: r.predictedTierA,
     has_keyword_hit: r.hasKeywordHit,

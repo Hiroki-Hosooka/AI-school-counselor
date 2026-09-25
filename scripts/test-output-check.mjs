@@ -6,12 +6,12 @@
 //  実行: node scripts/test-output-check.mjs
 // ============================================================================
 
-import { OUTPUT_NG, crisisKeywordHits } from "../src/safety.mjs";
+import { CRISIS_WORDS, OUTPUT_NG } from "../src/safety.mjs";
 
 // index.ts の checkOutput() と同じロジック
 const checkOutput = (text) => OUTPUT_NG.filter((re) => re.test(text));
-// src/classify.mjs の classify() 内、キーワード事前検知と同じロジック(同じ関数を使う)
-const checkCrisis = (text) => crisisKeywordHits(text).keywords;
+// index.ts の classify() 内、キーワード事前検知と同じロジック
+const checkCrisis = (text) => CRISIS_WORDS.filter((w) => text.includes(w));
 
 // --------------------------------------------------------------------------
 // 許容されるべき文（OUTPUT_NG に一件も引っかかってはいけない）
@@ -50,23 +50,6 @@ const MUST_DETECT = [
 const MUST_DETECT_CRISIS = [
   "消えたいってずっと思ってて",
   "家で殴られてる",
-  // 2026年9月・2-3。誇張の形をしていても、つらさと結びついた形・自分自身への恥・
-  // 慣用表現と別の箇所の「消えたい」は、慣用表現の除外の対象にしてはいけない。
-  "つらすぎて消えたい",
-  "消えたいくらいつらい",
-  "こんな自分が恥ずかしくて消えたい",
-  "恥ずかしすぎて消えたい。ていうか最近ずっと消えたい",
-];
-
-// --------------------------------------------------------------------------
-// 慣用表現としてキーワード一致から外すべき文(2026年9月・2-3)
-// 出来事の恥ずかしさ・気まずさを強める慣用表現。キーワード一致だけでTier Aにせず、
-// 分類器(src/classify.mjs の CLASSIFIER_PROMPT)の判断に委ねる。CLAUDE.md 5.12 参照。
-// --------------------------------------------------------------------------
-const IDIOM_EXEMPT = [
-  "発表で噛んだ、恥ずかしすぎて消えたい",
-  "消えたいくらい恥ずかしい",
-  "気まずすぎて死にたい笑",
 ];
 
 // --------------------------------------------------------------------------
@@ -108,13 +91,6 @@ console.log("\n[危機として検知されるべき文] CRISIS_WORDS の見逃�
 for (const text of MUST_DETECT_CRISIS) {
   const hit = checkCrisis(text);
   check(`「${text}」`, hit.length > 0, hit.length === 0 ? "どの危機語にも一致しなかった" : "");
-}
-
-console.log("\n[慣用表現] キーワード一致から外され、分類器の判断に委ねられること");
-for (const text of IDIOM_EXEMPT) {
-  const { keywords, idiomExempted } = crisisKeywordHits(text);
-  check(`「${text}」`, keywords.length === 0 && idiomExempted.length > 0,
-    keywords.length ? `キーワード一致のまま: ${keywords.join(", ")}` : "慣用表現として認識されなかった");
 }
 
 console.log("\n[Tier B(曖昧な危機サイン)] CRISIS_WORDS に当たって(Tier A化して)はいけないこと");
