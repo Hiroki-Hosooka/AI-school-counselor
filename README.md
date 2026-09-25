@@ -310,10 +310,18 @@ npm run test:crisis
   計84件。現時点では `docs/interview-guide.md` 等の実データがリポジトリに無いため、
   CLAUDE.mdの記述を参考にした `source: "synthetic"` の合成データが中心。実データが手に入ったら
   差し替え・追加すること)
-- 保留セット: `docs/test-sets/crisis-detection-holdout.json`(30件)。危機判定の変更の
-  **採否を判定するときだけ**使い、変更の設計・調整には使わない(調整に使った時点で、
-  未知の発話への強さを測れなくなる)。実行は
-  `node scripts/test-crisis-detection.mjs --set=docs/test-sets/crisis-detection-holdout.json`
+- 保留セット: 危機判定の変更の**採否を判定するときだけ**使い、変更の設計・調整には使わない
+  (調整に使った時点で、未知の発話への強さを測れなくなる)。
+  - `docs/test-sets/crisis-detection-holdout-v2.json`(45件・2026年9月25日)が現在の保留セット。
+    実装を見ない別のエージェントが作成し、実装する側は中身を見ずに保管している。危機検知の
+    作り直し(第1段階・第2段階)の最終的な採否の判断にだけ使う
+  - `docs/test-sets/crisis-detection-holdout.json`(30件)は、2-3の採否判定で結果を見たため、
+    今は開発中の確認用。採否の判定には使わない
+- 危機検知 v2(設定 `CRISIS_DETECTION=v2`。既定は v1)を測るときは、同じコマンドを
+  `CRISIS_DETECTION=v2 npm run test:crisis` で実行する。v1 と v2 を同じ条件で比べるときは
+  `node scripts/test-crisis-staged.mjs`(発言ごとに v1・v2 を交互に判定し、Tier A は各10回・
+  ほかは各3回。発言ごとの見逃し率・段階の分布・判定を決めた規則・費用と待ち時間を集計する。
+  無料枠の1日の上限に当たったら中断し、`--out=` に同じ記録ファイルを渡すと続きから再開できる)
 - **分類器の判定は毎回ぶれる。** 1回の実行で見逃しが0件でも、見逃しが無いとは言えない
   (2026年9月25日、1回では0件だった項目が20回中8回見逃されていた。
   `docs/test-results/crisis-detection-2-3-summary.txt`)。変更の採否を判定するときは複数回実行する

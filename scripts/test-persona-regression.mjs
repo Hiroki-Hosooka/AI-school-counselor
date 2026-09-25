@@ -57,7 +57,12 @@ import {
   createBudgetTracker, budgetRemainingYen, budgetExceeded, recordCall, checkBudgetBeforeRun,
   finalizeBudgetTracker, estimateCostPerCallFromLedger,
 } from "./_lib/test-env.mjs";
-import { LITE_MODELS, callGemini, parseJSON, classify, CRISIS_REPLY } from "../src/classify.mjs";
+import {
+  LITE_MODELS, callGemini, parseJSON, classify, classifyStaged, crisisDetectionVersion, CRISIS_REPLY,
+} from "../src/classify.mjs";
+// 設定 CRISIS_DETECTION=v2 のときは危機検知 v2(段階つき・文脈あり)を使う(2026年9月・危機検知の作り直し)。
+// 本番の route.ts と同じ切り替え。既定は v1。
+const DETECTION = crisisDetectionVersion();
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, updatePersonMemory,
@@ -182,11 +187,12 @@ async function generateWithRetry(system, messages, priorFailureCount) {
   );
 }
 
-async function classifyWithRetry(text) {
+async function classifyWithRetry(text, recentMessages) {
   return withRateLimitRetry(
     KEY_POOL,
-    () => classify(text),
-    isTransientClassifierError,
+    () => (DETECTION === "v2" ? classifyStaged(text, recentMessages ?? []) : classify(text)),
+    // v2 は複数の回のエラーを " | " でつないで返すので、文字列全体からタグを探す
+    DETECTION === "v2" ? (r) => !!r.classifierError && /\[RATE_LIMIT\]|\[HTTP_503\]/.test(r.classifierError) : isTransientClassifierError,
     { label: "分類器: ", state: CLASSIFIER_KEY_ROTATION },
   );
 }
@@ -263,7 +269,10 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
     process.stdout.write(`  [T${turn}] 生徒: ${studentText.slice(0, 24)}\n`);
     await sleep(800);
 
-    const safety = await classifyWithRetry(studentText);
+    // v2 では、今回の発言より前のやりとりを文脈として渡す(route.ts と同じ。historyの末尾は今回の発言なので除く)
+    const classifierContext = history.slice(0, -1)
+      .map((h) => ({ role: h.speaker === "counselor" ? "ai" : "user", text: h.text }));
+    const safety = await classifyWithRetry(studentText, classifierContext);
     await sleep(800);
     // Tier Aになったのがキーワード一致によるものか、分類器の判定によるものかを区別できるよう、
     // 一致した語と分類器の判定・理由も残す(2026年9月・2-3の検証時に追加。B5のrecord_trigger_source用)。
@@ -271,6 +280,9 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       classifier_model: safety.usedModel, risk: safety.risk, subject: safety.subject,
       keywords: safety.keywords ?? [],
       classifier_risk: safety.model?.risk ?? null, classifier_reason: safety.model?.reason ?? null,
+      // v2 のときだけ: 段階・段階を決めた規則・一致した受動パターン・慣用表現として段階1にとどめた箇所
+      stage: safety.stage ?? null, decided_by: safety.decidedBy ?? null,
+      patterns: safety.patterns ?? [], idiom_exempted: safety.idiomExempted ?? [],
     };
 
     const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
@@ -367,9 +379,16 @@ const CLOSING_ONLY_PERSONAS_NOTE = "closing_event=closeは、本来ユーザー�
 
 // Tier A化(またはwatch判定)の根拠を1行で表す(2026年9月・2-3)。キーワード一致なら
 // 一致した語を、そうでなければ分類器の判定理由を出す。
+// v2(危機検知の作り直し)のときは、受動パターン・慣用表現(段階1)・分類器のどれで決まったかも出す。
 function triggerSource(t) {
-  if ((t.keywords ?? []).length) return `キーワード一致(${t.keywords.join("、")})`;
-  return `分類器の判定(${t.classifier_risk ?? "不明"}: ${t.classifier_reason ?? "理由なし"})`;
+  const parts = [];
+  if ((t.patterns ?? []).length) parts.push(`受動パターン一致(${t.patterns.join("、")})`);
+  if ((t.keywords ?? []).length) parts.push(`キーワード一致(${t.keywords.join("、")})`);
+  if ((t.idiom_exempted ?? []).length) parts.push(`慣用表現→段階1(${t.idiom_exempted.join("、")})`);
+  if (!parts.length || (t.decided_by ?? []).includes("classifier")) {
+    parts.push(`分類器の判定(${t.classifier_risk ?? "不明"}: ${t.classifier_reason ?? "理由なし"})`);
+  }
+  return parts.join(" + ");
 }
 
 function ngFlagCheck(turnLog) {

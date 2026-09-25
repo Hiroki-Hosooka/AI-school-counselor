@@ -42,7 +42,9 @@
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { classify, CRISIS_REPLY } from "@/classify.mjs";
+import {
+  classify, classifyStaged, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES, CRISIS_REPLY,
+} from "@/classify.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
@@ -276,13 +278,43 @@ export async function POST(req: Request) {
       // 「友人等、第三者の安全への懸念(other)」と、曖昧な危機サイン(watch=Tier B)は、
       // どちらも生成は続けつつ、この1ターンだけ safetyContext で AI の応答の仕方を絞り込む
       // (src/generate.mjs の buildSystem 参照)。
-      const safety = await classify(text);
+      //
+      // 危機検知 v2(段階つき。src/classify.mjs の classifyStaged)は、設定 CRISIS_DETECTION=v2 の
+      // ときだけ使う(2026年9月・危機検知の作り直し 第1段階。既定は v1 のまま)。第1段階では、
+      // 段階2 = crisis(固定応答)、段階1 = watch(Tier B)として、下の既存の分岐をそのまま通る。
+      // v2 では、今回の発言より前の直近のやりとりも文脈として分類器に渡す(直前のAIの問いかけが
+      // 見えないと、「早く終わってほしい」=この面談を早く終えたい、を危機と取り違えるため)。
+      // Tier Aの固定応答も、生徒に実際に見えた言葉として含める。
+      let safety: Awaited<ReturnType<typeof classify>>;
+      let eventKeywords: string[];
+      let eventReason: string;
+      if (crisisDetectionVersion() === "v2") {
+        let recentQuery = db.from("messages").select("role,body").eq("session_id", sessionId);
+        if (userMsg?.seq != null) recentQuery = recentQuery.lt("seq", userMsg.seq);
+        const { data: recent } = await recentQuery
+          .order("seq", { ascending: false }).limit(CLASSIFIER_CONTEXT_MESSAGES);
+        const classifierContext = (recent ?? []).reverse()
+          .map((m: { role: string; body: string }) => ({ role: m.role === "ai" ? "ai" : "user", text: m.body }));
+        const staged = await classifyStaged(text, classifierContext);
+        safety = staged;
+        // どの規則で段階が決まったかを、既存の列(keywords・model_reason)に残す(第2段階で専用の列を作る)
+        eventKeywords = [
+          ...staged.keywords,
+          ...staged.patterns.map((p: string) => `パターン:${p}`),
+          ...staged.idiomExempted.map((p: string) => `(慣用表現→段階1)${p}`),
+        ];
+        eventReason = `${staged.model.reason}(段階${staged.stage}: ${staged.decidedBy.join(",") || "なし"})`;
+      } else {
+        safety = await classify(text);
+        eventKeywords = safety.keywords;
+        eventReason = safety.model.reason;
+      }
       const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
       if (safety.risk !== "none") {
         const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
         await db.from("safety_events").insert({
-          session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: safety.keywords,
-          model_risk: safety.model.risk, model_reason: safety.model.reason, notified,
+          session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: eventKeywords,
+          model_risk: safety.model.risk, model_reason: eventReason, notified,
         });
       }
 

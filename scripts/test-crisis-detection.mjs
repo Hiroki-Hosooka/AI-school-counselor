@@ -22,8 +22,13 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, isTransientClassifierError } from "./_lib/test-env.mjs";
-import { classify, LITE_MODELS } from "../src/classify.mjs";
-import { CRISIS_WORDS } from "../src/safety.mjs";
+import { classify, classifyStaged, crisisDetectionVersion, LITE_MODELS } from "../src/classify.mjs";
+import { CRISIS_WORDS, crisisRulesV2 } from "../src/safety.mjs";
+
+// 設定 CRISIS_DETECTION=v2 のときは、危機検知 v2(段階つき。src/classify.mjs の classifyStaged)を測る
+// (2026年9月・危機検知の作り直し 第1段階)。v2 では項目の context(直前のやりとり)も分類器に渡す。
+// 既定は v1(本番の既定と同じ)。v1 と v2 を同じ条件で比べるときは scripts/test-crisis-staged.mjs を使う。
+const DETECTION = crisisDetectionVersion();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -61,11 +66,12 @@ for (const it of items) {
 // classify() 呼び出し(レート制限は間隔を空けて再試行。ブロックは再試行しない
 // = ブロックは「事実」として記録する対象であり、レート制限のような一時障害ではないため)
 // --------------------------------------------------------------------------
-async function classifyWithRetry(text) {
+async function classifyWithRetry(text, context) {
   return withRateLimitRetry(
     KEY_POOL,
-    () => classify(text),
-    isTransientClassifierError,
+    () => (DETECTION === "v2" ? classifyStaged(text, context ?? []) : classify(text)),
+    // v2 は複数の回のエラーを " | " でつないで返すので、文字列全体からタグを探す
+    DETECTION === "v2" ? (r) => !!r.classifierError && /\[RATE_LIMIT\]|\[HTTP_503\]/.test(r.classifierError) : isTransientClassifierError,
     { state: KEY_ROTATION },
   );
   // 全滅後もレート制限のままなら、その結果をそのまま記録する(withRateLimitRetryの仕様)。
@@ -92,6 +98,7 @@ const CHARS_PER_TOKEN = 1.5;
 // --------------------------------------------------------------------------
 console.log(`テストセット: ${path.relative(ROOT, SET_PATH)}(${items.length}件)`);
 console.log(`分類モデル: ${LITE_MODELS.join(" → ")}`);
+console.log(`判定方式: ${DETECTION}${DETECTION === "v2" ? "(段階つき・文脈あり)" : ""}`);
 console.log("");
 
 const startedAt = new Date();
@@ -100,10 +107,12 @@ let estimatedChars = 0;
 
 for (let i = 0; i < items.length; i++) {
   const item = items[i];
-  const hasKeywordHit = CRISIS_WORDS.some((w) => item.text.includes(w));
+  const hasKeywordHit = DETECTION === "v2"
+    ? (() => { const r = crisisRulesV2(item.text); return r.keywords.length > 0 || r.patterns.length > 0; })()
+    : CRISIS_WORDS.some((w) => item.text.includes(w));
   process.stdout.write(`[${i + 1}/${items.length}] ${item.label.padEnd(6)} 「${item.text.slice(0, 24)}...」 `);
 
-  const r = await classifyWithRetry(item.text);
+  const r = await classifyWithRetry(item.text, item.context);
   estimatedChars += item.text.length + (r.model?.reason?.length ?? 0);
 
   const tag = errorTag(r.classifierError);
@@ -125,6 +134,7 @@ for (let i = 0; i < items.length; i++) {
     errorTag: tag,
     modelReason: r.model?.reason ?? null,
     usedModel: r.usedModel, // 実際に判定に成功したモデルID。全滅時はnull(検証一式)。
+    stage: r.stage ?? null, decidedBy: r.decidedBy ?? null, // v2 のときだけ
   });
 
   // 無料枠(10RPM級)を自分から詰まらせないための間隔。連続で呼びすぎない。
@@ -322,6 +332,7 @@ const report = {
   test_set: path.relative(ROOT, SET_PATH),
   test_set_count: items.length,
   classifier_models: LITE_MODELS,
+  detection: DETECTION,
   model_usage: {
     counts: modelUsageCounts,
     no_model_succeeded: noModelSucceeded,
@@ -386,6 +397,7 @@ const report = {
     has_keyword_hit: r.hasKeywordHit,
     classifier_reason: r.modelReason,
     used_model: r.usedModel,
+    stage: r.stage ?? undefined, decided_by: r.decidedBy ?? undefined,
     classifier_error: r.classifierError, error_tag: r.errorTag,
     correct: r.predicted === r.trueLabel,
   })),

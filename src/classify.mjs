@@ -12,7 +12,7 @@
 //  CRISIS_REPLY もここに置く。
 // ============================================================================
 
-import { CRISIS_WORDS } from "./safety.mjs";
+import { CRISIS_WORDS, crisisRulesV2, paraphraseShameIdioms } from "./safety.mjs";
 
 // 危機判定時の固定応答(生成は完全にスキップする。CLAUDE.md 5.2)。文言を変える場合は
 // この分岐の意図(態度だけを示し、手順には踏み込まない)を壊していないか確認すること。
@@ -91,7 +91,7 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 //  この閾値はCLAUDE.md 5.11の対象。緩めた判断の裏付け(ブロック率の実測)が、
 //  まさにこのファイルを使うテスト1(scripts/test-crisis-detection.mjs)の役目。
 // ============================================================================
-async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget) {
+async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -106,6 +106,9 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
         generationConfig: {
           maxOutputTokens, responseMimeType: "application/json",
           thinkingConfig: { thinkingBudget },
+          // 危機検知 v2 の分類器だけが渡す(出力の形を強制する。2026年9月・第1段階 1-5)。
+          // 渡さない呼び出し(v1の分類器・本生成・記憶の要約)は、これまでと同じリクエストになる。
+          ...(responseSchema ? { responseSchema } : {}),
         },
         safetySettings: [
           { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
@@ -156,7 +159,7 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 // -1("dynamic"。モデルに任せる)は検証した全モデルで有効だったため、LITE_MODELSを渡す
 // 呼び出し側(classify()・人単位の記憶要約・テストの生徒役生成)は明示的に-1を渡すこと。
 // 通常モデル(PRIMARY_MODELS)側は何も渡さなければ既定の0のままなので変更不要。
-export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0) {
+export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0, { responseSchema } = {}) {
   let lastError;
   let anyRateLimited = false;
   // Google側の一時的な過負荷(503)も429と同じく「別キー/待てば通る可能性が高い」
@@ -164,7 +167,7 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
   let anyOverloaded = false;
   for (const model of models) {
     try {
-      const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget);
+      const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema);
       return { text, model, usage };
     } catch (e) {
       lastError = e;
@@ -240,4 +243,218 @@ export async function classify(text) {
   // 安全側の self に倒す(第三者の話だと誤って軽く扱うことを避けるため。CLAUDE.md 5.2 の対象は self のみ)。
   const subject = model.subject === "other" ? "other" : "self";
   return { risk, keywords, subject, model, classifierError, usedModel };
+}
+
+// ============================================================================
+//  危機検知 v2(2026年9月・危機検知の作り直し 第1段階)
+//
+//  設定 CRISIS_DETECTION=v2 のときだけ使う。設定が無ければ上の classify()(v1)のまま動く。
+//  v1 は変更していない(検証で「変更前」として同じ条件で比べるため)。
+//
+//  判定は3段階(0 通常 / 1 気がかり / 2 危機)。規則ごとの結果のうち、いちばん高い段階を採る。
+//  上から順に最初に当たった規則で決めるのではない(「名前噛んだ。恥ずかしすぎて死にたい…あと昨日
+//  また手首切っちゃった」は、慣用表現の規則では段階1だが、分類器が危機と判定すれば段階2)。
+//
+//   受動パターンに一致 ........................................ 段階2
+//   キーワード(活用形を含む)に一致し、慣用表現に包まれていない ....... 段階2
+//   分類器(文脈つき・CLASSIFIER_VOTES 回並行)が1回でも crisis(本人) .... 段階2
+//   キーワードが恥ずかしさ・気まずさの慣用表現に包まれている .......... 段階1(0には落とさない)
+//   分類器が watch / エラー / 時間切れ ........................... 段階1
+//   いずれにも当たらない ........................................ 段階0
+//
+//  第1段階では、段階2 = 今の crisis(固定応答)、段階1 = 今の watch(Tier B)と同じ扱いにする
+//  (段階ごとの応答は第2段階で作る)。戻り値の risk/subject/keywords/model は classify() と同じ形にして、
+//  route.ts・テストスクリプトの既存の分岐がそのまま使えるようにしている。
+// ============================================================================
+
+export function crisisDetectionVersion() {
+  return process.env.CRISIS_DETECTION === "v2" ? "v2" : "v1";
+}
+
+// 同じ発言を並行して判定する回数(2026年9月の実測: 1回で待ち時間の中央値2.4秒、2回で3.6秒、3回で4.7秒。
+// 1ターンあたりの費用は1回あたり約0.25円)。設定 CRISIS_CLASSIFIER_VOTES で1〜3に変えられる。
+export function classifierVotes() {
+  const n = Number(process.env.CRISIS_CLASSIFIER_VOTES);
+  return Number.isInteger(n) && n >= 1 && n <= 3 ? n : 2;
+}
+// 1回の判定(再試行を含む)を待つ上限。これを超えたらエラーとして扱う(段階1)。
+// 設定 CRISIS_CLASSIFIER_TIMEOUT_MS で変えられる(検証スクリプトは、無料枠の混雑による遅れを
+// 「見逃し」と取り違えないよう長めにする。本番の有料枠では既定の15秒)。
+function voteTimeoutMs() {
+  const n = Number(process.env.CRISIS_CLASSIFIER_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 15000;
+}
+// 思考トークンが出力枠を使い切って JSON が途中で切れるのを防ぐため、v1(1024)より広く取る
+// (2026年9月の実測で、思考は最大約2000トークンに達した)。
+const V2_MAX_OUTPUT_TOKENS = 4096;
+
+// 出力の形を強制する(2026年9月・第1段階 1-5。v1 で1〜2%あった「JSONとして読み取れない」応答への対策)
+const CLASSIFIER_SCHEMA_V2 = {
+  type: "OBJECT",
+  properties: {
+    risk: { type: "STRING", enum: ["none", "watch", "crisis"] },
+    subject: { type: "STRING", enum: ["self", "other"] },
+    reason: { type: "STRING" },
+  },
+  required: ["risk", "subject", "reason"],
+  propertyOrdering: ["risk", "subject", "reason"],
+};
+
+// v1 の CLASSIFIER_PROMPT からの変更:
+//  ・「自殺念慮を明示していない限り watch までにとどめる」の段落を削除した。受動的な希死念慮
+//    (「もう朝が来なければいいのに」等)を約4割見逃していた原因(2026年9月25日の検証)
+//  ・crisis と watch の境目を「自分の存在がなくなること・死ぬことに触れているか」で定義し直した
+//  ・直前のやりとりを文脈として受け取る(入力の形式・文脈の使い方)
+//  判定全体を軽い方へ寄せないよう、「〜は crisis ではない」という文は、文脈の使い方の1文だけにしている。
+//  恥ずかしさの慣用表現は、プロンプトで説明する代わりに、渡す文の中で中立の言い方に置き換えている
+//  (src/safety.mjs の paraphraseShameIdioms)。
+const CLASSIFIER_PROMPT_V2 =
+`あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
+{"risk":"none|watch|crisis","subject":"self|other","reason":"20字以内"}
+
+入力の形式:
+【直前までの会話】相談者とAIの直前のやりとり(文脈。判定の対象ではない)
+【判定する発言】相談者の最新の発言
+判定するのは【判定する発言】だけです。
+
+risk の基準:
+crisis: 自分の存在がなくなること・死ぬことに触れている(明示的か受動的かは問わない)。
+        例:「死にたい」「消えたい」「朝が来なければいい」「自分がいない方がいい」
+        自傷(方法や実行への言及を含む)、生命に関わる暴力の被害・加害、虐待、性被害、
+        いますぐの身の危険、深刻ないじめ被害も含む。
+watch : 無力感や自己否定だが、存在の消失には触れていないもの。
+        例:「もう無理」「限界」「自分なんてダメ」「頑張る意味ある?」
+        孤立感が強い、眠れない、食べられない、学校に行けない等も含む。
+none  : 通常の相談。「わからない」「決められない」等の判断の迷い、「どうにかしたい」等の
+        前向きな焦りは、無力感を伴わない限り none。
+
+文脈の使い方:
+・【直前までの会話】は、【判定する発言】が何を指しているかを読み取るためにだけ使う。
+  例えば「早く終わってほしい」「もう帰りたい」が、このやりとり(面談)を早く終えたいという意味なのか、
+  自分の生活や人生についての意味なのかを、直前のAIの問いかけや流れから判断する。
+  このやりとりを終えたい・この場を離れたいという意味だと文脈から明らかに読み取れるなら、それだけでは crisis ではない。
+・文脈の中にある過去の発言の危険度を、そのまま【判定する発言】に引き継がない(過去の発言は、そのときに別に判定済み)。
+  ただし【判定する発言】が、文脈の中の危機的な発言を肯定したり言い直したりしている場合
+  (「本気だよ」「さっきのはほんとのこと」等)は、その内容で判定する。
+・文脈を理由に risk を下げてよいのは、発言が相談者自身の命や安全についてのものではないと、文脈から明らかに読み取れる場合だけ。
+
+subject の基準(発言が誰の安全についてか):
+self : 相談者自身についての発言。
+other: 「友達が」「家族が」等、相談者以外の第三者の安全についての発言。
+       相談者自身にも同時にサインがある場合は self とする。
+
+迷ったら、risk は重いほうを選ぶこと(見逃しのほうが害が大きい)。
+ただし self か other かで迷う場合は self を選ぶこと(第三者の話だと誤って軽く扱うことを避けるため)。`;
+
+// 判定する発言より前の直近のやりとり(古い順の { role: "user" | "ai", text })のうち、末尾の
+// CLASSIFIER_CONTEXT_MESSAGES 件を文脈として渡す。長い発言は末尾(判定する発言に近い側)を残す。
+export const CLASSIFIER_CONTEXT_MESSAGES = 4;
+const CONTEXT_CHARS_PER_MESSAGE = 400;
+
+function buildClassifierInput(text, recentMessages) {
+  const lines = (recentMessages ?? [])
+    .filter((m) => m && typeof m.text === "string" && m.text.trim())
+    .slice(-CLASSIFIER_CONTEXT_MESSAGES)
+    .map((m) => {
+      const flat = m.text.replace(/\s+/g, " ").trim();
+      const clipped = flat.length > CONTEXT_CHARS_PER_MESSAGE ? `…${flat.slice(-CONTEXT_CHARS_PER_MESSAGE)}` : flat;
+      return `${m.role === "ai" ? "AI" : "相談者"}: ${clipped}`;
+    });
+  return `【直前までの会話】\n${lines.length ? lines.join("\n") : "(なし。これが最初の発言)"}\n\n【判定する発言】\n${text}`;
+}
+
+// 1回分の判定。失敗(API エラー・解析できない応答・想定外の値)したら1回だけ再試行する。
+async function oneVote(input) {
+  const started = Date.now();
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const result = await callGemini(
+        LITE_MODELS, CLASSIFIER_PROMPT_V2, [{ role: "user", parts: [{ text: input }] }],
+        V2_MAX_OUTPUT_TOKENS, -1, { responseSchema: CLASSIFIER_SCHEMA_V2 },
+      );
+      const parsed = parseJSON(result.text);
+      if (!["none", "watch", "crisis"].includes(parsed.risk)) throw new Error(`想定外の risk: ${parsed.risk}`);
+      return {
+        ok: true, risk: parsed.risk, subject: parsed.subject === "other" ? "other" : "self",
+        reason: parsed.reason ?? "", model: result.model, usage: result.usage, retried: attempt > 0, ms: Date.now() - started,
+      };
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return { ok: false, error: lastError, retried: true, ms: Date.now() - started };
+}
+
+function voteWithTimeout(input) {
+  const limit = voteTimeoutMs();
+  let timer;
+  return Promise.race([
+    oneVote(input).finally(() => clearTimeout(timer)),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, error: `[TIMEOUT] ${limit}ms以内に判定が返らなかった`, ms: limit }), limit);
+    }),
+  ]);
+}
+
+// n 回並行して判定する。1回でも crisis(本人)が返ったら、残りを待たずに確定する(危機のときに待ち時間を伸ばさない)。
+// 待たなかった回は skipped として返す(失敗としては数えない)。
+function runVotes(input, n) {
+  return new Promise((resolve) => {
+    const results = new Array(n).fill(null);
+    let pending = n;
+    const finish = () => resolve(results.map((r) => r ?? { ok: false, skipped: true }));
+    for (let i = 0; i < n; i++) {
+      voteWithTimeout(input).then((r) => {
+        results[i] = r;
+        pending--;
+        if ((r.ok && r.risk === "crisis" && r.subject === "self") || pending === 0) finish();
+      });
+    }
+  });
+}
+
+// 戻り値(classify() と同じ形の risk/keywords/subject/model/classifierError/usedModel に加えて):
+//   stage       0 | 1 | 2(相談者本人についての段階)
+//   decidedBy   段階を決めた規則("pattern" | "keyword" | "classifier" | "idiom" | "classifier_watch" | "classifier_error")
+//   patterns    一致した受動パターンのID / idiomExempted 慣用表現として段階1にとどめた箇所
+//   votes       分類器の各回の結果(判定・理由・モデル・所要時間・トークン数)
+export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes() } = {}) {
+  const rules = crisisRulesV2(text);
+  // 文脈の中の相談者の発言も、慣用表現は中立の言い方に置き換える(過去の慣用表現に判定が引きずられないように)
+  const context = (recentMessages ?? []).map((m) => (m?.role === "ai" ? m : { ...m, text: paraphraseShameIdioms(m?.text).text }));
+  const results = await runVotes(buildClassifierInput(rules.classifierText, context), votes);
+  const done = results.filter((r) => !r.skipped);
+  const ok = done.filter((r) => r.ok);
+  const errors = done.filter((r) => !r.ok);
+  // 本人か第三者か: 判定できた回がすべて other のときだけ第三者(1回でも self なら本人。
+  // 判定できた回が無ければ本人)。迷ったら本人の側に倒す(CLASSIFIER_PROMPT_V2 と同じ考え方)
+  const allOther = ok.length > 0 && ok.every((r) => r.subject === "other");
+  const anyCrisis = ok.some((r) => r.risk === "crisis");
+
+  let stage = 0;
+  const decidedBy = [];
+  const raise = (s, why) => { stage = Math.max(stage, s); decidedBy.push(why); };
+  if (rules.patterns.length) raise(2, "pattern");
+  if (rules.keywords.length) raise(2, "keyword");
+  if (anyCrisis && !allOther) raise(2, "classifier");
+  if (rules.idiomExempted.length) raise(1, "idiom");
+  if (ok.some((r) => r.risk === "watch")) raise(1, "classifier_watch");
+  if (errors.length) raise(1, "classifier_error");
+
+  const subject = allOther ? "other" : "self";
+  // route.ts の既存の分岐に合わせた risk。段階2は crisis(subject が other なら、今と同じく第三者として生成を続ける)。
+  // すべての回が第三者の危機と判定した場合も crisis/other(第三者の安全への懸念)
+  let risk = stage === 2 ? "crisis" : stage === 1 ? "watch" : "none";
+  if (anyCrisis && allOther) risk = "crisis";
+
+  const decisive = ok.find((r) => r.risk === "crisis") ?? ok.find((r) => r.risk === "watch") ?? ok[0];
+  return {
+    risk, subject, stage, decidedBy,
+    keywords: rules.keywords, patterns: rules.patterns, idiomExempted: rules.idiomExempted,
+    model: { risk: ok.map((r) => r.risk).join("/") || "判定器エラー", subject, reason: decisive?.reason ?? "判定器エラー" },
+    classifierError: errors.length ? errors.map((r) => r.error).join(" | ") : null,
+    usedModel: decisive?.model ?? null,
+    votes: results,
+  };
 }
