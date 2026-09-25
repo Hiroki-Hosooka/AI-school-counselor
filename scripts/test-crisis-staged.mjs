@@ -53,6 +53,7 @@ const OUT = path.resolve(ROOT, arg("out", `docs/test-results/crisis-staged-${set
 const PRIMARY_MODEL = LITE_MODELS[0];
 LITE_MODELS.splice(1);
 const TIMEOUT_MS = arg("timeout-ms", "120000");
+const PATIENCE = Number(arg("patience", 6));
 process.env.CRISIS_CLASSIFIER_TIMEOUT_MS = TIMEOUT_MS;
 
 const items = JSON.parse(readFileSync(SET_PATH, "utf8")).items;
@@ -108,9 +109,16 @@ async function judge(version, item) {
     lastMs = Date.now() - t0;
     return r;
   };
-  const r = await withRateLimitRetry(KEY_POOL, attempt, isTransient, { state: ROTATION, label: `${version}: ` });
+  let r = await withRateLimitRetry(KEY_POOL, attempt, isTransient, { state: ROTATION, label: `${version}: ` });
+  // 無料枠の混雑(503)は数分で収まることが多いので、待ってから何度か試し直す(--patience 回。待ち時間は1分から最大5分)
+  for (let round = 1; isTransient(r) && round <= PATIENCE; round++) {
+    const waitMs = Math.min(60000 * round, 300000);
+    console.error(`    ${version}: すべてのキーで上限・混雑。${waitMs / 1000}秒待って試し直します(${round}/${PATIENCE})`);
+    await sleep(waitMs);
+    r = await withRateLimitRetry(KEY_POOL, attempt, isTransient, { state: ROTATION, label: `${version}: ` });
+  }
   currentJudgment = null;
-  // すべてのキーで上限・混雑のまま → 記録せずに中断する(本番では起きにくい失敗を、判定の結果として数えないため)
+  // それでも上限・混雑のまま → 記録せずに中断する(本番では起きにくい失敗を、判定の結果として数えないため)
   if (isTransient(r)) return { paused: true, error: r.classifierError };
   // v2 が待たなかった回(危機と確定した後の残り)も本番では費用がかかるので、返ってくるのを待ってから数える
   // (待ち時間 ms はこの前に測り終えている)
