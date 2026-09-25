@@ -173,10 +173,10 @@ async function generatePersonaLine(system, contents) {
   return { ok: true, line: result.line, model: result.model };
 }
 
-async function generateWithRetry(system, messages) {
+async function generateWithRetry(system, messages, priorFailureCount) {
   return withRateLimitRetry(
     PAID_KEY_POOL,
-    () => generateReply(system, messages),
+    () => generateReply(system, messages, undefined, undefined, undefined, priorFailureCount),
     isTransientGenerateFailure,
     { label: "相談AI: ", state: COUNSELOR_KEY_ROTATION },
   );
@@ -289,7 +289,11 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
     const counselorMessages = history.filter((h) => !h.crisis)
       .map((h) => ({ role: h.speaker === "student" ? "user" : "model", parts: [{ text: h.text }] }));
 
-    const { out, flags, usedModel: counselorModel, usage, generationFailed, failureCause } = await generateWithRetry(system, counselorMessages);
+    // このセッションで既に何回、生成失敗の固定応答を返しているか(2026年9月・2-2)。
+    // 同じ文言を繰り返さないよう generateReply() に渡す。
+    const priorFailureCount = turnLog.filter((t) => t.generation_failed).length;
+    const { out, flags, usedModel: counselorModel, usage, generationFailed, failureCause, failureDetail } =
+      await generateWithRetry(system, counselorMessages, priorFailureCount);
     recordCall(budget, usage, counselorModel);
 
     const updated = applyTurnUpdate(sessState, out);
@@ -328,6 +332,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       did_summarize: out.did_summarize === true, phase: mergedIntake.phase,
       closing_event: out.closing_event ?? "none", closing_state: mergedIntake.closing_state,
       flags, generation_failed: generationFailed === true, failure_cause: failureCause ?? null,
+      failure_detail: failureDetail || null,
     });
     console.log(`  [T${turn}] AI: ${out.reply.slice(0, 30)} (weight=${updated.weight} relation=${updated.relation} phase=${mergedIntake.phase} model=${counselorModel ?? "不明"}${flags.length ? ` flags=${JSON.stringify(flags)}` : ""})`);
 
@@ -368,9 +373,13 @@ function ngFlagCheck(turnLog) {
 // 自動判定条件には無いが、全ペルソナ共通で必ずチェックする(生成失敗の発生率を見逃さないため)。
 function generationFailureCheck(turnLog) {
   const bad = turnLog.filter((t) => t.generation_failed);
+  // failure_detail(実際のエラーメッセージ。2026年9月・2-2)も併記する。「不明なエラー」の
+  // 中身を追えるようにするため(この行の変更元がまさにそれ)。
   return {
     pass: bad.length === 0,
-    detail: bad.length ? `T${bad.map((t) => t.turn).join(",")}で相談AI本体の生成失敗(${bad.map((t) => t.failure_cause).join(",")})` : "生成失敗なし",
+    detail: bad.length
+      ? `T${bad.map((t) => t.turn).join(",")}で相談AI本体の生成失敗(${bad.map((t) => `${t.failure_cause}${t.failure_detail ? `: ${t.failure_detail}` : ""}`).join(" / ")})`
+      : "生成失敗なし",
   };
 }
 
@@ -577,6 +586,7 @@ function buildPersonaTranscript(persona, sessions, automated, intake) {
       } else {
         lines.push(`T${t.turn} AI  [${t.counselor_model ?? "不明"} weight=${t.weight} relation=${t.relation} phase=${t.phase}]: ${t.counselor}`);
         if (t.flags?.length) lines.push(`  ⚠ flags: ${JSON.stringify(t.flags)}`);
+        if (t.failure_detail) lines.push(`  ⚠ failure_detail: ${t.failure_detail}`);
       }
     }
     lines.push("");

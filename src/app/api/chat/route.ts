@@ -317,10 +317,15 @@ export async function POST(req: Request) {
       );
 
       const { data: hist } = await db.from("messages")
-        .select("role,body,crisis").eq("session_id", sessionId).order("seq");
+        .select("role,body,crisis,flags").eq("session_id", sessionId).order("seq");
       const messages = (hist ?? [])
         .filter((h) => !h.crisis)
         .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.body }] }));
+      // このセッションで既に何回、生成失敗の固定応答を返しているか(2026年9月・2-2)。
+      // 同じ文言を繰り返さないよう generateReply() に渡す(嶋先生「同じメッセージが
+      // 2回来ると傷つく」の指摘への対処)。
+      const priorFailureCount = (hist ?? []).filter((h: { flags?: string[] | null }) =>
+        h.flags?.some((f) => f.startsWith("生成失敗→固定応答で継続"))).length;
 
       const { data: memory } = await db.from("person_memory")
         .select("summary").eq("client_id", clientId).maybeSingle();
@@ -331,7 +336,7 @@ export async function POST(req: Request) {
         safetyContext, sess,
       );
 
-      const { out, flags } = await generateReply(system, messages);
+      const { out, flags } = await generateReply(system, messages, undefined, undefined, undefined, priorFailureCount);
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);

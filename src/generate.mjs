@@ -611,43 +611,84 @@ function addUsage(a, b) {
 //  thinkingBudget:-1と大きめのmaxOutputTokensを渡す(liteはthinkingBudget:0を
 //  受け付けないため。src/classify.mjsのcallGeminiOnceのコメント参照)。
 // ============================================================================
-export async function generateReply(system, messages, models = PRIMARY_MODELS, maxOutputTokens = 1500, thinkingBudget = 0) {
+// 生成に最終的に失敗したとき(1回再試行しても駄目だった場合)の固定応答。
+// 同じセッション内で同じ文言を繰り返さないよう、priorFailureCount(このセッションで
+// 既に何回生成失敗があったか。呼び出し側が数えて渡す)に応じて選ぶ(2026年9月・2-2。
+// 嶋先生「同じメッセージが2回来ると傷つく」の指摘への対処。full×2実行で同一セッション
+// 内に4回同じ定型文が出た実例があった)。「違う言い方で書いてみて」のような、相手の
+// 言い方に原因があるかのような言い方は避け、こちら側の不調として引き取る方向にした。
+// 文面自体はまだ案であり、心理士確認後に見直す前提(persona-tests-4-5.md 2-2)。
+const GENERATION_FAILURE_REPLIES = [
+  "ごめん、いま自分の方でうまく受け取れなかったみたい。もう少しだけ聞かせてもらえる?",
+  "またうまく受け取れなくてごめん。焦らなくていいから、ちょっとずつでも大丈夫だよ。",
+];
+function pickFailureReply(priorFailureCount) {
+  const idx = Math.min(Math.max(priorFailureCount, 0), GENERATION_FAILURE_REPLIES.length - 1);
+  return GENERATION_FAILURE_REPLIES[idx];
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function generateReply(
+  system, messages, models = PRIMARY_MODELS, maxOutputTokens = 1500, thinkingBudget = 0, priorFailureCount = 0,
+) {
   let out;
   let generationFailed = false;
   let failureCause = "";
+  // 実際のエラーメッセージ(2026年9月・2-2)。failureCauseの4分類に当てはまらない
+  // 場合は「不明なエラー」に落ちるが、これまではその中身をconsole.errorで流すだけで
+  // どこにも残していなかった(full×2実行の17件の生成失敗が全て「不明なエラー」に
+  // 分類され、原因究明の材料が無かった)。呼び出し側でログに残せるよう返り値に含める。
+  let failureDetail = "";
   // 実際に採用されたout(最終的に返す返答)を生成したモデルID。NG検知→再生成が
   // 成功した場合は下でretryResult.modelに上書きする。全滅時はnull
   // (2026年9月・検証一式のログ充実要望。callGemini()のコメント参照)。
   let usedModel = null;
   // 実際に消費したトークン(初回+再生成があれば合算。2026年9月・モデル比較検証)。
   let usage = null;
+
+  async function attempt(modelList) {
+    const result = await callGemini(modelList, system, messages, maxOutputTokens, thinkingBudget);
+    return { parsed: parseJSON(result.text), result };
+  }
+
   try {
-    const result = await callGemini(models, system, messages, maxOutputTokens, thinkingBudget);
-    out = parseJSON(result.text);
-    usedModel = result.model;
-    usage = result.usage;
-  } catch (e) {
-    console.error("生成に失敗しました:", e);
-    generationFailed = true;
-    const msg = e instanceof Error ? e.message : String(e);
-    failureCause = msg.includes("[RATE_LIMIT]") ? "レート制限(429)"
-      : msg.includes("[BLOCKED]") ? "安全フィルタ等で応答が空"
-      // Google側の一時的な過負荷(2026年9月・モデル比較検証で複数モデルにまたがって
-      // 頻発することを確認。数十秒後の直接curl再現テストでは成功しており、
-      // リクエスト内容ではなくGoogle側の一時的な状態によるものと判断した)。
-      : msg.includes("[HTTP_503]") ? "サービス過負荷(503)"
-      // 応答本文がJSONとして読み取れなかった場合(2026年9月・ペルソナ多ターン回帰
-      // テストのfull×2実行で複数回確認。会話履歴が長くなるほど起きやすい様子)。
-      // 生徒役の発言生成では同じ症状を既に再試行対象にしていた(test-persona-
-      // regression.mjsのgeneratePersonaLine)。こちらも同様に一時的な出力の
-      // 揺れとみなし、再試行対象に加える(isTransientGenerateFailure参照)。
-      : msg.includes("応答をJSONとして読み取れませんでした") ? "応答形式エラー"
-      : "不明なエラー";
-    out = {
-      reply: "ごめんね、うまく言葉が出てこなかった。もう一度、違う言い方で書いてみてくれる?",
-      used: [],
-      why: `生成失敗(${failureCause})`,
-    };
+    const { parsed, result } = await attempt(models);
+    out = parsed; usedModel = result.model; usage = result.usage;
+  } catch (firstErr) {
+    // 定型文を出す前に、短い待機を挟んで1回だけ再試行する(2026年9月・2-2)。
+    // 直前に失敗したモデルは外し、リストに複数あれば次のモデル(フォールバック)で試す
+    // (単純にmodels[0]から再試行すると、同じモデルに同じ失敗をもう一度求めるだけになる)。
+    console.error("生成に失敗しました。再試行します:", firstErr);
+    await sleep(3000);
+    const retryModels = models.length > 1 ? models.slice(1) : models;
+    try {
+      const { parsed, result } = await attempt(retryModels);
+      out = parsed; usedModel = result.model; usage = result.usage;
+    } catch (secondErr) {
+      console.error("再試行後も生成に失敗しました:", secondErr);
+      generationFailed = true;
+      const msg = secondErr instanceof Error ? secondErr.message : String(secondErr);
+      failureDetail = msg;
+      failureCause = msg.includes("[RATE_LIMIT]") ? "レート制限(429)"
+        : msg.includes("[BLOCKED]") ? "安全フィルタ等で応答が空"
+        // Google側の一時的な過負荷(2026年9月・モデル比較検証で複数モデルにまたがって
+        // 頻発することを確認。数十秒後の直接curl再現テストでは成功しており、
+        // リクエスト内容ではなくGoogle側の一時的な状態によるものと判断した)。
+        : msg.includes("[HTTP_503]") ? "サービス過負荷(503)"
+        // 応答本文がJSONとして読み取れなかった場合(2026年9月・ペルソナ多ターン回帰
+        // テストのfull×2実行で複数回確認。会話履歴が長くなるほど起きやすい様子)。
+        // 生徒役の発言生成では同じ症状を既に再試行対象にしていた(test-persona-
+        // regression.mjsのgeneratePersonaLine)。こちらも同様に一時的な出力の
+        // 揺れとみなし、再試行対象に加える(isTransientGenerateFailure参照)。
+        : msg.includes("応答をJSONとして読み取れませんでした") ? "応答形式エラー"
+        : "不明なエラー";
+      out = {
+        reply: pickFailureReply(priorFailureCount),
+        used: [],
+        why: `生成失敗(${failureCause})`,
+      };
+    }
   }
 
   // ---- 出力チェック ----
@@ -668,7 +709,7 @@ export async function generateReply(system, messages, models = PRIMARY_MODELS, m
     } catch { /* 再生成に失敗したら1回目を使い、フラグ・usedModelはそのまま残す */ }
   }
 
-  return { out, flags, generationFailed, failureCause, usedModel, usage };
+  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage };
 }
 
 // ============================================================================
