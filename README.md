@@ -31,6 +31,7 @@ Postgres(Supabase。データベースとしてのみ利用)
 | `db/seed_knowledge.sql` | 同上(schema.sql の後) |
 | `db/seed_knowledge_structured.sql` | 同上(seed_knowledge.sql の後。構造化面接AI統合 手順3で追加した技法カタログ) |
 | `db/seed_knowledge_safety.sql` | 同上(seed_knowledge_structured.sql の後。構造化面接AI統合 手順4で追加した安全層のナレッジ) |
+| `db/seed_knowledge_boundaries.sql` | 同上(seed_knowledge_safety.sql の後。テスト4/5 2-1で追加した「秘密の約束をしない」ナレッジ) |
 | `db/knowledge.json` | バックアップ用。DB を作り直すとき用 |
 | `src/safety.mjs` | 安全層(CRISIS_WORDS/OUTPUT_NG)の共通モジュール |
 | `src/app/api/chat/route.ts` | バックエンド本体。Vercelにデプロイされる |
@@ -49,7 +50,8 @@ Edge Function は使わないので、作るのはプロジェクトとテーブ
 
 SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` を実行 →
 続けて `db/seed_knowledge_structured.sql` を実行(構造化面接AI統合 手順3。技法カタログ) →
-続けて `db/seed_knowledge_safety.sql` を実行(構造化面接AI統合 手順4。安全層のナレッジ)。
+続けて `db/seed_knowledge_safety.sql` を実行(構造化面接AI統合 手順4。安全層のナレッジ) →
+続けて `db/seed_knowledge_boundaries.sql` を実行(テスト4/5 2-1。秘密の約束をしないナレッジ)。
 
 **既にSupabaseプロジェクトを作成済みの場合も、`db/schema.sql` は毎回必ず再実行してください。**
 このファイルは `create table if not exists` / `add column if not exists` / (ビューは

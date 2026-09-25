@@ -66,6 +66,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── seed_knowledge.sql            ナレッジ初期データ 140件
 │   ├── seed_knowledge_structured.sql 構造化面接AI統合 手順3で追加した29件(出典 技/嶋)
 │   ├── seed_knowledge_safety.sql     構造化面接AI統合 手順4で追加した4件(出典 設。D3〜D6)
+│   ├── seed_knowledge_boundaries.sql テスト4/5 2-1で追加した1件(出典 設。D7。秘密の約束禁止)
 │   └── knowledge.json                バックアップ(140件時点。上記の追加分は未反映)
 ├── scripts/
 │   └── test-output-check.mjs
@@ -85,7 +86,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 
 ## 3. ナレッジベース
 
-`knowledge` テーブル。173件(構造化面接AI統合前は140件)。**コードに知識を書かないこと。**
+`knowledge` テーブル。174件(構造化面接AI統合前は140件)。**コードに知識を書かないこと。**
 追加・修正はすべてDBへ。
 
 ### 出典タグ（`src`）
