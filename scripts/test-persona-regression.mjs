@@ -520,6 +520,7 @@ const logsDir = path.join(resultsDir, `persona-logs-${runId}`);
 mkdirSync(logsDir, { recursive: true });
 
 const personaReports = [];
+const allSessions = [];
 let globalBudgetStop = false;
 
 outer:
@@ -552,6 +553,7 @@ for (const persona of personas) {
       sessions = [s];
       if (s.budgetStop) globalBudgetStop = true;
     }
+    allSessions.push(...sessions);
 
     const allTurnLog = sessions.flatMap((s) => s.turnLog);
     const lastSessState = sessions[sessions.length - 1].sessState;
@@ -596,6 +598,18 @@ for (const r of personaReports) {
   console.log(`  [${r.persona}] ${r.intake.completed ? `T${r.intake.turn}で完了` : `未完了(不足: ${r.intake.missing_slots.join(",") || "なし"})`}`);
 }
 
+// 相談AI本体の生成失敗率(2026年9月・persona-tests-4-5.md 1-2)。禁止表現の検知とは別指標として、
+// 実DBセッション単位(C2の2回セッションはそれぞれ1件と数える)で集計する。ペルソナ固有の
+// 合否とは独立に、実行全体を通したインフラ起因の不安定さを見えるようにするため。
+const turnsTotal = allSessions.reduce((sum, s) => sum + s.turnLog.length, 0);
+const turnsFailed = allSessions.reduce((sum, s) => sum + s.turnLog.filter((t) => t.generation_failed).length, 0);
+const sessionsWithFailure = allSessions.filter((s) => s.turnLog.some((t) => t.generation_failed)).length;
+const turnFailureRate = turnsTotal ? turnsFailed / turnsTotal : 0;
+const sessionFailureRate = allSessions.length ? sessionsWithFailure / allSessions.length : 0;
+console.log("\n=== 相談AI本体の生成失敗率 ===");
+console.log(`  ターン単位: ${turnsFailed}/${turnsTotal} (${(turnFailureRate * 100).toFixed(1)}%)`);
+console.log(`  セッション単位(1回以上発生): ${sessionsWithFailure}/${allSessions.length} (${(sessionFailureRate * 100).toFixed(1)}%)`);
+
 const finalizeExtra = {
   stage: STAGE, personas: personas.map((p) => p.id), repeats: REPEATS,
   budget_stop: globalBudgetStop,
@@ -609,6 +623,10 @@ writeFileSync(path.join(resultsDir, jsonFileName), JSON.stringify({
   counselor_models: PRIMARY_MODELS, support_models: LITE_MODELS,
   logs_dir: path.relative(ROOT, logsDir),
   budget: { limit_yen: budget.limitYen, session_cost_usd: budget.sessionCostUsd, cumulative_yen_after: cumulativeYen, budget_stop: globalBudgetStop },
+  generation_failure_stats: {
+    turns_total: turnsTotal, turns_failed: turnsFailed, turn_rate: turnFailureRate,
+    sessions_total: allSessions.length, sessions_with_failure: sessionsWithFailure, session_rate: sessionFailureRate,
+  },
   personas: personaReports,
 }, null, 2));
 
