@@ -306,7 +306,7 @@ export async function POST(req: Request) {
       let stagedOn = stagedResponseEnabled();
       const sessWithState = stagedOn
         ? await db.from("sessions")
-          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown")
+          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used")
           .eq("id", sessionId).single()
         : null;
       if (sessWithState?.error) {

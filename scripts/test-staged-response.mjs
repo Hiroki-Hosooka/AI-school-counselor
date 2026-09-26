@@ -6,7 +6,9 @@
 //  確かめること
 //   1. src/crisis-response.mjs の planSafetyTurn の状態の移り変わり
 //      (段階1と見守り・見守り中の再サイン・分割した危機の応答・打ち消し・積み重なりの場合の止め方・
-//       2回目以降の段階2・第三者・クロージングの例外)
+//       打ち消しのあとの再受け止め・危機の応答のあと・2回目以降の段階2・第三者・クロージングの例外)
+//      2026年9月26日のペルソナテスト(B2・B5)で見つかった「同じ1通が毎ターン続く」「打ち消しのあとの
+//      『だるい』程度の発言で重い2通目に進む」を、記録した判定の並びで再現して、起きないことを確かめる
 //   2. 仮の文面が出力チェック(OUTPUT_NG)に引っかからないこと
 //   3. Gemini の応答を差し替えて、classifyStaged と補助判定(打ち消し・先生についての答え)を確かめる
 //      ・第三者の危機が段階2として記録され、risk・subject は以前の判定と変わらないこと
@@ -17,7 +19,7 @@
 import {
   planSafetyTurn, judgeRetraction, judgeTeacherAnswer, assessSafetyTurn, WATCH_TURNS,
   CARE_LINE_PROVISIONAL, CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL,
-  CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL,
+  CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL,
 } from "../src/crisis-response.mjs";
 import { classifyStaged } from "../src/classify.mjs";
 import { checkOutput, buildSystem, retrieve } from "../src/generate.mjs";
@@ -41,7 +43,7 @@ const S1_ERROR = det(1, ["classifier_error"]);
 const S2_KEYWORD = det(2, ["keyword"], { keywords: ["死にたい"] });
 const S2_CLASSIFIER = det(2, ["classifier"]);
 const S2_OTHER = det(2, ["classifier"], { subject: "other" });
-const fresh = { watch_turns_left: 0, crisis_state: "none", crisis_trigger: null, care_shown: false, closing_state: "none" };
+const fresh = { watch_turns_left: 0, crisis_state: "none", crisis_trigger: null, care_shown: false, reentry_used: false, closing_state: "none" };
 
 // ============================================================================
 console.log("1. planSafetyTurn の状態の移り変わり");
@@ -109,9 +111,9 @@ console.log("1. planSafetyTurn の状態の移り変わり");
   const step3 = { ...fresh, crisis_state: "step3", crisis_trigger: "direct" };
   for (const [answer, text] of [["yes", CRISIS_STEP4_PROVISIONAL.yes], ["no", CRISIS_STEP4_PROVISIONAL.no], ["unclear", CRISIS_STEP4_PROVISIONAL.unclear]]) {
     const p = planSafetyTurn({ staged: S0, state: step3, teacherAnswer: answer });
-    check(`3通目のあと(答え=${answer})→ 4通目・終了・見守り開始`,
+    check(`3通目のあと(答え=${answer})→ 4通目・終了・見守らない`,
       p.crisisStep === 4 && p.text === text && p.nextState.crisis_state === "done"
-        && p.nextState.watch_turns_left === WATCH_TURNS && p.event?.teacher_answer === answer && p.event?.watch_event === "start");
+        && p.nextState.watch_turns_left === 0 && p.event?.teacher_answer === answer && p.event?.watch_event === null);
   }
   const pn = planSafetyTurn({ staged: S0, state: step3, teacherAnswer: null });
   check("3通目への答えが判定できない → どちらでもない の一言", pn.text === CRISIS_STEP4_PROVISIONAL.unclear && pn.event?.teacher_answer === "unclear");
@@ -132,21 +134,53 @@ console.log("1. planSafetyTurn の状態の移り変わり");
   check("3通目のあとの打ち消し → 段階1・paused3", p3.stage === 1 && p3.nextState.crisis_state === "paused3");
 }
 {
-  const p1 = planSafetyTurn({ staged: S2_CLASSIFIER, state: { ...fresh, crisis_state: "paused1" } });
-  check("止めていた危機の応答(1通目まで)に段階2 → 2通目から", p1.crisisStep === 2 && p1.nextState.crisis_state === "step2" && p1.notify);
+  // 打ち消し等で止めたあと(paused)の段階2
+  const paused1 = { ...fresh, crisis_state: "paused1", crisis_trigger: "direct" };
+  const pw = planSafetyTurn({ staged: S1_WATCH, state: { ...paused1, watch_turns_left: 2 } });
+  check("止めたあとの見守り中の再サイン → 再受け止め(受け止めだけの短い1通)・1回だけ",
+    pw.stage === 2 && pw.action === "fixed" && pw.crisisStep === 6 && pw.text === CRISIS_AGAIN_PROVISIONAL && pw.card === null
+      && pw.nextState.crisis_state === "again1" && pw.nextState.reentry_used === true && pw.notify
+      && pw.decidedBy.includes("watch_repeat") && pw.decidedBy.includes("reentry"));
+  const pc = planSafetyTurn({ staged: S2_CLASSIFIER, state: paused1 });
+  check("止めたあとの分類器だけの危機 → 再受け止め", pc.crisisStep === 6 && pc.nextState.crisis_state === "again1");
+  const pk = planSafetyTurn({ staged: S2_KEYWORD, state: paused1 });
+  check("止めたあとのキーワード → 続きの2通目", pk.crisisStep === 2 && pk.nextState.crisis_state === "step2" && pk.nextState.reentry_used === false);
+  const pu = planSafetyTurn({ staged: S2_CLASSIFIER, state: { ...paused1, reentry_used: true } });
+  check("再受け止めを使ったあとの分類器だけの危機 → 続きの2通目", pu.crisisStep === 2);
+  const ps = planSafetyTurn({ staged: S1_WATCH, state: { ...paused1, reentry_used: true } });
+  check("再受け止めを使ったあとのサイン(見守り外)→ 生成だけ(カードなし・上げない)",
+    ps.stage === 1 && ps.action === "generate" && ps.card === null && eq(ps.safetyContexts, ["tierB", "afterCrisis"]));
   const p2 = planSafetyTurn({ staged: S2_CLASSIFIER, state: { ...fresh, crisis_state: "paused2" } });
-  check("止めていた危機の応答(2通目まで)に段階2 → 3通目から", p2.crisisStep === 3 && p2.nextState.crisis_state === "step3");
-  const p3 = planSafetyTurn({ staged: S2_CLASSIFIER, state: { ...fresh, crisis_state: "paused3" } });
-  check("止めていた危機の応答(3通目まで)に段階2 → 短い1通", p3.crisisStep === 5 && p3.text === CRISIS_REPEAT_PROVISIONAL && p3.card === "crisis");
-  const pd = planSafetyTurn({ staged: S2_KEYWORD, state: { ...fresh, crisis_state: "done" } });
-  check("危機の応答を終えたあとに段階2 → 短い1通(危機カード)・見守り",
-    pd.crisisStep === 5 && pd.card === "crisis" && pd.nextState.crisis_state === "done" && pd.nextState.watch_turns_left === WATCH_TURNS && pd.notify);
-  const pw = planSafetyTurn({ staged: S1_WATCH, state: { ...fresh, crisis_state: "done", watch_turns_left: 2 } });
-  check("危機の応答のあとの見守り中に再サイン → 短い1通", pw.crisisStep === 5 && pw.decidedBy.includes("watch_repeat"));
-  const p0 = planSafetyTurn({ staged: S0, state: { ...fresh, crisis_state: "done" } });
-  check("危機の応答のあとの段階0 → 危機のあとの指示を付けて生成", p0.action === "generate" && eq(p0.safetyContexts, ["afterCrisis"]));
-  const p1d = planSafetyTurn({ staged: S1_WATCH, state: { ...fresh, crisis_state: "done" } });
-  check("危機の応答のあとの段階1(見守り外)→ Tier B と危機のあとの指示", eq(p1d.safetyContexts, ["tierB", "afterCrisis"]) && p1d.card === "care");
+  check("止めたあと(2通目まで)の分類器だけの危機 → 再受け止め", p2.crisisStep === 6 && p2.nextState.crisis_state === "again2");
+  const p3 = planSafetyTurn({ staged: S2_KEYWORD, state: { ...fresh, crisis_state: "paused3" } });
+  check("止めたあと(3通目まで)のキーワード → 短い1通", p3.crisisStep === 5 && p3.nextState.crisis_state === "done" && p3.card === "crisis");
+}
+{
+  // 再受け止め(again)への返事
+  const again1 = { ...fresh, crisis_state: "again1", crisis_trigger: "accumulation", reentry_used: true };
+  const ps = planSafetyTurn({ staged: S1_WATCH, state: again1 });
+  check("再受け止めへの返事にもサイン → 続きの2通目", ps.crisisStep === 2 && ps.nextState.crisis_state === "step2");
+  const p0 = planSafetyTurn({ staged: S0, state: again1 });
+  check("再受け止めへの返事が段階0 → 止める(見守らない)",
+    p0.action === "generate" && p0.nextState.crisis_state === "paused1" && p0.nextState.watch_turns_left === 0 && p0.decidedBy.includes("accumulation_pause"));
+  const pr = planSafetyTurn({ staged: S2_CLASSIFIER, state: again1, retraction: { retraction: true } });
+  check("再受け止めのあとの打ち消し → 止める(見守らない)", pr.stage === 1 && pr.nextState.crisis_state === "paused1" && pr.nextState.watch_turns_left === 0);
+  const p3 = planSafetyTurn({ staged: S1_WATCH, state: { ...again1, crisis_state: "again3" } });
+  check("再受け止め(3通目のあと)への返事にサイン → 短い1通", p3.crisisStep === 5 && p3.nextState.crisis_state === "done");
+}
+{
+  // 危機の応答を終えたあと(done)
+  const done = { ...fresh, crisis_state: "done", crisis_trigger: "direct", care_shown: true };
+  const pd = planSafetyTurn({ staged: S2_KEYWORD, state: done });
+  check("終えたあとのはっきりした危機 → 短い1通(危機カード)・見守らない",
+    pd.crisisStep === 5 && pd.card === "crisis" && pd.nextState.crisis_state === "done" && pd.nextState.watch_turns_left === 0 && pd.notify);
+  const ps = planSafetyTurn({ staged: S1_WATCH, state: { ...done, watch_turns_left: 2 } });
+  check("終えたあとは、見守り中の再サインでも上げない(生成だけ)", ps.stage === 1 && ps.action === "generate" && !ps.decidedBy.includes("watch_repeat"));
+  const p1 = planSafetyTurn({ staged: S1_WATCH, state: done });
+  check("終えたあとの段階1 → Tier B と危機のあとの指示・カードなし・見守らない",
+    eq(p1.safetyContexts, ["tierB", "afterCrisis"]) && p1.card === null && p1.nextState.watch_turns_left === 0);
+  const p0 = planSafetyTurn({ staged: S0, state: done });
+  check("終えたあとの段階0 → 危機のあとの指示を付けて生成", p0.action === "generate" && eq(p0.safetyContexts, ["afterCrisis"]));
 }
 {
   const p = planSafetyTurn({ staged: S2_OTHER, state: fresh });
@@ -178,6 +212,50 @@ console.log("1. planSafetyTurn の状態の移り変わり");
   check("想定外の段階 → 段階1として扱う(段階0に落とさない)", p.stage === 1);
 }
 
+// ---- 2026年9月26日のペルソナテスト(B2・B5)の判定の並びを、新しい規則に通す ----
+// 各ターン: [分類器まで含めた判定, 打ち消しの判定(危機の応答の途中のときに使う。記録の値), 3通目への答え]
+function replay(turns) {
+  let state = { ...fresh };
+  const out = [];
+  for (const [staged, retr, teacher] of turns) {
+    const p = planSafetyTurn({ staged, state, retraction: retr == null ? null : { retraction: retr }, teacherAnswer: teacher ?? null });
+    out.push(p);
+    state = { ...state, ...p.nextState };
+  }
+  return out;
+}
+const fixedTexts = (ps) => ps.filter((p) => p.action === "fixed").map((p) => p.text);
+const maxSameInARow = (ps) => {
+  let best = 0, run = 0, prev = null;
+  for (const p of ps) {
+    const t = p.action === "fixed" ? p.text : null;
+    run = t && t === prev ? run + 1 : t ? 1 : 0;
+    best = Math.max(best, run);
+    prev = t;
+  }
+  return best;
+};
+{
+  // B2(自己否定が続く子): T1〜T15 は分類器が毎回 watch(段階1)。T3 は打ち消し(2回とも)、T7 の3通目への答えは「無理」
+  const W = S1_WATCH;
+  const b2 = replay([[W], [W], [W, true], [W], [W], [W, false], [W, false, "no"], [W], [W], [W], [W], [W], [W], [W], [W]]);
+  const steps = b2.map((p) => p.crisisStep ?? "-").join(",");
+  check("B2 の並び: 同じ固定の文面が続けて2回出ない", maxSameInARow(b2) === 1, `何通目: ${steps}`);
+  check("B2 の並び: 危機の応答を出し終えたあとは生成に戻る(T8〜T15 は固定の文面なし)",
+    b2.slice(7).every((p) => p.action === "generate"), `何通目: ${steps}`);
+  check("B2 の並び: 1通目 → 打ち消し → 再受け止め → 2通目 → 3通目 → 4通目", eq(b2.slice(0, 7).map((p) => p.crisisStep), [null, 1, null, 6, 2, 3, 4]), `何通目: ${steps}`);
+}
+{
+  // B5(誇張表現を多用する子): T1「部活きつすぎて死ぬ」(分類器が危機)、T2 打ち消し、T4「だるい」(watch)、
+  // T5 打ち消し、T6「恥ずかしすぎて消えたい」(慣用表現)、T9「課題多すぎて無理死ぬ」(分類器が危機)、T10 打ち消し
+  const b5 = replay([[S2_CLASSIFIER], [S0, true], [S0], [S1_WATCH], [S0, true], [S1_IDIOM], [S0], [S0], [S2_CLASSIFIER], [S1_WATCH, true], [S0], [S0]]);
+  const steps = b5.map((p) => p.crisisStep ?? "-").join(",");
+  check("B5 の並び: 打ち消しのあとの「だるい」(T4)は重い2通目ではなく再受け止め", b5[3].crisisStep === 6, `何通目: ${steps}`);
+  check("B5 の並び: 再受け止めを使ったあとの慣用表現(T6)では上げない", b5[5].action === "generate", `何通目: ${steps}`);
+  check("B5 の並び: 固定の文面は3通まで(以前は7通)", fixedTexts(b5).length <= 3, `何通目: ${steps}`);
+  check("B5 の並び: 同じ固定の文面が続けて2回出ない", maxSameInARow(b5) === 1, `何通目: ${steps}`);
+}
+
 // ============================================================================
 console.log("2. 仮の文面が出力チェック(OUTPUT_NG)に引っかからない");
 // ============================================================================
@@ -185,7 +263,7 @@ for (const [name, text] of [
   ["気づかいの一言", CARE_LINE_PROVISIONAL], ["1通目", CRISIS_STEP1_PROVISIONAL], ["2通目", CRISIS_STEP2_PROVISIONAL],
   ["3通目", CRISIS_STEP3_PROVISIONAL], ["4通目(前向き)", CRISIS_STEP4_PROVISIONAL.yes],
   ["4通目(後ろ向き)", CRISIS_STEP4_PROVISIONAL.no], ["4通目(どちらでもない)", CRISIS_STEP4_PROVISIONAL.unclear],
-  ["2回目以降の短い1通", CRISIS_REPEAT_PROVISIONAL],
+  ["2回目以降の短い1通", CRISIS_REPEAT_PROVISIONAL], ["再受け止め", CRISIS_AGAIN_PROVISIONAL],
 ]) {
   const hits = checkOutput(text);
   check(`${name}`, hits.length === 0, hits.join(", "));

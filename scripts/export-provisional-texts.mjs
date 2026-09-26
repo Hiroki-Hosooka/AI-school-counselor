@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
   CARE_LINE_PROVISIONAL, CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL,
-  CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, RETRACTION_BLOCK_PROVISIONAL, AFTER_CRISIS_BLOCK_PROVISIONAL,
+  CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL,
+  RETRACTION_BLOCK_PROVISIONAL, AFTER_CRISIS_BLOCK_PROVISIONAL,
   WATCH_TURNS,
 } from "../src/crisis-response.mjs";
 
@@ -46,9 +47,10 @@ AI は返事を生成せず、下の決まった文面を **1通ずつ、相談�
 
 - 1通目を受け止めだけにして、誤検知だった場合の負担を小さくし、リスクを尋ねる質問をせずに一呼吸おきます。
 - 途中で「冗談だよ」「大げさに言っただけ」などと打ち消された場合は、残りの文面を出さず、見守り(${WATCH_TURNS}ターン)に戻します。
-  窓口の表示はそのまま残します。
-- 4通目のあとは、ふだんの会話(生成)に戻します。そのあとも、危機の内容を深掘りしない・窓口の案内をくり返さない・
-  秘密にすると約束しない、という指示を付けます。
+  窓口の表示はそのまま残します。見守り中にもう一度サインが出たときは、続きの重い文面からではなく、
+  受け止めだけの短い1通(再受け止め。下の「参考」)から始めます(1回の会話で1回まで)。
+- 4通目のあとは、ふだんの会話(生成)に戻し、見守りはしません。そのあとも、危機の内容を深掘りしない・窓口の案内を
+  くり返さない・この先の対応を約束しない・人に話すことに同調して否定しない、という指示を付けます。
 - 画面下の常設の表示(119番・24時間子供SOSダイヤル)は、どの場面でも変えていません。
 
 ## 1通目 受け止めだけ
@@ -123,7 +125,12 @@ ${quote(CRISIS_STEP4_PROVISIONAL.unclear)}
 
 ${quote(CARE_LINE_PROVISIONAL)}
 
-**同じ会話で2回目以降の危機(短い1通。危機カードを添える)** 4通目まで出し終えたあとに、もう一度危機と判定したとき
+**打ち消しのあとの再受け止め(受け止めだけの短い1通)** 打ち消しのあとの見守り中にもう一度サインが出たとき、
+または分類器だけが危機と判定したとき(1回の会話で1回まで。次の返事にもサインがあるときだけ続きの文面に進む)
+
+${quote(CRISIS_AGAIN_PROVISIONAL)}
+
+**同じ会話で2回目以降の危機(短い1通。危機カードを添える)** 4通目まで出し終えたあとに、もう一度はっきりした危機と判定したとき
 
 ${quote(CRISIS_REPEAT_PROVISIONAL)}
 

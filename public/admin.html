@@ -420,7 +420,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       var parts = [];
       if (e.stage != null) parts.push("段階" + e.stage);
       parts.push("risk=" + e.risk + (e.subject ? "/" + e.subject : ""));
-      if (e.crisis_step) parts.push("危機の応答 " + (e.crisis_step === 5 ? "2回目以降の短い1通" : e.crisis_step + "通目"));
+      if (e.crisis_step) parts.push("危機の応答 " + (e.crisis_step === 5 ? "2回目以降の短い1通" : e.crisis_step === 6 ? "再受け止め" : e.crisis_step + "通目"));
       if (e.watch_event) parts.push(WATCH_JA[e.watch_event] || e.watch_event);
       if (e.retraction) parts.push("打ち消し");
       if (e.teacher_answer) parts.push("先生に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
@@ -451,7 +451,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (m.closing) parts.push('<span class="tag amber">クロージング要約</span>');
     // 段階ごとの応答(第2段階・仮)
     if (m.safety_stage != null) parts.push('<span class="tag">段階' + esc(m.safety_stage) + '</span>');
-    if (m.crisis_step) parts.push('<span class="tag warn">危機の応答 ' + (m.crisis_step === 5 ? "2回目以降の短い1通" : esc(m.crisis_step) + "通目") + '(仮の文面)</span>');
+    if (m.crisis_step) parts.push('<span class="tag warn">危機の応答 ' + (m.crisis_step === 5 ? "2回目以降の短い1通" : m.crisis_step === 6 ? "再受け止め" : esc(m.crisis_step) + "通目") + '(仮の文面)</span>');
     if (m.safety_card === "care") parts.push('<span class="tag amber">気づかいの一言(仮の文面)+窓口</span>');
     if (m.safety_card === "hotlines") parts.push('<span class="tag">折りたたみの窓口</span>');
     if (m.safety_card === "crisis") parts.push('<span class="tag warn">危機カード</span>');

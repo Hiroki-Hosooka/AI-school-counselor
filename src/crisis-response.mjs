@@ -27,14 +27,20 @@
 //   段階2(危機)  … 生成せず、固定の文面を分けて出す(CLAUDE.md 5.2 の「危機の場面でAIに言葉を選ばせない」を保つ)。
 //                     1通目 受け止めだけ(+折りたたみの窓口)→ 2通目 重い内容だという正直な表明・窓口の案内
 //                     (危機カード)・人に話しにくい理由の問い → 3通目 先生に話すことをどう思うか →
-//                     4通目 答えに合わせた一言。そのあとは生成に戻して3ターン見守る。
+//                     4通目 答えに合わせた一言。そのあとは生成に戻す(危機のあとの指示つき)。
 //                     見守り中の再サインで上がった段階2(積み重なり)は、1通目への返事が段階0なら
 //                     2通目に進まず見守りに戻す。
-//                     同じ会話で2回目以降の段階2は、短い受け止めと危機カードの1通にする
-//                     (打ち消し等で途中で止まっていた場合は、その続きから)。
 //   打ち消し      … 危機の応答の途中(1〜3通目のあと)に「冗談だよ」等と打ち消したら
 //                     (2回並行の判定が2回とも打ち消し)、段階1(見守り)にして残りの文面は出さない。
 //                     ただし発言にキーワード・受動パターンが入っていれば、キーワードの強制判定を優先する。
+//   打ち消しのあとの再サイン … 見守り中の再サイン、または分類器だけの危機の判定で、もう一度段階2に上がるときは、
+//                     重い続きの文面からではなく、受け止めだけの短い1通(再受け止め)から始める(1回の会話で1回まで)。
+//                     次の返事にもサインがあるときだけ続きの文面に進む。キーワード・受動パターンなら続きの文面へ。
+//   危機の応答のあと … 4通目まで出したあとは見守らない(見守り中のサインで段階2に上げない)。本人の言葉による
+//                     はっきりした危機(段階2)のときだけ、短い受け止めと危機カードの1通を出す。
+//                     (2026年9月26日の検証で、見守りを続けたために「もう無理」系の発言のたびに同じ1通が
+//                     9回続いた不具合があったため。打ち消しのあとの再サインも、重い2通目にいきなり進んで
+//                     「だるい」程度の発言に窓口の案内が出たため、上の再受け止めを足した)
 //   クロージング  … AIが「続けるか、今日はここまでにするか」を選んでもらっている状態(closing_state =
 //                     awaiting_choice)で、段階2の理由がキーワード「終わりにしたい」だけなら段階1にとどめる。
 // ============================================================================
@@ -86,6 +92,11 @@ export const CRISIS_STEP4_PROVISIONAL = {
   unclear: "うん、すぐに決めなくて大丈夫だよ。話してみようと思えたときは、この画面を先生に見せるだけでも伝わるからね。",
 };
 
+// 打ち消しのあとの見守り中に、もう一度サインが出たときの受け止めだけの短い1通(再受け止め)。
+// 1通目と同じ文面を2回出さないための別の言い方。見守り中のサインは気持ちの表現(watch 相当)が多いので、
+// 気持ちを受け止める言い方にしている。
+export const CRISIS_AGAIN_PROVISIONAL = "そう感じているんだね。書いてくれてありがとう。";
+
 // 同じ会話で2回目以降の段階2(危機カードを添える)。1通目から繰り返さないための短い1通。
 export const CRISIS_REPEAT_PROVISIONAL =
   "また書いてくれてありがとう。ひとりで抱えなくていいからね。下の窓口や、学校の先生にも、あなたの声を届けてほしいです。";
@@ -102,7 +113,9 @@ export const RETRACTION_BLOCK_PROVISIONAL = `
 ・打ち消しを否定したり、本当かどうかを問い詰めたりしない
 ・深刻なことを書いたこと自体を責めたり、茶化したりしない
 ・「冗談だったとしても、しんどいときは話していい場所だよ」という趣旨を、押しつけずに一度だけ短く伝えてよい
+  (「いつでも」「いくらでも」という言い方はしない)
 ・窓口の案内をくり返さない(窓口は画面に表示したままになっている)
+・この先の対応を約束しない(「もう窓口の話はしない」「誰にも言わない」など)
 ・そのあとは、本人が話したいことに沿って、ふだんの会話に戻る`;
 
 export const AFTER_CRISIS_BLOCK_PROVISIONAL = `
@@ -112,7 +125,9 @@ export const AFTER_CRISIS_BLOCK_PROVISIONAL = `
 (そのあと、話せる窓口の案内や、学校の先生に話すことについての問いかけをした場合もあります)。
 ・危機の内容そのもの(なぜそう思うのか、方法・時期・場所など)を深掘りしない
 ・窓口の案内をくり返さない(窓口は画面に表示してある)
-・「誰にも言わない」「秘密にする」などの約束をしない
+・この先の対応を約束しない(「もう窓口の話はしない」「誰にも言わない」「秘密にする」など)
+・人に話すこと(先生・保健室・窓口など)を「しなくていい」「面倒なものだ」と同調しない。
+  話しにくい気持ちは受け止めつつ、人につながる道は閉じない
 ・インテークの質問(相談の種類・つらさの点数など)は続けない
 ・本人が話したいことに沿って、ゆっくり会話を続ける。本人が話題を変えたら、それに合わせてよい`;
 
@@ -120,15 +135,18 @@ export const AFTER_CRISIS_BLOCK_PROVISIONAL = `
 // セッションの状態(db/schema.sql 11節の sessions の列)
 //   watch_turns_left 見守りの残りターン(0 = 見守っていない)
 //   crisis_state     none / step1〜3(その文面を出して返事を待っている)/ done(4通目まで出した)/
-//                    paused1〜3(その文面のあと、打ち消し等で止めた。次の段階2で続きから)
+//                    paused1〜3(その文面のあと、打ち消し等で止めた)/
+//                    again1〜3(paused のあとの再サインで、再受け止めの1通を出して返事を待っている)
 //   crisis_trigger   いまの危機の応答のきっかけ: direct(キーワード・受動パターン・分類器の危機)/
 //                    accumulation(見守り中の再サイン)
 //   care_shown       気づかいの一言をこのセッションで出したか
+//   reentry_used     再受け止めをこのセッションで出したか(1回まで)
 // ----------------------------------------------------------------------------
-export const SAFETY_STATE_COLUMNS = "watch_turns_left,crisis_state,crisis_trigger,care_shown";
-const CRISIS_STATES = ["none", "step1", "step2", "step3", "done", "paused1", "paused2", "paused3"];
+export const SAFETY_STATE_COLUMNS = "watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used";
+const CRISIS_STATES = ["none", "step1", "step2", "step3", "done", "paused1", "paused2", "paused3", "again1", "again2", "again3"];
 const FLOW_STEP = { step1: 1, step2: 2, step3: 3 };
 const PAUSED_STEP = { paused1: 1, paused2: 2, paused3: 3 };
+const AGAIN_STEP = { again1: 1, again2: 2, again3: 3 };
 
 export function normalizeSafetyState(state) {
   const w = state?.watch_turns_left;
@@ -137,13 +155,15 @@ export function normalizeSafetyState(state) {
     crisis_state: CRISIS_STATES.includes(state?.crisis_state) ? state.crisis_state : "none",
     crisis_trigger: ["direct", "accumulation"].includes(state?.crisis_trigger) ? state.crisis_trigger : null,
     care_shown: state?.care_shown === true,
+    reentry_used: state?.reentry_used === true,
     closing_state: typeof state?.closing_state === "string" ? state.closing_state : "none",
   };
 }
 
-// 危機の応答の途中(1〜3通目を出して返事を待っている)か
+// 危機の応答の途中(1〜3通目・再受け止めを出して返事を待っている)か。打ち消しの判定はこのときだけ行う
 export function isInCrisisFlow(state) {
-  return FLOW_STEP[normalizeSafetyState(state).crisis_state] != null;
+  const st = normalizeSafetyState(state).crisis_state;
+  return FLOW_STEP[st] != null || AGAIN_STEP[st] != null;
 }
 
 const riskOf = (stage) => (stage === 2 ? "crisis" : stage === 1 ? "watch" : "none");
@@ -158,12 +178,12 @@ const riskOf = (stage) => (stage === 2 ? "crisis" : stage === 1 ? "watch" : "non
 //   teacherAnswer "yes" | "no" | "unclear"(3通目のあとだけ)。無ければ null
 // 戻り値
 //   stage / risk / subject / decidedBy  このターンの扱い(記録用。decidedBy には第2段階の規則も足す:
-//        watch_repeat 見守り中の再サイン / closing_exception クロージングの例外 / retraction 打ち消し /
-//        retraction_ignored_keyword キーワード等があるので打ち消しを採らなかった /
-//        accumulation_pause 積み重なりの1通目への返事が段階0なので止めた / crisis_flow 危機の応答の続き)
+//        watch_repeat 見守り中の再サイン / reentry 打ち消しのあとの再受け止め / closing_exception クロージングの例外 /
+//        retraction 打ち消し / retraction_ignored_keyword キーワード等があるので打ち消しを採らなかった /
+//        accumulation_pause 積み重なり・再受け止めへの返事が段階0なので止めた / crisis_flow 危機の応答の続き)
 //   action        "fixed"(固定の文面を出す。生成しない)| "generate"(生成する)
 //   text          action = fixed のときの文面
-//   crisisStep    危機の応答の何通目か(1〜4。5 = 2回目以降の短い1通)。危機の応答でなければ null
+//   crisisStep    危機の応答の何通目か(1〜4。5 = 2回目以降の短い1通、6 = 再受け止め)。危機の応答でなければ null
 //   card          応答の下に出すもの: null | "care"(気づかいの一言+折りたたみの窓口)|
 //                 "hotlines"(折りたたみの窓口だけ)| "crisis"(危機カード)
 //   safetyContexts 生成のときに retrieve / buildSystem に渡す文脈("tierB"|"thirdParty"|"retraction"|"afterCrisis")
@@ -196,9 +216,12 @@ export function planSafetyTurn({ staged, state, retraction = null, teacherAnswer
 
   const next = {
     watch_turns_left: s.watch_turns_left, crisis_state: s.crisis_state,
-    crisis_trigger: s.crisis_trigger, care_shown: s.care_shown,
+    crisis_trigger: s.crisis_trigger, care_shown: s.care_shown, reentry_used: s.reentry_used,
   };
+  // 危機の応答を始めたあと(止めている・終えた)は、生成に危機のあとの指示を付ける
   const afterCrisis = s.crisis_state === "done" || PAUSED_STEP[s.crisis_state] != null;
+  // 打ち消し等で止めたあとの見守りは、再受け止めをまだ使っていないときだけ(使ったあとは見守らない)
+  const pauseWatch = s.reentry_used ? 0 : WATCH_TURNS;
   const build = (p) => {
     const contexts = p.safetyContexts ?? [];
     return {
@@ -220,53 +243,65 @@ export function planSafetyTurn({ staged, state, retraction = null, teacherAnswer
         : null,
     };
   };
+  // n: 1〜4 = 危機の応答の n通目、5 = 2回目以降の短い1通、6 = 再受け止め
   const fixedStep = (n, extra = {}) => ({
     action: "fixed", crisisStep: n,
     text: n === 1 ? CRISIS_STEP1_PROVISIONAL
       : n === 2 ? CRISIS_STEP2_PROVISIONAL
         : n === 3 ? CRISIS_STEP3_PROVISIONAL
           : n === 5 ? CRISIS_REPEAT_PROVISIONAL
-            : CRISIS_STEP4_PROVISIONAL[extra.teacherAnswer] ?? CRISIS_STEP4_PROVISIONAL.unclear,
+            : n === 6 ? CRISIS_AGAIN_PROVISIONAL
+              : CRISIS_STEP4_PROVISIONAL[extra.teacherAnswer] ?? CRISIS_STEP4_PROVISIONAL.unclear,
     card: n === 1 ? "hotlines" : (n === 2 || n === 5) ? "crisis" : null,
   });
+  // 止めていた n通目の続き(n+1通目。3通目のあとなら短い1通。4通目は3通目への答えでしか出さない)
+  const continueAfter = (n, extra) => (n === 3
+    ? { ...fixedStep(5), nextState: { ...next, ...extra, crisis_state: "done", watch_turns_left: 0 } }
+    : { ...fixedStep(n + 1), nextState: { ...next, ...extra, crisis_state: `step${n + 1}`, watch_turns_left: 0 } });
 
-  // ---- 危機の応答の途中(1〜3通目を出して返事を待っている) ----
+  // ---- 危機の応答の途中(1〜3通目・再受け止めを出して返事を待っている) ----
   const flowN = FLOW_STEP[s.crisis_state];
-  if (flowN != null) {
+  const againN = AGAIN_STEP[s.crisis_state];
+  if (flowN != null || againN != null) {
+    const n = flowN ?? againN;
     if (retraction?.retraction === true) {
       if (!ownWords) {
         // 打ち消し → 段階1(見守り)。残りの文面は出さない。窓口の表示(1通目以降の下)はそのまま残る
         return build({
           stage: 1, subject: "self", decidedBy: [...rules, "retraction"],
           safetyContexts: ["retraction", "afterCrisis"],
-          nextState: { ...next, crisis_state: `paused${flowN}`, watch_turns_left: WATCH_TURNS },
-          event: { stage: 1, watch_event: "start", retraction: true },
+          nextState: { ...next, crisis_state: `paused${n}`, watch_turns_left: pauseWatch },
+          event: { stage: 1, watch_event: pauseWatch ? "start" : null, retraction: true },
         });
       }
       rules.push("retraction_ignored_keyword"); // キーワードの強制判定を優先する
     }
-    // 積み重なりによる段階2の1通目への返事が段階0なら、2通目に進まず見守りに戻す(確認4)
-    if (flowN === 1 && s.crisis_trigger === "accumulation" && stage === 0) {
+    const notify = staged?.stage === 2 && subject === "self";
+    const flowRules = [...rules, "crisis_flow"];
+    // 記録の risk は、この発言そのものの判定にする(「うん」等の返事まで未対応の危機として pending_safety に並ばないように)
+    const eventRisk = riskOf(staged?.stage ?? 0);
+    // 積み重なりの1通目・再受け止めへの返事が段階0なら、続きの文面に進まず止める(確認4)
+    if ((againN != null || (flowN === 1 && s.crisis_trigger === "accumulation")) && stage === 0) {
       return build({
         stage: 0, subject: "self", decidedBy: [...rules, "accumulation_pause"],
         safetyContexts: ["afterCrisis"],
-        nextState: { ...next, crisis_state: "paused1", watch_turns_left: WATCH_TURNS },
-        event: { stage: 0, watch_event: "start" },
+        nextState: { ...next, crisis_state: `paused${n}`, watch_turns_left: pauseWatch },
+        event: { stage: 0, watch_event: pauseWatch ? "start" : null },
       });
     }
-    // 次の文面へ(返事の内容にかかわらず)。記録の risk は、この発言そのものの判定にする
-    // (「うん」等の返事まで未対応の危機として pending_safety に並ばないように)
-    const notify = staged?.stage === 2 && subject === "self";
-    const flowRules = [...rules, "crisis_flow"];
-    const eventRisk = riskOf(staged?.stage ?? 0);
+    if (againN != null) {
+      // 再受け止めへの返事にもサインがある → 止めていた続きの文面へ
+      return build({ stage: 2, subject: "self", decidedBy: flowRules, notify, ...continueAfter(n), event: { stage: 2, risk: eventRisk } });
+    }
     if (flowN === 3) {
       const answer = ["yes", "no", "unclear"].includes(teacherAnswer) ? teacherAnswer : "unclear";
       return build({
         stage: 2, subject: "self", decidedBy: flowRules, ...fixedStep(4, { teacherAnswer: answer }), notify,
-        nextState: { ...next, crisis_state: "done", watch_turns_left: WATCH_TURNS },
-        event: { stage: 2, risk: eventRisk, watch_event: "start", teacher_answer: answer },
+        nextState: { ...next, crisis_state: "done", watch_turns_left: 0 },
+        event: { stage: 2, risk: eventRisk, teacher_answer: answer },
       });
     }
+    // 次の文面へ(返事の内容にかかわらず)
     return build({
       stage: 2, subject: "self", decidedBy: flowRules, ...fixedStep(flowN + 1), notify,
       nextState: { ...next, crisis_state: `step${flowN + 1}` },
@@ -276,8 +311,10 @@ export function planSafetyTurn({ staged, state, retraction = null, teacherAnswer
 
   // ---- それ以外 ----
   const watching = s.watch_turns_left > 0;
+  const pausedN = PAUSED_STEP[s.crisis_state];
   let escalated = false;
-  if (watching && isSign) {
+  // 見守り中の再サインで段階2に上げる(危機の応答を終えたあとは見守らないので上げない)
+  if (watching && isSign && s.crisis_state !== "done") {
     stage = 2;
     escalated = true;
     rules.push("watch_repeat");
@@ -287,24 +324,32 @@ export function planSafetyTurn({ staged, state, retraction = null, teacherAnswer
     return { nextState: { ...next, watch_turns_left: left }, ended: watching && left === 0 };
   };
 
-  // 段階2(本人): 危機の応答を始める / 止めていた続きから / 2回目以降の短い1通
+  // 段階2(本人)
   if (stage === 2 && subject === "self") {
     const trigger = escalated ? "accumulation" : "direct";
     const watchEvent = watching ? (escalated ? "escalate" : "end") : null;
-    const common = { stage: 2, subject: "self", notify: true, notifySubject: "self" };
-    if (s.crisis_state === "none" || s.crisis_state === "paused1" || s.crisis_state === "paused2") {
-      const n = s.crisis_state === "none" ? 1 : PAUSED_STEP[s.crisis_state] + 1;
+    const common = { stage: 2, subject: "self", notify: true, notifySubject: "self", event: { stage: 2, watch_event: watchEvent } };
+    if (s.crisis_state === "none") {
       return build({
-        ...common, ...fixedStep(n),
-        nextState: { ...next, crisis_state: `step${n}`, crisis_trigger: trigger, watch_turns_left: 0 },
-        event: { stage: 2, watch_event: watchEvent },
+        ...common, ...fixedStep(1),
+        nextState: { ...next, crisis_state: "step1", crisis_trigger: trigger, watch_turns_left: 0 },
       });
     }
-    // paused3 / done: 1〜3通目は出し終えているので、短い1通(危機カードつき)。そのあと3ターン見守る
+    if (pausedN != null) {
+      // 打ち消し等で止めたあとの段階2。キーワード・受動パターンなら続きの文面へ。見守り中の再サイン・
+      // 分類器だけの判定なら、再受け止め(受け止めだけの短い1通)から始める(1回の会話で1回まで)
+      if (!ownWords && !s.reentry_used) {
+        return build({
+          ...common, decidedBy: [...rules, "reentry"], ...fixedStep(6),
+          nextState: { ...next, crisis_state: `again${pausedN}`, crisis_trigger: trigger, watch_turns_left: 0, reentry_used: true },
+        });
+      }
+      return build({ ...common, ...continueAfter(pausedN, { crisis_trigger: trigger }) });
+    }
+    // done: 1〜4通目は出し終えているので、短い1通(危機カードつき)。見守りは始めない
     return build({
       ...common, ...fixedStep(5),
-      nextState: { ...next, crisis_state: "done", crisis_trigger: trigger, watch_turns_left: WATCH_TURNS },
-      event: { stage: 2, watch_event: watchEvent ?? "start" },
+      nextState: { ...next, crisis_state: "done", crisis_trigger: trigger, watch_turns_left: 0 },
     });
   }
 
@@ -321,8 +366,9 @@ export function planSafetyTurn({ staged, state, retraction = null, teacherAnswer
   // 段階1
   if (stage === 1) {
     const contexts = ["tierB", ...(afterCrisis ? ["afterCrisis"] : [])];
-    if (watching) {
-      // 見守り中でも、分類器のエラー・クロージングの例外は本人のサインではないので上げない
+    // 見守り中(分類器のエラー・クロージングの例外は本人のサインではないので上げない)、
+    // または危機の応答を始めたあと(窓口はすでに表示している)は、カードを出さず生成するだけ
+    if (watching || s.crisis_state !== "none") {
       const { nextState, ended } = countdown();
       return build({ stage: 1, safetyContexts: contexts, nextState, event: { stage: 1, watch_event: ended ? "end" : null } });
     }
@@ -459,7 +505,7 @@ export async function judgeTeacherAnswer(text, recentMessages = []) {
 // ----------------------------------------------------------------------------
 export async function assessSafetyTurn(text, recentMessages, state) {
   const s = normalizeSafetyState(state);
-  const inFlow = FLOW_STEP[s.crisis_state] != null;
+  const inFlow = FLOW_STEP[s.crisis_state] != null || AGAIN_STEP[s.crisis_state] != null;
   const [staged, retraction, teacher] = await Promise.all([
     classifyStaged(text, recentMessages ?? []),
     inFlow ? judgeRetraction(text, recentMessages ?? []) : Promise.resolve(null),

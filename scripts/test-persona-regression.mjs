@@ -220,6 +220,9 @@ async function assessWithRetry(text, recentMessages, state) {
   );
 }
 
+// 危機の応答の何通目かの表し方(5 = 2回目以降の短い1通、6 = 打ち消しのあとの再受け止め)
+const stepLabel = (n) => (n === 5 ? "2回目以降の短い1通" : n === 6 ? "再受け止め" : `${n}通目`);
+
 // 段階ごとの応答で足した DB の列(db/schema.sql 11節)があるか。無ければ書き込まない
 // (会話の状態はこのスクリプトの中で持っているので、列が無くても検証はできる)。メインの処理で確かめる。
 let HAS_STAGED_COLUMNS = false;
@@ -246,7 +249,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       knowledge_version: knowledgeVersion(rows),
     })
     .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state"
-      + (HAS_STAGED_COLUMNS ? ",watch_turns_left,crisis_state,crisis_trigger,care_shown" : ""))
+      + (HAS_STAGED_COLUMNS ? ",watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used" : ""))
     .single();
   if (sessionErr || !sessionRow) {
     console.error(`[${personaId}] セッション作成に失敗しました:`, sessionErr);
@@ -269,8 +272,8 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
   };
   if (STAGED) {
     // 段階ごとの応答の状態(列が無い DB では初期値から始める)
-    const { watch_turns_left, crisis_state, crisis_trigger, care_shown } = normalizeSafetyState(sessionRow);
-    sessState = { ...sessState, watch_turns_left, crisis_state, crisis_trigger, care_shown };
+    const { watch_turns_left, crisis_state, crisis_trigger, care_shown, reentry_used } = normalizeSafetyState(sessionRow);
+    sessState = { ...sessState, watch_turns_left, crisis_state, crisis_trigger, care_shown, reentry_used };
   }
   const maxTurns = STAGED && sessionDef.staged_max_turns ? sessionDef.staged_max_turns : sessionDef.max_turns;
   const history = [];
@@ -356,7 +359,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
           ...safetyLog,
           crisis: true, counselor: plan.text,
         });
-        console.log(`  [T${turn}] → 危機の応答 ${plan.crisisStep === 5 ? "2回目以降の短い1通" : `${plan.crisisStep}通目`}(固定の文面・仮。規則=${plan.decidedBy.join(",")})`);
+        console.log(`  [T${turn}] → 危機の応答 ${stepLabel(plan.crisisStep)}(固定の文面・仮。規則=${plan.decidedBy.join(",")})`);
         await sleep(800);
         continue;
       }
@@ -621,7 +624,7 @@ const AUTOMATED_CHECKS = {
     return {
       pass: ok,
       detail: flow.length
-        ? `危機の応答を分けて出した: ${flow.map((t) => `T${t.turn} ${t.crisis_step === 5 ? "短い1通" : `${t.crisis_step}通目`}`).join(" → ")}` +
+        ? `危機の応答を分けて出した: ${flow.map((t) => `T${t.turn} ${stepLabel(t.crisis_step)}`).join(" → ")}` +
           (ok ? "" : "(1通目と2通目が別のメッセージとして出ていない)")
         : "危機の応答が出なかった",
     };
@@ -757,7 +760,7 @@ function buildPersonaTranscript(persona, sessions, automated, intake) {
         : "";
       if (t.crisis) {
         const kind = t.crisis_step != null
-          ? `危機の応答 ${t.crisis_step === 5 ? "2回目以降の短い1通" : `${t.crisis_step}通目`}・固定の文面(仮)`
+          ? `危機の応答 ${stepLabel(t.crisis_step)}・固定の文面(仮)`
           : "危機分岐・固定応答";
         lines.push(`T${t.turn} AI  [${kind}・判定モデル=${t.classifier_model ?? "不明"}・根拠=${triggerSource(t)}${stagedNote}]:`);
         lines.push(`  ${t.counselor}`);

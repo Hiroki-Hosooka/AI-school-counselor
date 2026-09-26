@@ -476,49 +476,69 @@ group by 1 order by n desc;
 -- セッションの状態
 --  watch_turns_left: 見守りの残りターン(0 = 見守っていない。段階1のあと3ターン)
 --  crisis_state: 危機の応答の進み具合。none / step1〜3(その文面を出して返事を待っている)/
---    done(4通目まで出した)/ paused1〜3(その文面のあと、打ち消し等で止めた。次の段階2で続きから)
+--    done(4通目まで出した)/ paused1〜3(その文面のあと、打ち消し等で止めた)/
+--    again1〜3(止めたあとの再サインで、受け止めだけの短い1通(再受け止め)を出して返事を待っている)
 --  crisis_trigger: いまの危機の応答のきっかけ。direct(キーワード・受動パターン・分類器)/
 --    accumulation(見守り中の再サイン)
 --  care_shown: 気づかいの一言をこのセッションで出したか(同じ一言を2回出さないため)
-alter table sessions add column if not exists watch_turns_left int not null default 0
-  check (watch_turns_left >= 0);
-alter table sessions add column if not exists crisis_state text not null default 'none'
-  check (crisis_state in ('none','step1','step2','step3','done','paused1','paused2','paused3'));
-alter table sessions add column if not exists crisis_trigger text
-  check (crisis_trigger is null or crisis_trigger in ('direct','accumulation'));
+--  reentry_used: 再受け止めをこのセッションで出したか(1回まで)
+-- CHECK 制約は名前を付けて作り直す形にしている(値の種類を増やしたときに、この節を再実行すれば入れ替わるように)
+alter table sessions add column if not exists watch_turns_left int not null default 0;
+alter table sessions add column if not exists crisis_state text not null default 'none';
+alter table sessions add column if not exists crisis_trigger text;
 alter table sessions add column if not exists care_shown boolean not null default false;
+alter table sessions add column if not exists reentry_used boolean not null default false;
+alter table sessions drop constraint if exists sessions_watch_turns_left_check;
+alter table sessions add constraint sessions_watch_turns_left_check check (watch_turns_left >= 0);
+alter table sessions drop constraint if exists sessions_crisis_state_check;
+alter table sessions add constraint sessions_crisis_state_check
+  check (crisis_state in ('none','step1','step2','step3','done','paused1','paused2','paused3','again1','again2','again3'));
+alter table sessions drop constraint if exists sessions_crisis_trigger_check;
+alter table sessions add constraint sessions_crisis_trigger_check
+  check (crisis_trigger is null or crisis_trigger in ('direct','accumulation'));
 
 -- AIの発言ごと
 --  safety_stage: そのターンの段階(0 通常 / 1 気がかり / 2 危機)
---  crisis_step: 危機の応答を分けて出した固定の文面の何通目か(1〜4。5 = 2回目以降の短い1通)
+--  crisis_step: 危機の応答を分けて出した固定の文面の何通目か(1〜4。5 = 2回目以降の短い1通、6 = 再受け止め)
 --  safety_card: 発言の下に出したもの(care = 気づかいの一言+折りたたみの窓口 / hotlines = 折りたたみの窓口 /
 --    crisis = 危機カード)。resume・admin.html でも同じカードを出すため、crisis・closing と同じ扱いで残す
-alter table messages add column if not exists safety_stage int
-  check (safety_stage is null or safety_stage between 0 and 2);
-alter table messages add column if not exists crisis_step int
-  check (crisis_step is null or crisis_step between 1 and 5);
-alter table messages add column if not exists safety_card text
+alter table messages add column if not exists safety_stage int;
+alter table messages add column if not exists crisis_step int;
+alter table messages add column if not exists safety_card text;
+alter table messages drop constraint if exists messages_safety_stage_check;
+alter table messages add constraint messages_safety_stage_check check (safety_stage is null or safety_stage between 0 and 2);
+alter table messages drop constraint if exists messages_crisis_step_check;
+alter table messages add constraint messages_crisis_step_check check (crisis_step is null or crisis_step between 1 and 6);
+alter table messages drop constraint if exists messages_safety_card_check;
+alter table messages add constraint messages_safety_card_check
   check (safety_card is null or safety_card in ('care','hotlines','crisis'));
 
 -- 安全判定の記録(2-4)
 --  stage: 段階 / decided_by: 判定の根拠(どの規則か。pattern・keyword・classifier・idiom・classifier_watch・
---    classifier_error と、第2段階の watch_repeat・closing_exception・retraction・accumulation_pause・crisis_flow など)
+--    classifier_error と、第2段階の watch_repeat・reentry・closing_exception・retraction・accumulation_pause・
+--    crisis_flow など)
 --  watch_event: 見守りの開始(start)・終了(end)・見守り中の再サインで段階2へ(escalate)
 --  retraction: 打ち消しとして扱ったか
 --  teacher_answer: 3通目(学校の先生に話すことをどう思うか)への答え(yes / no / unclear)
 --  crisis_step: そのターンに出した危機の応答の文面の何通目か
 --  risk は、危機の応答の続きのターンでは、その発言そのものの判定(「うん」等の返事まで
 --  未対応の危機として pending_safety に並ばないように)
-alter table safety_events add column if not exists stage int
-  check (stage is null or stage between 0 and 2);
+alter table safety_events add column if not exists stage int;
 alter table safety_events add column if not exists decided_by text[] not null default '{}';
-alter table safety_events add column if not exists watch_event text
-  check (watch_event is null or watch_event in ('start','end','escalate'));
+alter table safety_events add column if not exists watch_event text;
 alter table safety_events add column if not exists retraction boolean not null default false;
-alter table safety_events add column if not exists teacher_answer text
+alter table safety_events add column if not exists teacher_answer text;
+alter table safety_events add column if not exists crisis_step int;
+alter table safety_events drop constraint if exists safety_events_stage_check;
+alter table safety_events add constraint safety_events_stage_check check (stage is null or stage between 0 and 2);
+alter table safety_events drop constraint if exists safety_events_watch_event_check;
+alter table safety_events add constraint safety_events_watch_event_check
+  check (watch_event is null or watch_event in ('start','end','escalate'));
+alter table safety_events drop constraint if exists safety_events_teacher_answer_check;
+alter table safety_events add constraint safety_events_teacher_answer_check
   check (teacher_answer is null or teacher_answer in ('yes','no','unclear'));
-alter table safety_events add column if not exists crisis_step int
-  check (crisis_step is null or crisis_step between 1 and 5);
+alter table safety_events drop constraint if exists safety_events_crisis_step_check;
+alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 6);
 
 -- pending_safety に段階・根拠・見守り・打ち消し・先生についての答えを足す
 -- (列を足した「後」でなければ作れないため、この位置で作り直す。drop + create の理由は9.4節と同じ)
