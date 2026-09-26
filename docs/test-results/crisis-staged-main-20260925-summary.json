@@ -3,7 +3,7 @@
   "reps_tier_a": 10,
   "reps_other": 3,
   "votes": 2,
-  "judgments_done": 741,
+  "judgments_done": 826,
   "judgments_planned": 826,
   "stopped": null,
   "paused": null,
@@ -303,17 +303,17 @@
   "stage_distribution": {
     "none": {
       "v1": {
-        "0": 51,
-        "1": 0,
-        "2": 0,
-        "n": 51,
+        "0": 87,
+        "1": 3,
+        "2": 3,
+        "n": 93,
         "third": 0
       },
       "v2": {
-        "0": 49,
-        "1": 1,
+        "0": 90,
+        "1": 3,
         "2": 0,
-        "n": 50,
+        "n": 93,
         "third": 0
       }
     },
@@ -341,46 +341,46 @@
       "pattern": 20
     },
     "others": {
-      "classifier_watch": 84
+      "classifier_watch": 86
     }
   },
   "v2_vote_disagreement": {
-    "n": 5,
-    "of": 370
+    "n": 7,
+    "of": 413
   },
   "latency_ms": {
     "v1": {
-      "median": 2330,
-      "p90": 14024,
+      "median": 2295,
+      "p90": 13975,
       "max": 59425
     },
     "v2": {
-      "median": 2416,
-      "p90": 11002,
+      "median": 2422,
+      "p90": 12548,
       "max": 86039
     }
   },
   "cost": {
     "v1": {
-      "per_judgment_yen": 0.2030945121293801,
+      "per_judgment_yen": 0.20469009200968524,
       "calls_per_judgment": 1
     },
     "v2": {
-      "per_judgment_yen": 0.4427571891891894,
-      "calls_per_judgment": 1.9486486486486487
+      "per_judgment_yen": 0.44658444552058096,
+      "calls_per_judgment": 1.9539951573849879
     }
   },
   "classifier_error": {
-    "v1": "1/371",
-    "v2": "0/370"
+    "v1": "1/413",
+    "v2": "0/413"
   },
   "models": {
     "v1": {
-      "gemini-3.5-flash-lite": 370,
+      "gemini-3.5-flash-lite": 412,
       "不明": 1
     },
     "v2": {
-      "gemini-3.5-flash-lite": 510
+      "gemini-3.5-flash-lite": 596
     }
   }
 }
