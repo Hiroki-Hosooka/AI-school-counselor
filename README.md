@@ -327,6 +327,19 @@ npm run test:crisis
   シートは「概要」(採用の条件など)・「発話ごと」・「全判定」(1判定=1行)・「説明」で、集計は
   「全判定」を参照する数式になっている。記録ファイルから作り直すときは
   `python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
+- **段階ごとの応答(危機検知の作り直し 第2段階。仮の文面・心理士の確認待ち。CLAUDE.md 5.16)** は、
+  設定 `CRISIS_RESPONSE=staged` のときだけ動く(**本番では設定しない**。Vercel ではプレビュー環境にだけ設定して試す)。
+  有効にする前に `db/schema.sql` の11節を Supabase の SQL エディタで実行する。
+  - 状態の移り変わり(見守り・分けて出す危機の応答・打ち消し など)のオフラインのテスト:
+    `npm run test:staged-response`(API・DB は使わない)
+  - 打ち消しの判定の検証(無料枠): `npm run test:retraction`(開発用の文
+    `docs/test-sets/crisis-retraction-dev.json`)。最終判定は `node scripts/test-crisis-retraction.mjs --holdout`
+    (保留セット v2 の打ち消し・念押しを、危機の応答の1通目のあとの状態で判定の流れ全体に通す)。
+    打ち消しではない文を打ち消しとして扱ったら、その時点で止まる。結果はエクセルにも書き出す
+  - ペルソナでの確認: `CRISIS_RESPONSE=staged node scripts/test-persona-regression.mjs --stage=crisis2`
+    (B1・B2・B5。相談AI本体は課金キー)
+  - 仮の文面を心理士さんに見てもらう文書: `docs/crisis-stage2-provisional-texts.md`
+    (文面を変えたら `node scripts/export-provisional-texts.mjs` で作り直す)
 - **分類器の判定は毎回ぶれる。** 1回の実行で見逃しが0件でも、見逃しが無いとは言えない
   (2026年9月25日、1回では0件だった項目が20回中8回見逃されていた。
   `docs/test-results/crisis-detection-2-3-summary.txt`)。変更の採否を判定するときは複数回実行する

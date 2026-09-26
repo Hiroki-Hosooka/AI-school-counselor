@@ -12,6 +12,12 @@ type Relation = "visitor" | "complainant" | "customer";
 
 type UsedKnowledge = { id: string; src: string; cat: string; body: string };
 
+// card: 応答の下に出すもの(危機検知の作り直し 第2段階・仮。サーバの設定 CRISIS_RESPONSE=staged のときだけ来る)
+//   care     = 気づかいの一言(careLine。文面はサーバから届く)+ 折りたたみの窓口
+//   hotlines = 折りたたみの窓口だけ
+//   crisis   = 危機カード(今までの crisis-card と同じ)
+// crisisStep: 危機の応答を分けて出した文面の何通目か(1〜4、5 = 2回目以降の短い1通)
+type SafetyCard = "care" | "hotlines" | "crisis";
 type Msg = {
   role: "user" | "ai";
   body: string;
@@ -21,6 +27,9 @@ type Msg = {
   closing?: boolean;
   error?: boolean;
   rating?: number | null;
+  card?: SafetyCard | null;
+  careLine?: string | null;
+  crisisStep?: number | null;
 };
 
 type ChoiceInfo = {
@@ -119,13 +128,19 @@ export default function Page() {
         setTrail([r.session.weight]);
         setNotes(r.session.notes || {});
         setMessages(
-          r.messages.map((m: { role: string; body: string; seq: number; crisis?: boolean; closing?: boolean; rating?: number }) => ({
+          r.messages.map((m: {
+            role: string; body: string; seq: number; crisis?: boolean; closing?: boolean; rating?: number;
+            safety_card?: SafetyCard | null; care_line?: string | null; crisis_step?: number | null;
+          }) => ({
             role: m.role === "user" ? "user" : "ai",
             body: m.body,
             seq: m.seq,
             crisis: m.crisis,
             closing: m.closing,
             rating: m.rating,
+            card: m.safety_card ?? null,
+            careLine: m.care_line ?? null,
+            crisisStep: m.crisis_step ?? null,
           })),
         );
       } else {
@@ -164,9 +179,14 @@ export default function Page() {
       const r = await api("chat", { text });
       setThinking(false);
       if (r.crisis) {
-        setMessages((m) => [...m, { role: "ai", body: r.reply, crisis: true, seq: r.ai_seq }]);
+        setMessages((m) => [...m, {
+          role: "ai", body: r.reply, crisis: true, seq: r.ai_seq,
+          card: r.card ?? null, careLine: r.care_line ?? null, crisisStep: r.crisis_step ?? null,
+        }]);
         setSafety(r.safety);
-        setFlags(["危機応答に切り替え／生成をスキップ"]);
+        setFlags([r.crisis_step
+          ? `危機の応答 ${r.crisis_step === 5 ? "2回目以降の短い1通" : `${r.crisis_step}通目`}(仮の文面)／生成をスキップ`
+          : "危機応答に切り替え／生成をスキップ"]);
         return;
       }
       setWeight(r.weight);
@@ -175,7 +195,10 @@ export default function Page() {
         const next = [...t, r.weight as Weight];
         return next.length > 28 ? next.slice(next.length - 28) : next;
       });
-      setMessages((m) => [...m, { role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized, closing: r.closing }]);
+      setMessages((m) => [...m, {
+        role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
+        card: r.card ?? null, careLine: r.care_line ?? null,
+      }]);
       setNotes(r.notes || {});
       setChoice({
         relation: r.relation,
@@ -428,12 +451,33 @@ export default function Page() {
   );
 }
 
+// 折りたたみの窓口(段階1のカードと、危機の応答の1通目に添える。第2段階・仮)。
+// 会話を遮らないよう、最初は閉じておく。緊急連絡(119)は画面下の常設の表示にあるので、ここには入れない。
+function HotlineDetails() {
+  return (
+    <details className="care-hotlines">
+      <summary>話せる窓口</summary>
+      <dl>
+        {CLOSING_HOTLINES.map(([name, num]) => (
+          <Fragment key={name}>
+            <dt>{name}</dt><dd>{num}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      <p>どれも無料で、名前を言わなくても話せます。</p>
+    </details>
+  );
+}
+
 function MessageBubble({ msg, onRate }: { msg: Msg; onRate: (seq: number, n: number) => void }) {
-  const cls = "msg " + (msg.role === "user" ? "user" : "ai") + (msg.crisis ? " crisis" : "") + (msg.summary ? " summary" : "");
+  // 段階ごとの応答(第2段階)の文面は card で出し分ける。それ以前の危機の固定応答
+  // (crisis はあるが crisisStep が無いもの)は、今まで通り危機カードを出す。
+  const card: SafetyCard | null = msg.card ?? (msg.crisis && msg.crisisStep == null ? "crisis" : null);
+  const cls = "msg " + (msg.role === "user" ? "user" : "ai") + (card === "crisis" ? " crisis" : "") + (msg.summary ? " summary" : "");
   return (
     <div className={cls}>
       <div className="bubble">{msg.body}</div>
-      {msg.crisis && (
+      {card === "crisis" && (
         <div className="crisis-card">
           <h4>話せる窓口</h4>
           <dl>
@@ -444,6 +488,12 @@ function MessageBubble({ msg, onRate }: { msg: Msg; onRate: (seq: number, n: num
             ))}
           </dl>
           <p>どれも無料で、名前を言わなくても話せます。学校の先生や保健室の先生に、この画面を見せるだけでも伝わります。</p>
+        </div>
+      )}
+      {(card === "care" || card === "hotlines") && (
+        <div className="care-card">
+          {card === "care" && msg.careLine && <p className="care-line">{msg.careLine}</p>}
+          <HotlineDetails />
         </div>
       )}
       {msg.closing && (

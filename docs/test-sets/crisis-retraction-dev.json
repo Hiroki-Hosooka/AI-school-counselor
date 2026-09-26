@@ -1,0 +1,37 @@
+{
+  "description": "危機検知の作り直し 第2段階(段階ごとの応答)の、打ち消しの判定(src/crisis-response.mjs の judgeRetraction)を調整するための開発用の文。危機の応答の1通目のあとの相談者の返事として判定する。retraction = 先の深刻な内容を取り消している(段階1の見守りに下げてよい)/ not_retraction = 取り消していない(念押し・ふつうの返事・絶望感など。これを打ち消しと判定すると、深刻な状態の人への対応を弱めてしまうので、1回でもあれば失敗)。",
+  "created": "2026-09-26",
+  "note": "保留セット(crisis-detection-holdout-v2.json)とは別に作ったもの。調整にはこちらだけを使い、保留セットは最終判定にだけ使う。",
+  "contexts": {
+    "C1": [
+      { "role": "user", "text": "もう全部やめたい。消えたいってずっと思ってる" },
+      { "role": "ai", "text": "よく、ここで言えたね。話してくれてありがとう。" }
+    ],
+    "C2": [
+      { "role": "user", "text": "昨日また腕切った" },
+      { "role": "ai", "text": "よく、ここで言えたね。話してくれてありがとう。" }
+    ],
+    "C3": [
+      { "role": "user", "text": "家に帰るとお父さんに殴られる" },
+      { "role": "ai", "text": "よく、ここで言えたね。話してくれてありがとう。" }
+    ]
+  },
+  "items": [
+    { "context": "C1", "text": "ごめん、冗談だよ笑", "label": "retraction" },
+    { "context": "C1", "text": "ネタだから気にしないで", "label": "retraction" },
+    { "context": "C1", "text": "いやそこまで深刻じゃないよ、大げさに書いちゃっただけ", "label": "retraction" },
+    { "context": "C2", "text": "今のなしで！ちょっと言ってみただけ", "label": "retraction" },
+    { "context": "C2", "text": "うそうそ、そんなことしてないから", "label": "retraction" },
+    { "context": "C3", "text": "あ、マジにとらないで。ふざけただけ", "label": "retraction" },
+    { "context": "C3", "text": "ちがうちがう、ドラマの話だよ", "label": "retraction" },
+    { "context": "C1", "text": "冗談で言ってるんじゃないよ。ほんとにそう思ってる", "label": "not_retraction", "note": "「冗談」を含む念押し" },
+    { "context": "C1", "text": "ネタとかじゃなくて本気なんだけど", "label": "not_retraction", "note": "「ネタ」を含む念押し" },
+    { "context": "C1", "text": "うん", "label": "not_retraction", "note": "短い返事" },
+    { "context": "C2", "text": "ありがとう。ちょっと楽になった", "label": "not_retraction", "note": "ふつうの返事" },
+    { "context": "C2", "text": "大げさかもしれないけど、ほんとにしんどい", "label": "not_retraction", "note": "「大げさ」を含むが、深刻さを認めている" },
+    { "context": "C3", "text": "わかんない。誰にも言ったことない", "label": "not_retraction", "note": "ふつうの返事" },
+    { "context": "C3", "text": "嘘だったらよかったのに", "label": "not_retraction", "note": "「嘘」を含むが、事実だと認めている" },
+    { "context": "C1", "text": "冗談っぽく書いたけど、けっこう本気", "label": "not_retraction", "note": "「冗談」を含む念押し" },
+    { "context": "C3", "text": "話してもどうせ何も変わらないし", "label": "not_retraction", "note": "絶望感" }
+  ]
+}

@@ -352,7 +352,8 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 export const CLASSIFIER_CONTEXT_MESSAGES = 4;
 const CONTEXT_CHARS_PER_MESSAGE = 400;
 
-function buildClassifierInput(text, recentMessages) {
+// 危機の応答(src/crisis-response.mjs)の補助判定も、同じ入力の形を使うので公開している。
+export function buildClassifierInput(text, recentMessages) {
   const lines = (recentMessages ?? [])
     .filter((m) => m && typeof m.text === "string" && m.text.trim())
     .slice(-CLASSIFIER_CONTEXT_MESSAGES)
@@ -416,7 +417,7 @@ function runVotes(input, n) {
 }
 
 // 戻り値(classify() と同じ形の risk/keywords/subject/model/classifierError/usedModel に加えて):
-//   stage       0 | 1 | 2(相談者本人についての段階)
+//   stage       0 | 1 | 2(第三者の危機は段階2で、subject = other で区別する)
 //   decidedBy   段階を決めた規則("pattern" | "keyword" | "classifier" | "idiom" | "classifier_watch" | "classifier_error")
 //   patterns    一致した受動パターンのID / idiomExempted 慣用表現として段階1にとどめた箇所
 //   votes       分類器の各回の結果(判定・理由・モデル・所要時間・トークン数)
@@ -438,16 +439,16 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   const raise = (s, why) => { stage = Math.max(stage, s); decidedBy.push(why); };
   if (rules.patterns.length) raise(2, "pattern");
   if (rules.keywords.length) raise(2, "keyword");
-  if (anyCrisis && !allOther) raise(2, "classifier");
+  // 分類器が危機と判定したら段階2。すべての回が第三者(other)の場合も段階2とし、subject で区別する
+  // (以前は段階を上げず、記録上「段階0・規則なし」になっていた。risk・subject と分岐は変わらない)
+  if (anyCrisis) raise(2, "classifier");
   if (rules.idiomExempted.length) raise(1, "idiom");
   if (ok.some((r) => r.risk === "watch")) raise(1, "classifier_watch");
   if (errors.length) raise(1, "classifier_error");
 
   const subject = allOther ? "other" : "self";
-  // route.ts の既存の分岐に合わせた risk。段階2は crisis(subject が other なら、今と同じく第三者として生成を続ける)。
-  // すべての回が第三者の危機と判定した場合も crisis/other(第三者の安全への懸念)
-  let risk = stage === 2 ? "crisis" : stage === 1 ? "watch" : "none";
-  if (anyCrisis && allOther) risk = "crisis";
+  // route.ts の既存の分岐に合わせた risk。段階2は crisis(subject が other なら、今と同じく第三者として生成を続ける)
+  const risk = stage === 2 ? "crisis" : stage === 1 ? "watch" : "none";
 
   const decisive = ok.find((r) => r.risk === "crisis") ?? ok.find((r) => r.risk === "watch") ?? ok[0];
   return {

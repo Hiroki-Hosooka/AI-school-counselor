@@ -156,6 +156,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     <div id="sessionHeader" class="s-header"></div>
     <div id="intakeBlock" class="notes-block" hidden></div>
     <div id="notesBlock" class="notes-block" hidden></div>
+    <div id="safetyBlock" class="notes-block" hidden></div>
     <div id="thread" class="thread"></div>
   </section>
 
@@ -196,6 +197,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var sessionHeaderEl = $("#sessionHeader");
   var intakeBlockEl = $("#intakeBlock");
   var notesBlockEl = $("#notesBlock");
+  var safetyBlockEl = $("#safetyBlock");
   var threadEl = $("#thread");
   var exportLogBtn = $("#exportLogBtn");
   var exportLogMsg = $("#exportLogMsg");
@@ -407,6 +409,28 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     }).join("") + "</dl>";
   }
 
+  // 安全判定の記録(safety_events)。危機検知の作り直し 第2段階(設定 CRISIS_RESPONSE=staged。仮)で
+  // 足した列(段階・判定の根拠・見守り・打ち消し・先生についての答え・何通目か)があれば表示する。
+  var WATCH_JA = { start: "見守り開始", end: "見守り終了", escalate: "見守り中の再サインで段階2へ" };
+  var TEACHER_JA = { yes: "前向き", no: "後ろ向き", unclear: "どちらでもない" };
+  function renderSafetyEvents(events) {
+    if (!events || !events.length) { safetyBlockEl.hidden = true; safetyBlockEl.innerHTML = ""; return; }
+    safetyBlockEl.hidden = false;
+    safetyBlockEl.innerHTML = "<h5>安全判定の記録</h5><dl>" + events.map(function (e) {
+      var parts = [];
+      if (e.stage != null) parts.push("段階" + e.stage);
+      parts.push("risk=" + e.risk + (e.subject ? "/" + e.subject : ""));
+      if (e.crisis_step) parts.push("危機の応答 " + (e.crisis_step === 5 ? "2回目以降の短い1通" : e.crisis_step + "通目"));
+      if (e.watch_event) parts.push(WATCH_JA[e.watch_event] || e.watch_event);
+      if (e.retraction) parts.push("打ち消し");
+      if (e.teacher_answer) parts.push("先生に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
+      if (e.decided_by && e.decided_by.length) parts.push("根拠: " + e.decided_by.join(","));
+      if (e.notified) parts.push("通知済み");
+      return "<dt>" + esc(fmtDate(e.created_at)) + "</dt><dd>" + esc(parts.join(" / ")) +
+        (e.model_reason ? "<br><span class=\"hint\">" + esc(e.model_reason) + "</span>" : "") + "</dd>";
+    }).join("") + "</dl>";
+  }
+
   function knowledgeHtml(used) {
     if (!used || !used.length) return "";
     return '<div class="know-list">' + used.map(function (k) {
@@ -425,6 +449,12 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (m.role_kind) parts.push('<span class="tag">役割 ' + esc(RL_JA[m.role_kind] || m.role_kind) + '</span>');
     if (m.summarized) parts.push('<span class="tag amber">区切り</span>');
     if (m.closing) parts.push('<span class="tag amber">クロージング要約</span>');
+    // 段階ごとの応答(第2段階・仮)
+    if (m.safety_stage != null) parts.push('<span class="tag">段階' + esc(m.safety_stage) + '</span>');
+    if (m.crisis_step) parts.push('<span class="tag warn">危機の応答 ' + (m.crisis_step === 5 ? "2回目以降の短い1通" : esc(m.crisis_step) + "通目") + '(仮の文面)</span>');
+    if (m.safety_card === "care") parts.push('<span class="tag amber">気づかいの一言(仮の文面)+窓口</span>');
+    if (m.safety_card === "hotlines") parts.push('<span class="tag">折りたたみの窓口</span>');
+    if (m.safety_card === "crisis") parts.push('<span class="tag warn">危機カード</span>');
     return parts.join("");
   }
 
@@ -455,6 +485,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       return (
         '<div class="msg ai' + (m.crisis ? " crisis" : "") + '">' +
           '<div class="bubble">' + esc(m.body) + '</div>' +
+          (m.care_line ? '<div class="hint"><b>気づかいの一言(仮):</b> ' + esc(m.care_line) + '</div>' : "") +
           '<div class="meta">' + metaHtml(m) + '</div>' +
           (m.hypothesis ? '<div class="hint"><b>仮説:</b> ' + esc(m.hypothesis) + '</div>' : "") +
           (m.why ? '<div class="hint"><b>理由:</b> ' + esc(m.why) + '</div>' : "") +
@@ -514,6 +545,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       renderSessionHeader(body.session);
       renderIntake(body.session);
       renderNotes(body.session.notes);
+      renderSafetyEvents(body.safety_events || []);
       renderMessages(body.messages || []);
       listView.hidden = true;
       detailView.hidden = false;

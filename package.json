@@ -8,12 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "test:safety": "node scripts/test-output-check.mjs",
+    "test:staged-response": "node scripts/test-staged-response.mjs",
+    "test:retraction": "node scripts/test-crisis-retraction.mjs",
     "test:crisis": "node scripts/test-crisis-detection.mjs",
     "test:ng-leak": "node scripts/test-ng-leak-rate.mjs",
     "test:relation-stability": "node scripts/test-relation-stability.mjs",
     "test:persona-regression": "node scripts/test-persona-regression.mjs",
     "test:model-comparison": "node scripts/test-model-comparison.mjs",
-    "test:all": "npm run test:safety && npm run test:crisis && npm run test:ng-leak && npm run test:relation-stability && npm run test:persona-regression"
+    "test:all": "npm run test:safety && npm run test:staged-response && npm run test:crisis && npm run test:ng-leak && npm run test:relation-stability && npm run test:persona-regression"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",

@@ -39,6 +39,9 @@
 //   ADMIN_TOKEN              任意  管理画面(public/admin.html)用の合言葉。
 //                                  admin_sessions/admin_session_detail はこれと
 //                                  一致しないと401を返す(docs/backlog.md 1-2)
+//   CRISIS_DETECTION         任意  v1 にすると危機検知を以前の判定に戻す(既定は v2)
+//   CRISIS_RESPONSE          任意  staged にすると段階ごとの応答(第2段階・仮の文面。心理士の確認待ち)。
+//                                  本番では設定しない。有効にする前に db/schema.sql 11節を実行すること
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -49,6 +52,7 @@ import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
 } from "@/generate.mjs";
+import { stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL } from "@/crisis-response.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
 // ナレッジ検索・システムプロンプト構築・本生成ロジックは src/generate.mjs にある
@@ -74,6 +78,27 @@ function getDb(): SupabaseClient {
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+
+// 段階ごとの応答(第2段階。src/crisis-response.mjs)で足した列(db/schema.sql 11節)も読む。
+// 書き込むのは設定 CRISIS_RESPONSE=staged のときだけ。読むときは、列がまだ無い(SQL未実行の)DBでも
+// 動くよう、失敗したら列なしで読み直す。select の列の一覧は supabase-js が型として解析するので、
+// 呼び出し側でそのまま文字列で書き、結果の型はここで緩める(使う側で必要な分だけ型を付ける)。
+type Row = Record<string, unknown>;
+async function selectRowsWithFallback(
+  withNew: () => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  withoutNew: () => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+): Promise<Row[]> {
+  const first = await withNew();
+  if (!first.error) return (first.data ?? []) as Row[];
+  const second = await withoutNew();
+  if (second.error) throw new Error(second.error.message);
+  return (second.data ?? []) as Row[];
+}
+// 画面に返すとき、気づかいのカード(safety_card = care)には仮の一言を添える
+// (文面はサーバ側の src/crisis-response.mjs にだけ置く。クライアントは表示だけ)
+function withCareLine(m: Row) {
+  return { ...m, care_line: m.safety_card === "care" ? CARE_LINE_PROVISIONAL : null };
+}
 
 // 管理画面(admin.html)用の合言葉チェック。ログイン画面は作らず、
 // admin.html が自分のURLのクエリ文字列(?token=...)から読んで
@@ -166,18 +191,26 @@ export async function POST(req: Request) {
         .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
         .eq("id", sessionId).maybeSingle();
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
-      const { data: msgs } = await db.from("messages")
-        .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing")
-        .eq("session_id", sessionId).order("seq");
-      const allUsedIds = Array.from(new Set((msgs ?? []).flatMap((m) => m.used ?? [])));
+      const msgs = await selectRowsWithFallback(
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card")
+          .eq("session_id", sessionId).order("seq"),
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing")
+          .eq("session_id", sessionId).order("seq"),
+      );
+      // 安全判定の記録(段階・根拠・見守り・打ち消し・先生についての答え。列が無ければあるものだけ)
+      const { data: events } = await db.from("safety_events").select("*").eq("session_id", sessionId).order("seq");
+      const usedOf = (m: Row) => (Array.isArray(m.used) ? (m.used as string[]) : []);
+      const allUsedIds = Array.from(new Set(msgs.flatMap(usedOf)));
       const knowledgeMap: Record<string, { id: string; src: string; cat: string; body: string }> = {};
       if (allUsedIds.length) {
         const { data: kn } = await db.from("knowledge").select("id,src,cat,body").in("id", allUsedIds);
         for (const k of kn ?? []) knowledgeMap[k.id] = k;
       }
-      const messages = (msgs ?? []).map((m) => ({
-        ...m,
-        used: (m.used ?? []).map((id: string) => knowledgeMap[id] ?? { id, src: "", cat: "", body: "(削除済み)" }),
+      const messages = msgs.map((m) => ({
+        ...withCareLine(m),
+        used: usedOf(m).map((id) => knowledgeMap[id] ?? { id, src: "", cat: "", body: "(削除済み)" }),
       }));
       return json({
         session: {
@@ -191,6 +224,7 @@ export async function POST(req: Request) {
           closing_state: s.closing_state,
         },
         messages,
+        safety_events: events ?? [],
       });
     }
 
@@ -239,10 +273,13 @@ export async function POST(req: Request) {
         await updatePersonMemory(db, clientId, (s.notes ?? {}) as Record<string, unknown>);
         return json({ session: null, messages: [] }); // クライアント側が start を呼び直す
       }
-      const { data: msgs } = await db.from("messages")
-        .select("seq,role,body,used,flags,crisis,rating,closing")
-        .eq("session_id", s.id).order("seq");
-      return json({ session: s, messages: msgs ?? [] });
+      const msgs = await selectRowsWithFallback(
+        () => db.from("messages").select("seq,role,body,used,flags,crisis,rating,closing,crisis_step,safety_card")
+          .eq("session_id", s.id).order("seq"),
+        () => db.from("messages").select("seq,role,body,used,flags,crisis,rating,closing")
+          .eq("session_id", s.id).order("seq"),
+      );
+      return json({ session: s, messages: msgs.map(withCareLine) });
     }
 
     // ------------------------------------------------------------------
@@ -263,9 +300,24 @@ export async function POST(req: Request) {
 
       // phase以下はフェーズ1(インテーク)用(構造化面接AI統合 手順5)。
       // phase2に進んだセッションでは、applyIntakeUpdate()がこれ以上変更しない。
-      const { data: sess } = await db.from("sessions")
-        .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
-        .eq("id", sessionId).single();
+      // 段階ごとの応答(危機検知の作り直し 第2段階・仮。設定 CRISIS_RESPONSE=staged)のときは、
+      // 見守り・危機の応答の状態(db/schema.sql 11節)も読む。状態の列がまだ無い(SQL未実行の)DBなら、
+      // このリクエストは第1段階の動きにする(設定を誤っても会話そのものは止めない)。
+      let stagedOn = stagedResponseEnabled();
+      const sessWithState = stagedOn
+        ? await db.from("sessions")
+          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown")
+          .eq("id", sessionId).single()
+        : null;
+      if (sessWithState?.error) {
+        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
+        stagedOn = false;
+      }
+      const sess = sessWithState && !sessWithState.error
+        ? sessWithState.data
+        : (await db.from("sessions")
+          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
+          .eq("id", sessionId).single()).data;
       if (!sess) return json({ error: "セッションが見つかりません" }, 404);
 
       // 発言を保存
@@ -285,9 +337,14 @@ export async function POST(req: Request) {
       // v2 では、今回の発言より前の直近のやりとりも文脈として分類器に渡す(直前のAIの問いかけが
       // 見えないと、「早く終わってほしい」=この面談を早く終えたい、を危機と取り違えるため)。
       // Tier Aの固定応答も、生徒に実際に見えた言葉として含める。
+      //
+      // 設定 CRISIS_RESPONSE=staged(第2段階・仮)のときは、src/crisis-response.mjs の assessSafetyTurn が
+      // 見守り・危機の応答の状態をふまえて、このターンの扱い(plan)を決める(固定の文面を分けて出す・
+      // 気づかいのカード・打ち消し・見守り中の再サインで段階2 など。CLAUDE.md 5.16)。
       let safety: Awaited<ReturnType<typeof classify>>;
       let eventKeywords: string[];
       let eventReason: string;
+      let plan: Awaited<ReturnType<typeof assessSafetyTurn>>["plan"] | null = null;
       if (crisisDetectionVersion() === "v2") {
         let recentQuery = db.from("messages").select("role,body").eq("session_id", sessionId);
         if (userMsg?.seq != null) recentQuery = recentQuery.lt("seq", userMsg.seq);
@@ -295,40 +352,79 @@ export async function POST(req: Request) {
           .order("seq", { ascending: false }).limit(CLASSIFIER_CONTEXT_MESSAGES);
         const classifierContext = (recent ?? []).reverse()
           .map((m: { role: string; body: string }) => ({ role: m.role === "ai" ? "ai" : "user", text: m.body }));
-        const staged = await classifyStaged(text, classifierContext);
-        safety = staged;
-        // どの規則で段階が決まったかを、既存の列(keywords・model_reason)に残す(第2段階で専用の列を作る)
+        let v2: Awaited<ReturnType<typeof classifyStaged>>;
+        if (stagedOn) {
+          const assessed = await assessSafetyTurn(text, classifierContext, sess);
+          v2 = assessed.staged;
+          plan = assessed.plan;
+        } else {
+          v2 = await classifyStaged(text, classifierContext);
+        }
+        safety = v2;
+        // どの規則で段階が決まったかを、既存の列(keywords・model_reason)にも残す
+        // (第2段階の専用の列 stage・decided_by は、設定 CRISIS_RESPONSE=staged のときだけ書く)
         eventKeywords = [
-          ...staged.keywords,
-          ...staged.patterns.map((p: string) => `パターン:${p}`),
-          ...staged.idiomExempted.map((p: string) => `(慣用表現→段階1)${p}`),
+          ...v2.keywords,
+          ...v2.patterns.map((p: string) => `パターン:${p}`),
+          ...v2.idiomExempted.map((p: string) => `(慣用表現→段階1)${p}`),
         ];
-        eventReason = `${staged.model.reason}(段階${staged.stage}: ${staged.decidedBy.join(",") || "なし"})`;
+        const stageForLog = plan ? plan.stage : v2.stage;
+        const rulesForLog: string[] = plan ? plan.decidedBy : v2.decidedBy;
+        eventReason = `${v2.model.reason}(段階${stageForLog}: ${rulesForLog.join(",") || "なし"})`;
       } else {
         safety = await classify(text);
         eventKeywords = safety.keywords;
         eventReason = safety.model.reason;
       }
-      const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
-      if (safety.risk !== "none") {
-        const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
-        await db.from("safety_events").insert({
-          session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: eventKeywords,
-          model_risk: safety.model.risk, model_reason: eventReason, notified,
-        });
-      }
 
-      // 本人の危機(Tier A・self)なら生成をスキップして固定応答。この分岐だけは変更しない。
-      if (isSelfCrisis) {
-        const { data: aiMsg } = await db.from("messages").insert({
-          session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
-        }).select("seq").single();
-        await db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId);
-        return json({
-          reply: CRISIS_REPLY, crisis: true,
-          safety: { risk: safety.risk, subject: safety.subject, keywords: safety.keywords.length, model: safety.model.risk },
-          user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
-        });
+      if (plan) {
+        // ---- 段階ごとの応答(第2段階・仮)----
+        // 通知は段階2を検知するたび(今と同じ)。記録は、段階1以上・見守りの開始/終了・打ち消し・
+        // 危機の応答の続きのターン(plan.event がある場合)に書く。
+        const notified = plan.notify ? await notifyCrisis(sessionId, plan.notifySubject) : false;
+        if (plan.event) {
+          await db.from("safety_events").insert({
+            session_id: sessionId, risk: plan.event.risk, subject: plan.event.subject, keywords: eventKeywords,
+            model_risk: safety.model.risk, model_reason: eventReason, notified,
+            stage: plan.event.stage, decided_by: plan.event.decided_by, watch_event: plan.event.watch_event,
+            retraction: plan.event.retraction, teacher_answer: plan.event.teacher_answer, crisis_step: plan.event.crisis_step,
+          });
+        }
+        // 段階2(本人): 生成をスキップして、分けた固定の文面の1通を返す(CLAUDE.md 5.2 の分岐を保つ)
+        if (plan.action === "fixed") {
+          const { data: aiMsg } = await db.from("messages").insert({
+            session_id: sessionId, role: "ai", body: plan.text, crisis: true,
+            safety_stage: plan.stage, crisis_step: plan.crisisStep, safety_card: plan.card,
+          }).select("seq").single();
+          await db.from("sessions").update({ ...plan.nextState, last_at: new Date().toISOString() }).eq("id", sessionId);
+          return json({
+            reply: plan.text, crisis: true, crisis_step: plan.crisisStep, card: plan.card, care_line: null,
+            safety: { risk: plan.risk, subject: plan.subject, keywords: safety.keywords.length, model: safety.model.risk, stage: plan.stage },
+            user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
+          });
+        }
+      } else {
+        const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
+        if (safety.risk !== "none") {
+          const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
+          await db.from("safety_events").insert({
+            session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: eventKeywords,
+            model_risk: safety.model.risk, model_reason: eventReason, notified,
+          });
+        }
+
+        // 本人の危機(Tier A・self)なら生成をスキップして固定応答。この分岐だけは変更しない。
+        if (isSelfCrisis) {
+          const { data: aiMsg } = await db.from("messages").insert({
+            session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
+          }).select("seq").single();
+          await db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId);
+          return json({
+            reply: CRISIS_REPLY, crisis: true,
+            safety: { risk: safety.risk, subject: safety.subject, keywords: safety.keywords.length, model: safety.model.risk },
+            user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
+          });
+        }
       }
 
       // ---- 生成 ----
@@ -338,9 +434,10 @@ export async function POST(req: Request) {
       // その場合も技術的なエラーを生徒にそのまま見せず、受け止めだけの返答で会話を続ける
       // (generateReply内で処理)。見逃さないよう flags に記録し、心理士のレビュー画面で
       // 頻度を確認できるようにしておく。
-      const safetyContext = safety.risk === "watch" ? "tierB"
-        : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
-        : null;
+      const safetyContext = plan ? plan.safetyContexts
+        : safety.risk === "watch" ? "tierB"
+          : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
+            : null;
       const rows = await loadKnowledge(db);
       // recommended_modeは手順6でretrieve()に渡し、フェーズ2ではモード一致のナレッジも
       // 引き出しやすくする(intake中は空配列なので、これまで通り影響しない)。
@@ -348,16 +445,20 @@ export async function POST(req: Request) {
         rows, text, sess.weight, sess.relation, undefined, safetyContext, sess.recommended_mode,
       );
 
-      const { data: hist } = await db.from("messages")
-        .select("role,body,crisis,flags").eq("session_id", sessionId).order("seq");
-      const messages = (hist ?? [])
-        .filter((h) => !h.crisis)
-        .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.body }] }));
+      const hist = await selectRowsWithFallback(
+        () => db.from("messages").select("role,body,crisis,flags,crisis_step").eq("session_id", sessionId).order("seq"),
+        () => db.from("messages").select("role,body,crisis,flags").eq("session_id", sessionId).order("seq"),
+      );
+      const messages = hist
+        // 危機の固定応答(CRISIS_REPLY)は、今まで通り生成の会話履歴に含めない。段階ごとの応答で分けた文面
+        // (crisis_step あり)は、短い受け止めや案内なので、外すと会話がつながらなくなるため含める(第2段階)
+        .filter((h) => !h.crisis || h.crisis_step != null)
+        .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: String(h.body ?? "") }] }));
       // このセッションで既に何回、生成失敗の固定応答を返しているか(2026年9月・2-2)。
       // 同じ文言を繰り返さないよう generateReply() に渡す(嶋先生「同じメッセージが
       // 2回来ると傷つく」の指摘への対処)。
-      const priorFailureCount = (hist ?? []).filter((h: { flags?: string[] | null }) =>
-        h.flags?.some((f) => f.startsWith("生成失敗→固定応答で継続"))).length;
+      const priorFailureCount = hist.filter((h) => Array.isArray(h.flags)
+        && (h.flags as string[]).some((f) => f.startsWith("生成失敗→固定応答で継続"))).length;
 
       const { data: memory } = await db.from("person_memory")
         .select("summary").eq("client_id", clientId).maybeSingle();
@@ -397,12 +498,15 @@ export async function POST(req: Request) {
         mode: mergedIntake.recommended_mode ?? [],
         ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
         closing: justClosed,
+        // 段階ごとの応答(第2段階)のときだけ: このターンの段階と、返事の下に出すカード
+        ...(plan ? { safety_stage: plan.stage, safety_card: plan.card } : {}),
       }).select("seq").single();
 
       await db.from("sessions").update({
         weight, relation, turns_since_summary: since, notes,
         last_at: new Date().toISOString(),
         ...intakePatch,
+        ...(plan ? plan.nextState : {}),
       }).eq("id", sessionId);
 
       // 参照したナレッジは本文も返す(管理画面で見せるため)
@@ -418,8 +522,12 @@ export async function POST(req: Request) {
         summarized: out.did_summarize === true, turns_since_summary: since,
         hypothesis: out.hypothesis ?? "", why: out.why ?? "",
         notes, used: usedRows, flags,
-        safety: { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
+        safety: plan
+          ? { risk: plan.risk, keywords: safety.keywords.length, model: safety.model.risk, stage: plan.stage }
+          : { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
         closing: justClosed,
+        card: plan?.card ?? null,
+        care_line: plan?.card === "care" ? CARE_LINE_PROVISIONAL : null,
         user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
       });
     }
