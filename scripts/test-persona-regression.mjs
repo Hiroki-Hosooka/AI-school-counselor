@@ -139,7 +139,9 @@ checkBudgetBeforeRun(budget, estimatedTurnsTotal, ASSUMED_COST_PER_CALL, `${STAG
 // 生成呼び出し
 // ----------------------------------------------------------------------------
 function personaSystemPrompt(persona, sessionDef) {
-  let extra = sessionDef.speech_notes || "";
+  // 段階ごとの応答(第2段階)のときは、危機の応答を分けて出すので、危機のあとも会話を続けるための
+  // 話し方(staged_speech_notes)があればそちらを使う(B1 の「固定応答が出たら終了してよい」の代わり)
+  let extra = (STAGED && sessionDef.staged_speech_notes) || sessionDef.speech_notes || "";
   if (persona.conditional_end) {
     extra += `\n${persona.conditional_end.from_turn}ターン目以降で、AIとの話し合いがまとまったと` +
       `感じたら、固定文「${persona.conditional_end.text}」とだけ送って会話を終えてください` +
