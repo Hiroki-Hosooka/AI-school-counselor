@@ -317,8 +317,8 @@ npm run test:crisis
     作り直し(第1段階・第2段階)の最終的な採否の判断にだけ使う
   - `docs/test-sets/crisis-detection-holdout.json`(30件)は、2-3の採否判定で結果を見たため、
     今は開発中の確認用。採否の判定には使わない
-- 危機検知 v2(設定 `CRISIS_DETECTION=v2`。既定は v1)を測るときは、同じコマンドを
-  `CRISIS_DETECTION=v2 npm run test:crisis` で実行する。v1 と v2 を同じ条件で比べるときは
+- 危機検知は v2 が既定(2026年9月26日に採用)。今までの判定(v1)を測るときは、同じコマンドを
+  `CRISIS_DETECTION=v1 npm run test:crisis` で実行する。v1 と v2 を同じ条件で比べるときは
   `node scripts/test-crisis-staged.mjs`(発言ごとに v1・v2 を交互に判定し、Tier A は各10回・
   ほかは各3回。発言ごとの見逃し率・段階の分布・判定を決めた規則・費用と待ち時間を集計する。
   無料枠の1日の上限に当たったら中断し、`--out=` に同じ記録ファイルを渡すと続きから再開できる)。

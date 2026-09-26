@@ -25,9 +25,9 @@ import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, s
 import { classify, classifyStaged, crisisDetectionVersion, LITE_MODELS } from "../src/classify.mjs";
 import { CRISIS_WORDS, crisisRulesV2 } from "../src/safety.mjs";
 
-// 設定 CRISIS_DETECTION=v2 のときは、危機検知 v2(段階つき。src/classify.mjs の classifyStaged)を測る
-// (2026年9月・危機検知の作り直し 第1段階)。v2 では項目の context(直前のやりとり)も分類器に渡す。
-// 既定は v1(本番の既定と同じ)。v1 と v2 を同じ条件で比べるときは scripts/test-crisis-staged.mjs を使う。
+// 既定は危機検知 v2(段階つき。src/classify.mjs の classifyStaged。2026年9月26日に採用。本番の既定と同じ)を測る。
+// v2 では項目の context(直前のやりとり)も分類器に渡す。設定 CRISIS_DETECTION=v1 のときは v1 を測る。
+// v1 と v2 を同じ条件で比べるときは scripts/test-crisis-staged.mjs を使う。
 const DETECTION = crisisDetectionVersion();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

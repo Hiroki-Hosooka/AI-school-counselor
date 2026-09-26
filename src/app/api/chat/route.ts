@@ -279,8 +279,8 @@ export async function POST(req: Request) {
       // どちらも生成は続けつつ、この1ターンだけ safetyContext で AI の応答の仕方を絞り込む
       // (src/generate.mjs の buildSystem 参照)。
       //
-      // 危機検知 v2(段階つき。src/classify.mjs の classifyStaged)は、設定 CRISIS_DETECTION=v2 の
-      // ときだけ使う(2026年9月・危機検知の作り直し 第1段階。既定は v1 のまま)。第1段階では、
+      // 危機検知は v2(段階つき。src/classify.mjs の classifyStaged)が既定(2026年9月26日、
+      // 危機検知の作り直し 第1段階を採用)。設定 CRISIS_DETECTION=v1 のときだけ、今までの classify() を使う。
       // 段階2 = crisis(固定応答)、段階1 = watch(Tier B)として、下の既存の分岐をそのまま通る。
       // v2 では、今回の発言より前の直近のやりとりも文脈として分類器に渡す(直前のAIの問いかけが
       // 見えないと、「早く終わってほしい」=この面談を早く終えたい、を危機と取り違えるため)。

@@ -60,8 +60,8 @@ import {
 import {
   LITE_MODELS, callGemini, parseJSON, classify, classifyStaged, crisisDetectionVersion, CRISIS_REPLY,
 } from "../src/classify.mjs";
-// 設定 CRISIS_DETECTION=v2 のときは危機検知 v2(段階つき・文脈あり)を使う(2026年9月・危機検知の作り直し)。
-// 本番の route.ts と同じ切り替え。既定は v1。
+// 危機検知は本番の route.ts と同じ切り替え。既定は v2(段階つき・文脈あり。2026年9月26日に採用)で、
+// 設定 CRISIS_DETECTION=v1 のときだけ v1。
 const DETECTION = crisisDetectionVersion();
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,

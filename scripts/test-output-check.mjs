@@ -101,7 +101,7 @@ for (const text of MUST_NOT_HIT_CRISIS_KEYWORD) {
 
 // --------------------------------------------------------------------------
 // 危機検知 v2 の照合規則(2026年9月・危機検知の作り直し 第1段階。src/safety.mjs の crisisRulesV2)
-// 設定 CRISIS_DETECTION=v2 のときに使う規則。ここに挙げた文は、実際の判定(scripts/test-crisis-staged.mjs)
+// 危機検知 v2(既定)で使う規則。ここに挙げた文は、実際の判定(scripts/test-crisis-staged.mjs)
 // とは別に、規則を変えたときに書き方の違いへの強さ・誤一致を機械的に確かめるためのもの。
 // --------------------------------------------------------------------------
 const v2Stage2 = (t) => { const r = crisisRulesV2(t); return r.keywords.length > 0 || r.patterns.length > 0; };

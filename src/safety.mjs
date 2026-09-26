@@ -34,8 +34,8 @@ export const CRISIS_WORDS = [
 // ============================================================================
 //  危機検知 v2 の照合規則(2026年9月・危機検知の作り直し 第1段階)
 //
-//  設定 CRISIS_DETECTION=v2 のときだけ、src/classify.mjs の classifyStaged() が使う。
-//  既定(設定なし)は、上の CRISIS_WORDS をそのまま部分一致で使う v1 のまま。
+//  src/classify.mjs の classifyStaged()(既定。2026年9月26日に採用)が使う。
+//  設定 CRISIS_DETECTION=v1 のときは、上の CRISIS_WORDS をそのまま部分一致で使う v1 に戻る。
 //
 //  v1 からの変更点:
 //   ・照合の前に文字をそろえる(normalizeForMatch)。v1 は書かれた形そのままでしか一致せず、
