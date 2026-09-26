@@ -321,7 +321,12 @@ npm run test:crisis
   `CRISIS_DETECTION=v2 npm run test:crisis` で実行する。v1 と v2 を同じ条件で比べるときは
   `node scripts/test-crisis-staged.mjs`(発言ごとに v1・v2 を交互に判定し、Tier A は各10回・
   ほかは各3回。発言ごとの見逃し率・段階の分布・判定を決めた規則・費用と待ち時間を集計する。
-  無料枠の1日の上限に当たったら中断し、`--out=` に同じ記録ファイルを渡すと続きから再開できる)
+  無料枠の1日の上限に当たったら中断し、`--out=` に同じ記録ファイルを渡すと続きから再開できる)。
+  結果は記録(.jsonl)・集計(-summary.txt / .json)に加えて、**エクセルファイル(.xlsx)**にも書き出す
+  (`scripts/export-crisis-staged-xlsx.py`。python3 と openpyxl が必要: `pip install openpyxl`)。
+  シートは「概要」(採用の条件など)・「発話ごと」・「全判定」(1判定=1行)・「説明」で、集計は
+  「全判定」を参照する数式になっている。記録ファイルから作り直すときは
+  `python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
 - **分類器の判定は毎回ぶれる。** 1回の実行で見逃しが0件でも、見逃しが無いとは言えない
   (2026年9月25日、1回では0件だった項目が20回中8回見逃されていた。
   `docs/test-results/crisis-detection-2-3-summary.txt`)。変更の採否を判定するときは複数回実行する

@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
@@ -313,4 +314,10 @@ writeFileSync(`${base}-summary.json`, JSON.stringify({
   models: { v1: modelUse("v1"), v2: modelUse("v2") },
 }, null, 2));
 console.log(`\n集計を保存しました: ${path.relative(ROOT, base)}-summary.txt / .json`);
+
+// エクセルファイルにも書き出す(データとして使えるように。scripts/export-crisis-staged-xlsx.py。
+// python3 と openpyxl が必要: pip install openpyxl)。集計は全判定シートを参照する数式で、エクセルで開くと計算される
+const xl = spawnSync("python3", [path.join(__dirname, "export-crisis-staged-xlsx.py"), OUT, `--set=${SET_PATH}`], { encoding: "utf8" });
+if (xl.status === 0) console.log(xl.stdout.trim());
+else console.log(`エクセルファイルの書き出しに失敗しました(python3 と openpyxl が必要: pip install openpyxl): ${String(xl.stderr || xl.error?.message || "").slice(0, 300)}`);
 process.exitCode = stopped ? 2 : paused ? 3 : 0;
