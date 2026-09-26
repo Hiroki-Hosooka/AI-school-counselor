@@ -792,8 +792,10 @@ console.log(`予算: 上限¥${budget.limitYen} 使用済み¥${Math.round(budge
 
 const db = getDb();
 if (STAGED) {
-  const { error: colErr } = await db.from("sessions").select("watch_turns_left").limit(1);
-  HAS_STAGED_COLUMNS = !colErr;
+  // 書き込む列がすべてあるか(11節の一部だけが入った DB で、セッション作成が失敗しないように)
+  const { error: sessColErr } = await db.from("sessions").select("watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used").limit(1);
+  const { error: msgColErr } = await db.from("messages").select("safety_stage,crisis_step,safety_card").limit(1);
+  HAS_STAGED_COLUMNS = !sessColErr && !msgColErr;
   console.log(`段階ごとの応答: 有効(仮の文面)${HAS_STAGED_COLUMNS ? "" : "。db/schema.sql 11節が未実行のため、新しい列には書き込まない(状態はこのスクリプトの中で持つ)"}\n`);
 }
 const rows = await loadKnowledge(db);
