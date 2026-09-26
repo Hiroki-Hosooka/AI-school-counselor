@@ -122,8 +122,9 @@ async function judge(version, item) {
   // それでも上限・混雑のまま → 記録せずに中断する(本番では起きにくい失敗を、判定の結果として数えないため)
   if (isTransient(r)) return { paused: true, error: r.classifierError };
   // v2 が待たなかった回(危機と確定した後の残り)も本番では費用がかかるので、返ってくるのを待ってから数える
-  // (待ち時間 ms はこの前に測り終えている)
-  await Promise.race([Promise.allSettled([...(pendingByJudgment.get(jid) ?? [])]), sleep(20000)]);
+  // (待ち時間 ms はこの前に測り終えている)。待つ上限は1回あたりの待ち時間の上限と同じにする
+  // (以前は20秒で、無料枠の混雑時にそれより遅く返った回が費用に数えられていなかった。保留セット v2 の最終判定で3回)
+  await Promise.race([Promise.allSettled([...(pendingByJudgment.get(jid) ?? [])]), sleep(Number(TIMEOUT_MS))]);
   pendingByJudgment.delete(jid);
   const tierA = r.risk === "crisis" && r.subject === "self";
   const stage = tierA ? 2 : r.risk === "crisis" ? "third" : r.risk === "watch" ? 1 : 0;
@@ -177,8 +178,10 @@ if (!REPORT_ONLY) {
           true_label: it.label, true_subject: it.subject ?? "self", tier_a: isTierA(it),
           tier_a_type: it.tier_a_type ?? null, category: it.category ?? null, ...res,
         };
-        appendFileSync(OUT, JSON.stringify(rec) + "\n");
-        done.set(key, rec);
+        const line = JSON.stringify(rec);
+        appendFileSync(OUT, line + "\n");
+        // 集計は記録ファイルに書いた内容から出す(書いた後に返ってきた呼び出しで、手元の値だけが変わらないように)
+        done.set(key, JSON.parse(line));
         count++;
         const mark = rec.tier_a ? (rec.predicted_tier_a ? "○" : "×見逃し") : `段階${rec.stage}`;
         console.log(`[${count}/${totalJudgments}] ${version} ${it.label.padEnd(6)} ${mark.padEnd(5)} ${rec.decided_by.join(",")} 「${it.text.slice(0, 22)}」`);
