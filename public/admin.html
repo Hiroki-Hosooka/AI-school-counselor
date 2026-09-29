@@ -413,6 +413,11 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   // 足した列(段階・判定の根拠・見守り・打ち消し・先生についての答え・何通目か)があれば表示する。
   var WATCH_JA = { start: "見守り開始", end: "見守り終了", escalate: "見守り中の再サインで段階2へ" };
   var TEACHER_JA = { yes: "前向き", no: "後ろ向き", unclear: "どちらでもない" };
+  // 判定の根拠(decided_by)のうち、段階ごとの応答で足した印の読み方(2026年9月29日)
+  var RULE_NOTE_JA = {
+    followup: "見守り中・危機のあとの判定(その発言の新しいサインだけ)",
+    crisis_generation: "危機の状態で生成(仮の指示)"
+  };
   function renderSafetyEvents(events) {
     if (!events || !events.length) { safetyBlockEl.hidden = true; safetyBlockEl.innerHTML = ""; return; }
     safetyBlockEl.hidden = false;
@@ -424,7 +429,10 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       if (e.watch_event) parts.push(WATCH_JA[e.watch_event] || e.watch_event);
       if (e.retraction) parts.push("打ち消し");
       if (e.teacher_answer) parts.push("先生に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
-      if (e.decided_by && e.decided_by.length) parts.push("根拠: " + e.decided_by.join(","));
+      if (e.decided_by && e.decided_by.indexOf("crisis_generation") >= 0) parts.push(RULE_NOTE_JA.crisis_generation);
+      if (e.decided_by && e.decided_by.length) {
+        parts.push("根拠: " + e.decided_by.map(function (r) { return r === "followup" ? RULE_NOTE_JA.followup : r; }).join(","));
+      }
       if (e.notified) parts.push("通知済み");
       return "<dt>" + esc(fmtDate(e.created_at)) + "</dt><dd>" + esc(parts.join(" / ")) +
         (e.model_reason ? "<br><span class=\"hint\">" + esc(e.model_reason) + "</span>" : "") + "</dd>";
@@ -455,6 +463,11 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (m.safety_card === "care") parts.push('<span class="tag amber">気づかいの一言(仮の文面)+窓口</span>');
     if (m.safety_card === "hotlines") parts.push('<span class="tag">折りたたみの窓口</span>');
     if (m.safety_card === "crisis") parts.push('<span class="tag warn">危機カード</span>');
+    // 危機の状態で、固定の文面を出さずに指示つきの生成で返した応答(db/schema.sql 12節)
+    if (m.crisis_generated) {
+      var fallback = (m.flags || []).some(function (f) { return String(f).indexOf("危機の状態の生成→固定の返事") === 0; });
+      parts.push('<span class="tag warn">危機の状態で生成(仮の指示)' + (fallback ? '→固定の返事に置き換え' : '') + '</span>');
+    }
     return parts.join("");
   }
 

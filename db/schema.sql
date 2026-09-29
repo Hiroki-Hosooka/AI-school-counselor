@@ -550,3 +550,18 @@ from safety_events e
 left join sessions s on s.id = e.session_id
 where e.risk <> 'none' and e.handled = false
 order by e.created_at desc;
+
+-- ============================================================================
+-- 12. 危機検知の作り直し 第2段階の修正(2026年9月29日・仮の文面。心理士の確認待ち)
+--
+--  11節と同じく、設定 CRISIS_RESPONSE=staged のときだけ route.ts が書き込む列。
+--  有効にする前に、11節のあとでこの節を Supabase の SQL エディタで実行すること
+--  (未実行のまま有効にしても会話は止まらず、第1段階の動きになる)。何度実行してもよい。
+--
+--  sessions.repeat_used: 2回目以降の短い1通(固定の文面。messages.crisis_step = 5)をこのセッションで出したか。
+--    同じ会話では1回まで。出したあとの新しい打ち明けは、固定の文面を出さずに、危機の状態の指示を付けた生成で受ける
+--  messages.crisis_generated: 危機の状態で、固定の文面を出さずに指示つきの生成で返した応答か
+--    (管理画面で見分けるため。そのターンの safety_events.decided_by には crisis_generation が入る)
+-- ============================================================================
+alter table sessions add column if not exists repeat_used boolean not null default false;
+alter table messages add column if not exists crisis_generated boolean not null default false;

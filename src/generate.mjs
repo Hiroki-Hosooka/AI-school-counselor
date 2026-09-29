@@ -13,7 +13,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
-import { RETRACTION_BLOCK_PROVISIONAL, AFTER_CRISIS_BLOCK_PROVISIONAL } from "./crisis-response.mjs";
+import {
+  RETRACTION_BLOCK_PROVISIONAL, AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
+} from "./crisis-response.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
 //
@@ -94,6 +96,8 @@ export const MODES = ["CBT", "SFBT", "NARRATIVE", "ASSERTION", "LISTEN_ONLY", "P
 // retraction / afterCrisis(危機検知の作り直し 第2段階・仮。設定 CRISIS_RESPONSE=staged のときだけ使う):
 //   T31(危機の内容を深掘りしない)/ T32(突然切らない)/ D3(二択で程度を確認しない)。
 //   D7(秘密の約束をしない)は cat='ng' で、常に全件をプロンプトに載せているのでここには入れない。
+// crisisGeneration(危機の状態で、固定の文面を出さずに生成で受けるターン。2026年9月29日・仮):
+//   上の afterCrisis に加えて、D1(危機時にリスクアセスメントをしない理由)/ D2(取り入れるのは態度だけ)。
 // これらは tags が空、または通常の重み付けでは上位に来ないため、この仕組みなしでは
 // ほぼ参照されない(retrieve()のタグ照合は使用者本人の発言テキストに対して行われるため)。
 const SAFETY_KNOWLEDGE_IDS = {
@@ -101,6 +105,7 @@ const SAFETY_KNOWLEDGE_IDS = {
   thirdParty: ["D5", "D6"],
   retraction: ["T31", "D3"],
   afterCrisis: ["T31", "T32", "D3"],
+  crisisGeneration: ["D1", "D2", "T31", "T32", "D3"],
 };
 
 // safetyContext は1つの文字列(今までの呼び出し)か、文字列の配列(第2段階。例: 危機の応答のあとの
@@ -114,7 +119,7 @@ function toSafetyContexts(safetyContext) {
 // 件数が1000を超えたら pgvector + 全文検索のハイブリッドに差し替える(CLAUDE.md 第7節)。
 // safetyContext: null(通常) | "tierB" | "thirdParty"。route.ts が classify() の risk/subject
 // から算出して渡す(両方が同時に真になることはない。risk は単一の値のため)。
-// 第2段階(設定 CRISIS_RESPONSE=staged)では "retraction" / "afterCrisis" もあり、配列で複数渡すことがある。
+// 第2段階(設定 CRISIS_RESPONSE=staged)では "retraction" / "afterCrisis" / "crisisGeneration" もあり、配列で複数渡すことがある。
 // modes: フェーズ2で判定されたrecommended_mode配列(構造化面接AI統合 手順6)。null/[]なら
 // 従来通りモードによるブーストは行わない(intake中や、モード判定前のフォールバック呼び出し)。
 // オプション引数ではなく素の位置引数にしているのは、このファイルがTypeScriptの型チェック
@@ -154,7 +159,7 @@ export function retrieve(rows, text, weight, relation, n, safetyContext, modes) 
 //  プロンプト
 // ============================================================================
 // Tier B / 第三者の安全懸念のターンだけに挟む指示ブロック(構造化面接AI統合 手順4)。
-// retraction / afterCrisis は危機検知の作り直し 第2段階の仮の指示(src/crisis-response.mjs。心理士の確認待ち)。
+// retraction / afterCrisis / crisisGeneration は危機検知の作り直し 第2段階の仮の指示(src/crisis-response.mjs。心理士の確認待ち)。
 // どれも「生成は続けるが、このターンは特に慎重に」という位置づけで、
 // Tier A(risk==="crisis" && subject==="self")のような生成スキップ+固定応答(CLAUDE.md 5.2)
 // とは別の扱い。二択で程度を確認する質問(実質的なリスクアセスメント)を避けることが共通の核。
@@ -184,6 +189,7 @@ const SAFETY_CONTEXT_BLOCKS = {
 ・相談者自身にも同じようなサインがないかは、詰問にならない範囲でさりげなく気にかけてよい`,
   retraction: RETRACTION_BLOCK_PROVISIONAL,
   afterCrisis: AFTER_CRISIS_BLOCK_PROVISIONAL,
+  crisisGeneration: CRISIS_GENERATION_BLOCK_PROVISIONAL,
 };
 
 // フェーズ1(インテーク)の進捗を文章化する(構造化面接AI統合 手順5)。
@@ -650,9 +656,21 @@ function pickFailureReply(priorFailureCount) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// opts(省略可。危機の状態で生成するターン用。2026年9月29日・危機検知の作り直し 第2段階):
+//   opts.extraNg  OUTPUT_NG に加えて使う出力チェックの正規表現(src/crisis-response.mjs の CRISIS_GENERATION_EXTRA_NG)
+//   opts.fixHint  出力チェックに当たったときの書き直しの指示に足す一言
+// 戻り値の checkFailed: 再生成しても出力チェックに当たったまま(flags に残る)か。危機の状態で生成したターンでは、
+//   呼び出し側がこれを見て固定の返事に置き換える(src/crisis-response.mjs の finalizeCrisisGeneration)。
+// opts を分割代入の既定値つき引数にしていないのは、retrieve() のコメントと同じ理由(.ts から見た型が狭くなるため)。
 export async function generateReply(
-  system, messages, models = PRIMARY_MODELS, maxOutputTokens = 1500, thinkingBudget = 0, priorFailureCount = 0,
+  system, messages, models = PRIMARY_MODELS, maxOutputTokens = 1500, thinkingBudget = 0, priorFailureCount = 0, opts,
 ) {
+  const extraNg = Array.isArray(opts?.extraNg) ? opts.extraNg : [];
+  const fixHint = typeof opts?.fixHint === "string" ? opts.fixHint : "";
+  const checkAll = (t) => [
+    ...checkOutput(t),
+    ...extraNg.filter((re) => re.test(t)).map((re) => String(re).slice(0, 42)),
+  ];
   let out;
   let generationFailed = false;
   let failureCause = "";
@@ -713,24 +731,27 @@ export async function generateReply(
   }
 
   // ---- 出力チェック ----
-  let flags = checkOutput(out.reply ?? "");
+  let flags = checkAll(out.reply ?? "");
   if (generationFailed) flags = [`生成失敗→固定応答で継続(${failureCause})`, ...flags];
   if (flags.length && !generationFailed) {
     const fix = system +
-      "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。";
+      "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。" +
+      (fixHint ? `\n${fixHint}` : "");
     try {
       const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
       const retry = parseJSON(retryResult.text);
       // 再生成の呼び出し自体にも課金は発生している(採用されなくても)ので必ず加算する。
       usage = addUsage(usage, retryResult.usage);
-      if (checkOutput(retry.reply ?? "").length === 0) {
+      if (checkAll(retry.reply ?? "").length === 0) {
         out = retry; flags = ["1回目に検知→再生成で解消"];
         usedModel = retryResult.model; // 採用されたのは再生成の方なので上書きする
       }
     } catch { /* 再生成に失敗したら1回目を使い、フラグ・usedModelはそのまま残す */ }
   }
 
-  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage };
+  // 再生成しても出力チェックに当たったまま(採用した返事に禁止表現等が残っている)か
+  const checkFailed = !generationFailed && flags.length > 0 && !flags.includes("1回目に検知→再生成で解消");
+  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed };
 }
 
 // ============================================================================

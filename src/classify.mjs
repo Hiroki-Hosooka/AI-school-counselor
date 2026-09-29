@@ -347,6 +347,57 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 迷ったら、risk は重いほうを選ぶこと(見逃しのほうが害が大きい)。
 ただし self か other かで迷う場合は self を選ぶこと(第三者の話だと誤って軽く扱うことを避けるため)。`;
 
+// 見守り中・危機の応答を始めたあと(段階ごとの応答。src/crisis-response.mjs)の判定(2026年9月29日)。
+// 【判定する発言】そのものに、新しい危機のサインがあるかだけを判定する。文脈は、指示語や言い直し・念押しを
+// 読み取るためだけに使う(すでに対応した打ち明けを、そのあとの発言で数え直さないため)。
+// 2026年9月26日のペルソナテストで、通常の判定(CLASSIFIER_PROMPT_V2)が直前の危機の流れを引きずり、
+// 「数字とかわかんない 別に」「だる」のようなふつうの返事まで watch・crisis と判定して、危機の応答が
+// 先に進んでいたため。通常の状態の判定(CLASSIFIER_PROMPT_V2)は変えていない(第1段階の検証結果を有効に保つため)。
+// risk・subject の基準の段落は CLASSIFIER_PROMPT_V2 と同じにしている(変えたのは状況の説明・文脈の使い方・迷ったとき)。
+const CLASSIFIER_PROMPT_V2_FOLLOWUP =
+`あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
+{"risk":"none|watch|crisis","subject":"self|other","reason":"20字以内"}
+
+状況: この会話では少し前に、相談者の深刻な発言や気がかりな発言に、AIがすでに対応しています
+(受け止めの言葉、話せる窓口の案内、学校の先生に話すことについての問いかけ など)。
+いま判定するのは、【判定する発言】そのものに、新しい危機のサインが書かれているかどうかです。
+
+入力の形式:
+【直前までの会話】相談者とAIの直前のやりとり(文脈。判定の対象ではない)
+【判定する発言】相談者の最新の発言
+判定するのは【判定する発言】に書かれていることだけです。
+
+risk の基準:
+crisis: 自分の存在がなくなること・死ぬことに触れている(明示的か受動的かは問わない)。
+        例:「死にたい」「消えたい」「朝が来なければいい」「自分がいない方がいい」
+        自傷(方法や実行への言及を含む)、生命に関わる暴力の被害・加害、虐待、性被害、
+        いますぐの身の危険、深刻ないじめ被害も含む。
+watch : 無力感や自己否定だが、存在の消失には触れていないもの。
+        例:「もう無理」「限界」「自分なんてダメ」「頑張る意味ある?」
+        孤立感が強い、眠れない、食べられない、学校に行けない等も含む。
+none  : 通常の相談。「わからない」「決められない」等の判断の迷い、「どうにかしたい」等の
+        前向きな焦りは、無力感を伴わない限り none。
+
+文脈の使い方:
+・【直前までの会話】は、【判定する発言】の中の指示語(「それ」「さっきの」「あれ」など)や、
+  言い直し・念押し(「本気だよ」「さっきのはほんとのこと」「冗談じゃない」など)が何を指しているかを
+  読み取るためにだけ使う。
+・文脈の中の深刻な発言には、AIがすでに対応している。【判定する発言】がそれを指して肯定・言い直し・念押しを
+  していない限り、文脈の中の発言の危険度を【判定する発言】に引き継がない。
+  例えば、深刻な発言のあとの「別に」「わかんない」「だるい」「うん」「もう寝る」「なんでもない」は、
+  その言葉そのものに書かれていることだけで判定する。
+・【判定する発言】が文脈の中の深刻な発言を指して肯定・言い直し・念押しをしている場合は、
+  その指している内容で判定する(例:「死にたい」のあとの「本気だよ」は crisis)。
+・このやりとりを終えたい・この場を離れたいという意味だと文脈から明らかに読み取れるなら、それだけでは crisis ではない。
+
+subject の基準(発言が誰の安全についてか):
+self : 相談者自身についての発言。
+other: 「友達が」「家族が」等、相談者以外の第三者の安全についての発言。
+       相談者自身にも同時にサインがある場合は self とする。
+
+【判定する発言】に書かれていることの重さで迷ったら、risk は重いほうを選ぶこと(見逃しのほうが害が大きい)。
+ただし self か other かで迷う場合は self を選ぶこと(第三者の話だと誤って軽く扱うことを避けるため)。`;
+
 // 判定する発言より前の直近のやりとり(古い順の { role: "user" | "ai", text })のうち、末尾の
 // CLASSIFIER_CONTEXT_MESSAGES 件を文脈として渡す。長い発言は末尾(判定する発言に近い側)を残す。
 export const CLASSIFIER_CONTEXT_MESSAGES = 4;
@@ -366,13 +417,13 @@ export function buildClassifierInput(text, recentMessages) {
 }
 
 // 1回分の判定。失敗(API エラー・解析できない応答・想定外の値)したら1回だけ再試行する。
-async function oneVote(input) {
+async function oneVote(input, prompt) {
   const started = Date.now();
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const result = await callGemini(
-        LITE_MODELS, CLASSIFIER_PROMPT_V2, [{ role: "user", parts: [{ text: input }] }],
+        LITE_MODELS, prompt, [{ role: "user", parts: [{ text: input }] }],
         V2_MAX_OUTPUT_TOKENS, -1, { responseSchema: CLASSIFIER_SCHEMA_V2 },
       );
       const parsed = parseJSON(result.text);
@@ -388,11 +439,11 @@ async function oneVote(input) {
   return { ok: false, error: lastError, retried: true, ms: Date.now() - started };
 }
 
-function voteWithTimeout(input) {
+function voteWithTimeout(input, prompt) {
   const limit = voteTimeoutMs();
   let timer;
   return Promise.race([
-    oneVote(input).finally(() => clearTimeout(timer)),
+    oneVote(input, prompt).finally(() => clearTimeout(timer)),
     new Promise((resolve) => {
       timer = setTimeout(() => resolve({ ok: false, error: `[TIMEOUT] ${limit}ms以内に判定が返らなかった`, ms: limit }), limit);
     }),
@@ -401,13 +452,13 @@ function voteWithTimeout(input) {
 
 // n 回並行して判定する。1回でも crisis(本人)が返ったら、残りを待たずに確定する(危機のときに待ち時間を伸ばさない)。
 // 待たなかった回は skipped として返す(失敗としては数えない)。
-function runVotes(input, n) {
+function runVotes(input, n, prompt) {
   return new Promise((resolve) => {
     const results = new Array(n).fill(null);
     let pending = n;
     const finish = () => resolve(results.map((r) => r ?? { ok: false, skipped: true }));
     for (let i = 0; i < n; i++) {
-      voteWithTimeout(input).then((r) => {
+      voteWithTimeout(input, prompt).then((r) => {
         results[i] = r;
         pending--;
         if ((r.ok && r.risk === "crisis" && r.subject === "self") || pending === 0) finish();
@@ -418,14 +469,22 @@ function runVotes(input, n) {
 
 // 戻り値(classify() と同じ形の risk/keywords/subject/model/classifierError/usedModel に加えて):
 //   stage       0 | 1 | 2(第三者の危機は段階2で、subject = other で区別する)
-//   decidedBy   段階を決めた規則("pattern" | "keyword" | "classifier" | "idiom" | "classifier_watch" | "classifier_error")
+//   decidedBy   段階を決めた規則("pattern" | "keyword" | "classifier" | "idiom" | "classifier_watch" | "classifier_error")。
+//               見守り中・危機のあとの判定(mode = "followup")のときは、先頭に "followup" も入れる(記録用。段階は決めない)
 //   patterns    一致した受動パターンのID / idiomExempted 慣用表現として段階1にとどめた箇所
 //   votes       分類器の各回の結果(判定・理由・モデル・所要時間・トークン数)
-export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes() } = {}) {
+//   classifierMode "normal" | "followup"
+// mode: "normal"(通常の状態。CLASSIFIER_PROMPT_V2)| "followup"(見守り中・危機の応答を始めたあと。
+//       CLASSIFIER_PROMPT_V2_FOLLOWUP。src/crisis-response.mjs の assessSafetyTurn だけが使う)。
+//       キーワード・受動パターン・慣用表現の規則は、どちらでも同じ。
+export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes(), mode = "normal" } = {}) {
+  const followUp = mode === "followup";
   const rules = crisisRulesV2(text);
   // 文脈の中の相談者の発言も、慣用表現は中立の言い方に置き換える(過去の慣用表現に判定が引きずられないように)
   const context = (recentMessages ?? []).map((m) => (m?.role === "ai" ? m : { ...m, text: paraphraseShameIdioms(m?.text).text }));
-  const results = await runVotes(buildClassifierInput(rules.classifierText, context), votes);
+  const results = await runVotes(
+    buildClassifierInput(rules.classifierText, context), votes, followUp ? CLASSIFIER_PROMPT_V2_FOLLOWUP : CLASSIFIER_PROMPT_V2,
+  );
   const done = results.filter((r) => !r.skipped);
   const ok = done.filter((r) => r.ok);
   const errors = done.filter((r) => !r.ok);
@@ -435,7 +494,7 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   const anyCrisis = ok.some((r) => r.risk === "crisis");
 
   let stage = 0;
-  const decidedBy = [];
+  const decidedBy = followUp ? ["followup"] : [];
   const raise = (s, why) => { stage = Math.max(stage, s); decidedBy.push(why); };
   if (rules.patterns.length) raise(2, "pattern");
   if (rules.keywords.length) raise(2, "keyword");
@@ -458,5 +517,6 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
     classifierError: errors.length ? errors.map((r) => r.error).join(" | ") : null,
     usedModel: decisive?.model ?? null,
     votes: results,
+    classifierMode: followUp ? "followup" : "normal",
   };
 }

@@ -41,7 +41,7 @@
 //                                  一致しないと401を返す(docs/backlog.md 1-2)
 //   CRISIS_DETECTION         任意  v1 にすると危機検知を以前の判定に戻す(既定は v2)
 //   CRISIS_RESPONSE          任意  staged にすると段階ごとの応答(第2段階・仮の文面。心理士の確認待ち)。
-//                                  本番では設定しない。有効にする前に db/schema.sql 11節を実行すること
+//                                  本番では設定しない。有効にする前に db/schema.sql 11節・12節を実行すること
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -52,7 +52,10 @@ import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
 } from "@/generate.mjs";
-import { stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL } from "@/crisis-response.mjs";
+import {
+  stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
+  CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
+} from "@/crisis-response.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
 // ナレッジ検索・システムプロンプト構築・本生成ロジックは src/generate.mjs にある
@@ -79,20 +82,21 @@ function getDb(): SupabaseClient {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
-// 段階ごとの応答(第2段階。src/crisis-response.mjs)で足した列(db/schema.sql 11節)も読む。
+// 段階ごとの応答(第2段階。src/crisis-response.mjs)で足した列(db/schema.sql 11節・12節)も読む。
 // 書き込むのは設定 CRISIS_RESPONSE=staged のときだけ。読むときは、列がまだ無い(SQL未実行の)DBでも
-// 動くよう、失敗したら列なしで読み直す。select の列の一覧は supabase-js が型として解析するので、
-// 呼び出し側でそのまま文字列で書き、結果の型はここで緩める(使う側で必要な分だけ型を付ける)。
+// 動くよう、失敗したら列の少ない読み方で順に読み直す(新しい節の列から外していく)。select の列の一覧は
+// supabase-js が型として解析するので、呼び出し側でそのまま文字列で書き、結果の型はここで緩める
+// (使う側で必要な分だけ型を付ける)。
 type Row = Record<string, unknown>;
-async function selectRowsWithFallback(
-  withNew: () => PromiseLike<{ data: unknown; error: { message: string } | null }>,
-  withoutNew: () => PromiseLike<{ data: unknown; error: { message: string } | null }>,
-): Promise<Row[]> {
-  const first = await withNew();
-  if (!first.error) return (first.data ?? []) as Row[];
-  const second = await withoutNew();
-  if (second.error) throw new Error(second.error.message);
-  return (second.data ?? []) as Row[];
+type SelectAttempt = () => PromiseLike<{ data: unknown; error: { message: string } | null }>;
+async function selectRowsWithFallback(...attempts: SelectAttempt[]): Promise<Row[]> {
+  let lastError = "";
+  for (const attempt of attempts) {
+    const r = await attempt();
+    if (!r.error) return (r.data ?? []) as Row[];
+    lastError = r.error.message;
+  }
+  throw new Error(lastError);
 }
 // 画面に返すとき、気づかいのカード(safety_card = care)には仮の一言を添える
 // (文面はサーバ側の src/crisis-response.mjs にだけ置く。クライアントは表示だけ)
@@ -192,6 +196,9 @@ export async function POST(req: Request) {
         .eq("id", sessionId).maybeSingle();
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated")
+          .eq("session_id", sessionId).order("seq"),
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card")
           .eq("session_id", sessionId).order("seq"),
@@ -301,16 +308,16 @@ export async function POST(req: Request) {
       // phase以下はフェーズ1(インテーク)用(構造化面接AI統合 手順5)。
       // phase2に進んだセッションでは、applyIntakeUpdate()がこれ以上変更しない。
       // 段階ごとの応答(危機検知の作り直し 第2段階・仮。設定 CRISIS_RESPONSE=staged)のときは、
-      // 見守り・危機の応答の状態(db/schema.sql 11節)も読む。状態の列がまだ無い(SQL未実行の)DBなら、
+      // 見守り・危機の応答の状態(db/schema.sql 11節・12節)も読む。状態の列がまだ無い(SQL未実行の)DBなら、
       // このリクエストは第1段階の動きにする(設定を誤っても会話そのものは止めない)。
       let stagedOn = stagedResponseEnabled();
       const sessWithState = stagedOn
         ? await db.from("sessions")
-          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used")
+          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used")
           .eq("id", sessionId).single()
         : null;
       if (sessWithState?.error) {
-        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
+        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節・12節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
         stagedOn = false;
       }
       const sess = sessWithState && !sessWithState.error
@@ -469,7 +476,19 @@ export async function POST(req: Request) {
         safetyContext, sess,
       );
 
-      const { out, flags } = await generateReply(system, messages, undefined, undefined, undefined, priorFailureCount);
+      // 危機の状態で、固定の文面を出さずに生成で受けるターン(段階ごとの応答・仮。CLAUDE.md 5.2)は、出力チェックを
+      // 強め(「いつでも」・数字・秘密の約束・このAIだけを頼らせる言い方も通さない)、再生成しても通らなければ、
+      // 固定の返事(仮)に置き換える。職員への通知は上で出している
+      const crisisGenerated = plan?.crisisGenerated === true;
+      const generated = await generateReply(
+        system, messages, undefined, undefined, undefined, priorFailureCount,
+        crisisGenerated ? { extraNg: CRISIS_GENERATION_EXTRA_NG, fixHint: CRISIS_GENERATION_FIX_HINT } : undefined,
+      );
+      const priorCrisisFallbacks = hist.filter((h) => Array.isArray(h.flags)
+        && (h.flags as string[]).some((f) => f.startsWith(CRISIS_FALLBACK_FLAG))).length;
+      const { out, flags } = crisisGenerated
+        ? finalizeCrisisGeneration(generated, priorCrisisFallbacks)
+        : { out: generated.out, flags: generated.flags };
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);
@@ -498,8 +517,9 @@ export async function POST(req: Request) {
         mode: mergedIntake.recommended_mode ?? [],
         ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
         closing: justClosed,
-        // 段階ごとの応答(第2段階)のときだけ: このターンの段階と、返事の下に出すカード
-        ...(plan ? { safety_stage: plan.stage, safety_card: plan.card } : {}),
+        // 段階ごとの応答(第2段階)のときだけ: このターンの段階と、返事の下に出すカードと、
+        // 危機の状態で生成した返事か(管理画面で見分けるため。db/schema.sql 12節)
+        ...(plan ? { safety_stage: plan.stage, safety_card: plan.card, crisis_generated: crisisGenerated } : {}),
       }).select("seq").single();
 
       await db.from("sessions").update({
