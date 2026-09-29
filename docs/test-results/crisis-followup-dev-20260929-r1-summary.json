@@ -1,0 +1,109 @@
+{
+  "set": "docs/test-sets/crisis-followup-dev.json",
+  "out": "docs/test-results/crisis-followup-dev-20260929-r1.jsonl",
+  "reps": 3,
+  "compare_normal": true,
+  "judgments_done": 160,
+  "judgments_planned": 160,
+  "model": "gemini-3.5-flash-lite",
+  "timeout_ms": 120000,
+  "crisis_misses": 0,
+  "ordinary_crisis": 1,
+  "ordinary_watch": 9,
+  "hyperbole_crisis": null,
+  "watch_misses": 0,
+  "per_category": {
+    "explicit": {
+      "followup": {
+        "n": 24,
+        "stages": [
+          0,
+          0,
+          24
+        ]
+      },
+      "normal": {
+        "n": 8,
+        "stages": [
+          0,
+          0,
+          8
+        ]
+      }
+    },
+    "passive": {
+      "followup": {
+        "n": 9,
+        "stages": [
+          0,
+          0,
+          9
+        ]
+      },
+      "normal": {
+        "n": 3,
+        "stages": [
+          0,
+          0,
+          3
+        ]
+      }
+    },
+    "restate": {
+      "followup": {
+        "n": 15,
+        "stages": [
+          0,
+          0,
+          15
+        ]
+      },
+      "normal": {
+        "n": 5,
+        "stages": [
+          0,
+          0,
+          5
+        ]
+      }
+    },
+    "watch": {
+      "followup": {
+        "n": 18,
+        "stages": [
+          0,
+          17,
+          1
+        ]
+      },
+      "normal": {
+        "n": 6,
+        "stages": [
+          0,
+          5,
+          1
+        ]
+      }
+    },
+    "ordinary": {
+      "followup": {
+        "n": 54,
+        "stages": [
+          44,
+          9,
+          1
+        ]
+      },
+      "normal": {
+        "n": 18,
+        "stages": [
+          9,
+          3,
+          6
+        ]
+      }
+    }
+  },
+  "stopped": null,
+  "paused": null
+}

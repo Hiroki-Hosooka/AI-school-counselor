@@ -10,6 +10,8 @@
     "test:safety": "node scripts/test-output-check.mjs",
     "test:staged-response": "node scripts/test-staged-response.mjs",
     "test:retraction": "node scripts/test-crisis-retraction.mjs",
+    "test:followup": "node scripts/test-crisis-followup.mjs",
+    "test:replay": "node scripts/test-staged-replay.mjs",
     "test:crisis": "node scripts/test-crisis-detection.mjs",
     "test:ng-leak": "node scripts/test-ng-leak-rate.mjs",
     "test:relation-stability": "node scripts/test-relation-stability.mjs",
