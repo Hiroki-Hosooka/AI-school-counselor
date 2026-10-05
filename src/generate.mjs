@@ -13,9 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
-import {
-  RETRACTION_BLOCK_PROVISIONAL, AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
-} from "./crisis-response.mjs";
+import { AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL } from "./crisis-response.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
 //
@@ -93,7 +91,8 @@ export const MODES = ["CBT", "SFBT", "NARRATIVE", "ASSERTION", "LISTEN_ONLY", "P
 // tierB: T27(生身の人に言うことへの障壁を探る問い)/ T30(情報を詰め込みすぎない)/
 //        T31(危機の内容自体は深掘りしない)/ D3(二択で程度を確認する質問はしない)。
 // thirdParty: D5(第三者の安全懸念への対応)/ D6(第三者に対してもリスクアセスメントはしない)。
-// retraction / afterCrisis(危機検知の作り直し 第2段階・仮。設定 CRISIS_RESPONSE=staged のときだけ使う):
+// afterCrisis(危機検知の作り直し 第2段階・仮。危機の応答を始めたあとの生成。段階ごとの応答のときと、
+//   本番の既定で固定応答を出したあとの生成(CLAUDE.md 5.17)の両方で使う):
 //   T31(危機の内容を深掘りしない)/ T32(突然切らない)/ D3(二択で程度を確認しない)。
 //   D7(秘密の約束をしない)は cat='ng' で、常に全件をプロンプトに載せているのでここには入れない。
 // crisisGeneration(危機の状態で、固定の文面を出さずに生成で受けるターン。2026年9月29日・仮):
@@ -103,7 +102,6 @@ export const MODES = ["CBT", "SFBT", "NARRATIVE", "ASSERTION", "LISTEN_ONLY", "P
 const SAFETY_KNOWLEDGE_IDS = {
   tierB: ["T27", "T30", "T31", "D3"],
   thirdParty: ["D5", "D6"],
-  retraction: ["T31", "D3"],
   afterCrisis: ["T31", "T32", "D3"],
   crisisGeneration: ["D1", "D2", "T31", "T32", "D3"],
 };
@@ -119,7 +117,8 @@ function toSafetyContexts(safetyContext) {
 // 件数が1000を超えたら pgvector + 全文検索のハイブリッドに差し替える(CLAUDE.md 第7節)。
 // safetyContext: null(通常) | "tierB" | "thirdParty"。route.ts が classify() の risk/subject
 // から算出して渡す(両方が同時に真になることはない。risk は単一の値のため)。
-// 第2段階(設定 CRISIS_RESPONSE=staged)では "retraction" / "afterCrisis" / "crisisGeneration" もあり、配列で複数渡すことがある。
+// 第2段階(設定 CRISIS_RESPONSE=staged)では "afterCrisis" / "crisisGeneration" もあり、配列で複数渡すことがある。
+// 本番の既定でも、固定応答を出したあとは "afterCrisis" を足した配列で渡す(CLAUDE.md 5.17)。
 // modes: フェーズ2で判定されたrecommended_mode配列(構造化面接AI統合 手順6)。null/[]なら
 // 従来通りモードによるブーストは行わない(intake中や、モード判定前のフォールバック呼び出し)。
 // オプション引数ではなく素の位置引数にしているのは、このファイルがTypeScriptの型チェック
@@ -159,7 +158,8 @@ export function retrieve(rows, text, weight, relation, n, safetyContext, modes) 
 //  プロンプト
 // ============================================================================
 // Tier B / 第三者の安全懸念のターンだけに挟む指示ブロック(構造化面接AI統合 手順4)。
-// retraction / afterCrisis / crisisGeneration は危機検知の作り直し 第2段階の仮の指示(src/crisis-response.mjs。心理士の確認待ち)。
+// afterCrisis / crisisGeneration は危機検知の作り直し 第2段階の仮の指示(src/crisis-response.mjs。心理士の確認待ち)。
+// afterCrisis だけは本番の既定でも使う(固定応答を出したあとの生成。2026年10月5日。CLAUDE.md 5.17)。
 // どれも「生成は続けるが、このターンは特に慎重に」という位置づけで、
 // Tier A(risk==="crisis" && subject==="self")のような生成スキップ+固定応答(CLAUDE.md 5.2)
 // とは別の扱い。二択で程度を確認する質問(実質的なリスクアセスメント)を避けることが共通の核。
@@ -187,7 +187,6 @@ const SAFETY_CONTEXT_BLOCKS = {
   相談することを、相談者自身のためでもあると伝えたうえで勧める
 ・友人はこの場にいないので、友人の状態を根掘り葉掘り聞き出そうとしない
 ・相談者自身にも同じようなサインがないかは、詰問にならない範囲でさりげなく気にかけてよい`,
-  retraction: RETRACTION_BLOCK_PROVISIONAL,
   afterCrisis: AFTER_CRISIS_BLOCK_PROVISIONAL,
   crisisGeneration: CRISIS_GENERATION_BLOCK_PROVISIONAL,
 };
@@ -497,8 +496,9 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   // phase: intake(Turn1〜4のスロットフィリング) | phase2(それ以降)。
   // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
   // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。
-  // 危機の応答のあと(afterCrisis。第2段階・仮)は、インテーク中でも台本(つらさの点数などの質問)を
-  // 出さず、自由な進め方にする(台本と自由な進め方を混ぜるのではなく、台本を止める。CLAUDE.md 5.16)。
+  // 危機の応答のあと(afterCrisis。第2段階・仮。本番の既定でも固定応答を出したあと)は、インテーク中でも
+  // 台本(つらさの点数などの質問)を出さず、自由な進め方にする(台本と自由な進め方を混ぜるのではなく、
+  // 台本を止める。CLAUDE.md 5.13・5.16・5.17)。
   // sessions.phase は intake のまま変えない(applyIntakeUpdate は出力に intake が無ければ何もしない)。
   const phase = intake?.phase === "intake" && !contexts.includes("afterCrisis") ? "intake" : "phase2";
   const flowBlock = phase === "intake"

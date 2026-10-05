@@ -476,13 +476,15 @@ group by 1 order by n desc;
 -- セッションの状態
 --  watch_turns_left: 見守りの残りターン(0 = 見守っていない。段階1のあと3ターン)
 --  crisis_state: 危機の応答の進み具合。none / step1〜3(その文面を出して返事を待っている)/
---    done(4通目まで出した)/ paused1〜3(その文面のあと、打ち消し等で止めた)/
---    again1〜3(止めたあとの再サインで、受け止めだけの短い1通(再受け止め)を出して返事を待っている)
+--    done(4通目まで出した)/ paused1〜3(その文面のあと、積み重なり・引き下がりで止めた)/
+--    again1〜3(止めたあとの再サインで、受け止めだけの短い1通(再受け止め)を出して返事を待っている)/
+--    wrap1〜3(その文面のあとの引き下がりに、まとめの1通を出して返事を待っている。13節で足した値)
 --  crisis_trigger: いまの危機の応答のきっかけ。direct(キーワード・受動パターン・分類器)/
 --    accumulation(見守り中の再サイン)
 --  care_shown: 気づかいの一言をこのセッションで出したか(同じ一言を2回出さないため)
 --  reentry_used: 再受け止めをこのセッションで出したか(1回まで)
--- CHECK 制約は名前を付けて作り直す形にしている(値の種類を増やしたときに、この節を再実行すれば入れ替わるように)
+-- CHECK 制約は名前を付けて作り直す形にしている(値の種類を増やしたときに、この節を再実行すれば入れ替わるように)。
+-- 13節で足した値(wrap1〜3・crisis_step 7〜9)も含めてある(13節のあとでこの節を再実行しても、値が減らないように)
 alter table sessions add column if not exists watch_turns_left int not null default 0;
 alter table sessions add column if not exists crisis_state text not null default 'none';
 alter table sessions add column if not exists crisis_trigger text;
@@ -492,14 +494,16 @@ alter table sessions drop constraint if exists sessions_watch_turns_left_check;
 alter table sessions add constraint sessions_watch_turns_left_check check (watch_turns_left >= 0);
 alter table sessions drop constraint if exists sessions_crisis_state_check;
 alter table sessions add constraint sessions_crisis_state_check
-  check (crisis_state in ('none','step1','step2','step3','done','paused1','paused2','paused3','again1','again2','again3'));
+  check (crisis_state in ('none','step1','step2','step3','done','paused1','paused2','paused3','again1','again2','again3',
+                          'wrap1','wrap2','wrap3'));
 alter table sessions drop constraint if exists sessions_crisis_trigger_check;
 alter table sessions add constraint sessions_crisis_trigger_check
   check (crisis_trigger is null or crisis_trigger in ('direct','accumulation'));
 
 -- AIの発言ごと
 --  safety_stage: そのターンの段階(0 通常 / 1 気がかり / 2 危機)
---  crisis_step: 危機の応答を分けて出した固定の文面の何通目か(1〜4。5 = 2回目以降の短い1通、6 = 再受け止め)
+--  crisis_step: 危機の応答を分けて出した固定の文面の何通目か(1〜4。5 = 2回目以降の短い1通、6 = 再受け止め。
+--    13節で 7 = まとめの1通、8 = 短いまとめの1通、9 = 終わりを受け入れる1通 を足した)
 --  safety_card: 発言の下に出したもの(care = 気づかいの一言+折りたたみの窓口 / hotlines = 折りたたみの窓口 /
 --    crisis = 危機カード)。resume・admin.html でも同じカードを出すため、crisis・closing と同じ扱いで残す
 alter table messages add column if not exists safety_stage int;
@@ -508,17 +512,18 @@ alter table messages add column if not exists safety_card text;
 alter table messages drop constraint if exists messages_safety_stage_check;
 alter table messages add constraint messages_safety_stage_check check (safety_stage is null or safety_stage between 0 and 2);
 alter table messages drop constraint if exists messages_crisis_step_check;
-alter table messages add constraint messages_crisis_step_check check (crisis_step is null or crisis_step between 1 and 6);
+alter table messages add constraint messages_crisis_step_check check (crisis_step is null or crisis_step between 1 and 9);
 alter table messages drop constraint if exists messages_safety_card_check;
 alter table messages add constraint messages_safety_card_check
   check (safety_card is null or safety_card in ('care','hotlines','crisis'));
 
 -- 安全判定の記録(2-4)
 --  stage: 段階 / decided_by: 判定の根拠(どの規則か。pattern・keyword・classifier・idiom・classifier_watch・
---    classifier_error と、第2段階の watch_repeat・reentry・closing_exception・retraction・accumulation_pause・
---    crisis_flow など)
+--    classifier_error と、第2段階の watch_repeat・reentry・closing_exception・accumulation_pause・crisis_flow、
+--    13節の withdrawal・withdrawal_end・withdrawal_repeat・withdrawal_ignored_sign・resignation など。
+--    2026年10月5日より前の行には、打ち消しの retraction・retraction_ignored_keyword もある)
 --  watch_event: 見守りの開始(start)・終了(end)・見守り中の再サインで段階2へ(escalate)
---  retraction: 打ち消しとして扱ったか
+--  retraction: 打ち消しとして扱ったか(13節から: 引き下がりとして扱ったか。列の名前は以前のまま)
 --  teacher_answer: 3通目(学校の先生に話すことをどう思うか)への答え(yes / no / unclear)
 --  crisis_step: そのターンに出した危機の応答の文面の何通目か
 --  risk は、危機の応答の続きのターンでは、その発言そのものの判定(「うん」等の返事まで
@@ -538,7 +543,7 @@ alter table safety_events drop constraint if exists safety_events_teacher_answer
 alter table safety_events add constraint safety_events_teacher_answer_check
   check (teacher_answer is null or teacher_answer in ('yes','no','unclear'));
 alter table safety_events drop constraint if exists safety_events_crisis_step_check;
-alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 6);
+alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 9);
 
 -- pending_safety に段階・根拠・見守り・打ち消し・先生についての答えを足す
 -- (列を足した「後」でなければ作れないため、この位置で作り直す。drop + create の理由は9.4節と同じ)
@@ -565,3 +570,36 @@ order by e.created_at desc;
 -- ============================================================================
 alter table sessions add column if not exists repeat_used boolean not null default false;
 alter table messages add column if not exists crisis_generated boolean not null default false;
+
+-- ============================================================================
+-- 13. 危機検知の作り直し 第2段階の修正: 引き下がり(2026年10月5日・仮の文面。心理士の確認待ち)
+--
+--  11節・12節と同じく、設定 CRISIS_RESPONSE=staged のときだけ route.ts が書き込む列・値。
+--  有効にする前に、11節・12節のあとでこの節を Supabase の SQL エディタで実行すること
+--  (未実行のまま有効にしても会話は止まらず、第1段階の動きになる)。何度実行してもよい。
+--
+--  危機の応答の途中の「打ち消し」(2回とも打ち消しなら段階1に下げて、残りの文面を止める)をやめ、「引き下がり」に
+--  置き換えた。引き下がりは問いを止める理由にはなるが、窓口を伝えない理由にはならない(段階は下げない。
+--  通知と記録は取り消さない。CLAUDE.md 5.16)。
+--
+--  sessions.withdrawal_count: 危機の応答の中で引き下がった回数(1回目 = まとめの1通、2回目 = 終わりを受け入れる1通。
+--    同じ固定の文面を2回出さないために数える)
+--  sessions.crisis_state に wrap1〜3(その文面のあとの引き下がりに、まとめの1通を出して返事を待っている)を足す
+--  messages.crisis_step・safety_events.crisis_step に 7〜9 を足す
+--    (7 = まとめの1通、8 = 短いまとめの1通、9 = 終わりを受け入れる1通)
+--  safety_events.retraction は、この節から「引き下がりとして扱ったか」を記録する(列の名前は以前のまま。
+--    2026年10月5日より前の行は打ち消し)
+--  本番の既定(段階ごとの応答が無効)で、固定応答を出したあとの生成に危機のあとの指示を付けること(CLAUDE.md 5.17)には、
+--  この節は要らない(固定応答を出したかは、以前からある messages.crisis から決めるため)
+-- ============================================================================
+alter table sessions add column if not exists withdrawal_count int not null default 0;
+alter table sessions drop constraint if exists sessions_withdrawal_count_check;
+alter table sessions add constraint sessions_withdrawal_count_check check (withdrawal_count >= 0);
+alter table sessions drop constraint if exists sessions_crisis_state_check;
+alter table sessions add constraint sessions_crisis_state_check
+  check (crisis_state in ('none','step1','step2','step3','done','paused1','paused2','paused3','again1','again2','again3',
+                          'wrap1','wrap2','wrap3'));
+alter table messages drop constraint if exists messages_crisis_step_check;
+alter table messages add constraint messages_crisis_step_check check (crisis_step is null or crisis_step between 1 and 9);
+alter table safety_events drop constraint if exists safety_events_crisis_step_check;
+alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 9);

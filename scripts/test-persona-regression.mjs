@@ -71,6 +71,7 @@ const STAGED = stagedResponseEnabled();
 import {
   stagedResponseEnabled, assessSafetyTurn, normalizeSafetyState, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, finalizeCrisisGeneration,
+  aftercareEnabled, defaultSafetyContexts,
 } from "../src/crisis-response.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
@@ -209,22 +210,26 @@ async function classifyWithRetry(text, recentMessages) {
   );
 }
 
-// 段階ごとの応答(第2段階)のときの1ターン分の判定。分類器・打ち消し・先生についての答えの
+// 段階ごとの応答(第2段階)のときの1ターン分の判定。分類器・引き下がり・先生についての答えの
 // どれかが無料枠の上限・混雑で失敗したら、別のキーで全体を試し直す。
 const isTransientText = (t) => !!t && /\[RATE_LIMIT\]|\[HTTP_503\]/.test(t);
 async function assessWithRetry(text, recentMessages, state) {
   return withRateLimitRetry(
     KEY_POOL,
     () => assessSafetyTurn(text, recentMessages ?? [], state),
-    (r) => isTransientText(r.staged?.classifierError) || isTransientText(r.retraction?.error) || isTransientText(r.teacher?.error),
+    (r) => isTransientText(r.staged?.classifierError) || isTransientText(r.withdrawal?.error) || isTransientText(r.teacher?.error),
     { label: "分類器: ", state: CLASSIFIER_KEY_ROTATION },
   );
 }
 
-// 危機の応答の何通目かの表し方(5 = 2回目以降の短い1通、6 = 打ち消しのあとの再受け止め)
-const stepLabel = (n) => (n === 5 ? "2回目以降の短い1通" : n === 6 ? "再受け止め" : `${n}通目`);
+// 危機の応答の何通目かの表し方(5 = 2回目以降の短い1通、6 = 再受け止め、7 = まとめの1通、8 = 短いまとめの1通、
+// 9 = 終わりを受け入れる1通)
+const STEP_LABELS = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
+const stepLabel = (n) => STEP_LABELS[n] ?? `${n}通目`;
+// 引き下がりの判定(src/crisis-response.mjs の judgeWithdrawal)の返事の種類
+const REPLY_TYPE_LABELS = { withdrawal: "引き下がり", resignation: "諦め", reaffirm: "念押し", other: "ふつうの返事" };
 
-// 段階ごとの応答で足した DB の列(db/schema.sql 11節・12節)があるか。無ければ書き込まない
+// 段階ごとの応答で足した DB の列(db/schema.sql 11節〜13節)があるか。無ければ書き込まない
 // (会話の状態はこのスクリプトの中で持っているので、列が無くても検証はできる)。メインの処理で確かめる。
 let HAS_STAGED_COLUMNS = false;
 
@@ -250,7 +255,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       knowledge_version: knowledgeVersion(rows),
     })
     .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state"
-      + (HAS_STAGED_COLUMNS ? ",watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used" : ""))
+      + (HAS_STAGED_COLUMNS ? ",watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used,withdrawal_count" : ""))
     .single();
   if (sessionErr || !sessionRow) {
     console.error(`[${personaId}] セッション作成に失敗しました:`, sessionErr);
@@ -273,8 +278,8 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
   };
   if (STAGED) {
     // 段階ごとの応答の状態(列が無い DB では初期値から始める)
-    const { watch_turns_left, crisis_state, crisis_trigger, care_shown, reentry_used, repeat_used } = normalizeSafetyState(sessionRow);
-    sessState = { ...sessState, watch_turns_left, crisis_state, crisis_trigger, care_shown, reentry_used, repeat_used };
+    const { watch_turns_left, crisis_state, crisis_trigger, care_shown, reentry_used, repeat_used, withdrawal_count } = normalizeSafetyState(sessionRow);
+    sessState = { ...sessState, watch_turns_left, crisis_state, crisis_trigger, care_shown, reentry_used, repeat_used, withdrawal_count };
   }
   const maxTurns = STAGED && sessionDef.staged_max_turns ? sessionDef.staged_max_turns : sessionDef.max_turns;
   const history = [];
@@ -336,8 +341,9 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
         detection_stage: safety.stage ?? null, detection_decided_by: safety.decidedBy ?? null,
         classifier_mode: safety.classifierMode ?? null, crisis_generated: plan.crisisGenerated === true,
         crisis_step: plan.crisisStep, card: plan.card, safety_contexts: plan.safetyContexts,
-        retraction: plan.event?.retraction === true,
-        retraction_votes: assessed.retraction ? assessed.retraction.votes.map((v) => (v.ok ? v.retraction : "エラー")) : null,
+        // 引き下がり(まとめの1通・終わりを受け入れる1通などに進んだか)と、引き下がりの判定(返事の種類)
+        withdrawal: plan.event?.retraction === true,
+        reply_type: assessed.withdrawal ? (assessed.withdrawal.type ?? "エラー") : null,
         teacher_answer: plan.event?.teacher_answer ?? null,
         would_notify: plan.notify, watch_event: plan.event?.watch_event ?? null,
         watch_turns_left: plan.nextState.watch_turns_left, crisis_state: plan.nextState.crisis_state,
@@ -382,10 +388,10 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       }
     }
 
+    // 段階ごとの応答が無効でも、このセッションで固定応答を出していれば危機のあとの指示を付ける(route.ts と同じ。CLAUDE.md 5.17)
+    const afterCrisis = !plan && aftercareEnabled() && history.some((h) => h.speaker === "counselor" && h.crisis === true);
     const safetyContext = plan ? plan.safetyContexts
-      : safety.risk === "watch" ? "tierB"
-        : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
-          : null;
+      : defaultSafetyContexts({ risk: safety.risk, subject: safety.subject, afterCrisis });
     const chunks = retrieve(rows, studentText, sessState.weight, sessState.relation, undefined, safetyContext, sessState.recommended_mode);
     const system = buildSystem(rows, chunks, sessState.weight, sessState.notes, sessState.turns_since_summary, personSummary, safetyContext, sessState);
     // 危機の固定応答は会話履歴に含めない。段階ごとの応答で分けた文面(crisisStep あり)は含める(route.ts と同じ)
@@ -809,11 +815,11 @@ function buildPersonaTranscript(persona, sessions, automated, intake) {
     for (const t of s.turnLog) {
       lines.push(`T${t.turn} 生徒 [${t.student_model ?? "不明"}]: ${t.student}`);
       // 危機判定の根拠(キーワード一致か分類器か。2026年9月・2-3の検証時に追加)。
-      // 段階ごとの応答(第2段階)のときの状態(段階・見守りの残り・危機の応答の進み具合・打ち消し・先生についての答え)
+      // 段階ごとの応答(第2段階)のときの状態(段階・見守りの残り・危機の応答の進み具合・引き下がり・先生についての答え)
       const stagedNote = t.crisis_state !== undefined
         ? ` 段階${t.stage}(判定${t.detection_stage ?? "?"}${t.classifier_mode === "followup" ? "・見守り中・危機のあとの判定" : ""}) 見守り残り${t.watch_turns_left} 状態=${t.crisis_state}` +
           `${t.watch_event ? ` ${t.watch_event === "start" ? "見守り開始" : t.watch_event === "end" ? "見守り終了" : "見守り中の再サイン"}` : ""}` +
-          `${t.retraction ? " 打ち消し" : ""}${t.retraction_votes ? ` 打ち消し判定=${JSON.stringify(t.retraction_votes)}` : ""}` +
+          `${t.withdrawal ? " 引き下がり" : ""}${t.reply_type ? ` 返事の種類=${REPLY_TYPE_LABELS[t.reply_type] ?? t.reply_type}` : ""}` +
           `${t.teacher_answer ? ` 先生に話すこと=${t.teacher_answer}` : ""}${t.would_notify ? " (本番なら職員に通知)" : ""}`
         : "";
       if (t.crisis) {
@@ -852,10 +858,10 @@ console.log(`予算: 上限¥${budget.limitYen} 使用済み¥${Math.round(budge
 const db = getDb();
 if (STAGED) {
   // 書き込む列がすべてあるか(11節の一部だけが入った DB で、セッション作成が失敗しないように)
-  const { error: sessColErr } = await db.from("sessions").select("watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used").limit(1);
+  const { error: sessColErr } = await db.from("sessions").select("watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used,withdrawal_count").limit(1);
   const { error: msgColErr } = await db.from("messages").select("safety_stage,crisis_step,safety_card,crisis_generated").limit(1);
   HAS_STAGED_COLUMNS = !sessColErr && !msgColErr;
-  console.log(`段階ごとの応答: 有効(仮の文面)${HAS_STAGED_COLUMNS ? "" : "。db/schema.sql 11節・12節が未実行のため、新しい列には書き込まない(状態はこのスクリプトの中で持つ)"}\n`);
+  console.log(`段階ごとの応答: 有効(仮の文面)${HAS_STAGED_COLUMNS ? "" : "。db/schema.sql 11節〜13節が未実行のため、新しい列には書き込まない(状態はこのスクリプトの中で持つ)"}\n`);
 }
 const rows = await loadKnowledge(db);
 const version = knowledgeVersion(rows);
@@ -989,6 +995,7 @@ writeFileSync(path.join(resultsDir, jsonFileName), JSON.stringify({
   run_at: startedAt.toISOString(), finished_at: finishedAt.toISOString(), elapsed_ms: finishedAt - startedAt,
   stage: STAGE, repeats: REPEATS, run_id: runId, knowledge_version: version,
   crisis_detection: DETECTION, staged_response: STAGED, staged_columns_in_db: HAS_STAGED_COLUMNS,
+  aftercare: aftercareEnabled(),
   counselor_models: PRIMARY_MODELS, support_models: LITE_MODELS,
   logs_dir: path.relative(ROOT, logsDir),
   budget: { limit_yen: budget.limitYen, session_cost_usd: budget.sessionCostUsd, cumulative_yen_after: cumulativeYen, budget_stop: globalBudgetStop },

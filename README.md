@@ -329,19 +329,24 @@ npm run test:crisis
   `python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
 - **段階ごとの応答(危機検知の作り直し 第2段階。仮の文面・心理士の確認待ち。CLAUDE.md 5.16)** は、
   設定 `CRISIS_RESPONSE=staged` のときだけ動く(**本番では設定しない**。Vercel ではプレビュー環境にだけ設定して試す)。
-  有効にする前に `db/schema.sql` の11節・12節を Supabase の SQL エディタで実行する。
-  - 状態の移り変わり(見守り・分けて出す危機の応答・打ち消し・危機の状態の生成 など)のオフラインのテスト:
-    `npm run test:staged-response`(API・DB は使わない)
+  有効にする前に `db/schema.sql` の11節〜13節を Supabase の SQL エディタで実行する。
+  - 状態の移り変わり(見守り・分けて出す危機の応答・引き下がりへのまとめの1通・危機の状態の生成・本番の既定の
+    「危機のあと」など)のオフラインのテスト: `npm run test:staged-response`(API・DB は使わない。
+    ペルソナテストの記録の B1・B2・B5 の判定の並びを、新しい規則に通す再生も含む)
   - 見守り中・危機のあとの判定(その発言そのものに新しい危機のサインがあるか)の検証(無料枠):
     `npm run test:followup`(開発用の文 `docs/test-sets/crisis-followup-dev.json`。`--compare-normal` を付けると、
     比べるために通常の判定にも通す)。危機でなければならない文が段階2にならなかったら、その時点で止まる。
     結果はエクセルにも書き出す
   - ペルソナテストの記録の生徒の発言を、新しい分類器と状態の流れに順に通す再生(無料枠。返事は生成しない):
-    `npm run test:replay`(入力 `docs/test-sets/staged-replay-20260926.json`。2026年9月26日の再検証の B1・B2・B5)
-  - 打ち消しの判定の検証(無料枠): `npm run test:retraction`(開発用の文
-    `docs/test-sets/crisis-retraction-dev.json`)。最終判定は `node scripts/test-crisis-retraction.mjs --holdout`
-    (保留セット v2 の打ち消し・念押しを、危機の応答の1通目のあとの状態で判定の流れ全体に通す)。
-    打ち消しではない文を打ち消しとして扱ったら、その時点で止まる。結果はエクセルにも書き出す
+    `npm run test:replay`(入力 `docs/test-sets/staged-replay-20260926.json`。2026年9月26日の再検証の B1・B2・B5。
+    `--personas=B1,B5` で絞れる)
+  - 引き下がりの判定の検証(無料枠。2026年10月5日に打ち消しの判定から置き換えた): `npm run test:withdrawal`
+    (開発用の文 `docs/test-sets/crisis-withdrawal-dev.json`。1通目・2通目・3通目のあと、まとめの1通のあとの状態で、
+    判定の流れ全体に通す)。新しいサイン(引き下がりの言葉と危機のサインが一緒の文)が段階2にならなかったら、
+    その時点で止まる。`--dry-run` を付けると API を使わずに仕組みだけを確かめる。結果はエクセルにも書き出す。
+    最終判定用の `--holdout`(保留セット v2 の打ち消し・念押し)は、人が求めるまで使わない
+  - 本番の既定(段階ごとの応答が無効)でも、本人の危機の固定応答を出したセッションでは、以後の生成に危機のあとの指示を
+    付ける(CLAUDE.md 5.17。列を足さないので、この節の SQL は要らない)。`CRISIS_AFTERCARE=off` で以前の動きに戻る
   - ペルソナでの確認: `CRISIS_RESPONSE=staged node scripts/test-persona-regression.mjs --stage=crisis2`
     (B1・B2・B5。相談AI本体は課金キー。心理士さんの確認で文面が決まってから1回だけ回す)
   - 仮の文面を心理士さんに見てもらう文書: `docs/crisis-stage2-provisional-texts.md`

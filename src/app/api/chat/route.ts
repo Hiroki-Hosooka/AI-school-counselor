@@ -41,7 +41,9 @@
 //                                  一致しないと401を返す(docs/backlog.md 1-2)
 //   CRISIS_DETECTION         任意  v1 にすると危機検知を以前の判定に戻す(既定は v2)
 //   CRISIS_RESPONSE          任意  staged にすると段階ごとの応答(第2段階・仮の文面。心理士の確認待ち)。
-//                                  本番では設定しない。有効にする前に db/schema.sql 11節・12節を実行すること
+//                                  本番では設定しない。有効にする前に db/schema.sql 11節〜13節を実行すること
+//   CRISIS_AFTERCARE         任意  off にすると、固定応答を出したあとの生成に危機のあとの指示を付けない
+//                                  (2026年10月5日より前の動き)。既定は付ける(CLAUDE.md 5.17)
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -55,6 +57,7 @@ import {
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
+  aftercareEnabled, hadCrisisReply, defaultSafetyContexts,
 } from "@/crisis-response.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -82,7 +85,7 @@ function getDb(): SupabaseClient {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
-// 段階ごとの応答(第2段階。src/crisis-response.mjs)で足した列(db/schema.sql 11節・12節)も読む。
+// 段階ごとの応答(第2段階。src/crisis-response.mjs)で足した列(db/schema.sql 11節〜13節)も読む。
 // 書き込むのは設定 CRISIS_RESPONSE=staged のときだけ。読むときは、列がまだ無い(SQL未実行の)DBでも
 // 動くよう、失敗したら列の少ない読み方で順に読み直す(新しい節の列から外していく)。select の列の一覧は
 // supabase-js が型として解析するので、呼び出し側でそのまま文字列で書き、結果の型はここで緩める
@@ -206,7 +209,7 @@ export async function POST(req: Request) {
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing")
           .eq("session_id", sessionId).order("seq"),
       );
-      // 安全判定の記録(段階・根拠・見守り・打ち消し・先生についての答え。列が無ければあるものだけ)
+      // 安全判定の記録(段階・根拠・見守り・引き下がり・先生についての答え。列が無ければあるものだけ)
       const { data: events } = await db.from("safety_events").select("*").eq("session_id", sessionId).order("seq");
       const usedOf = (m: Row) => (Array.isArray(m.used) ? (m.used as string[]) : []);
       const allUsedIds = Array.from(new Set(msgs.flatMap(usedOf)));
@@ -308,16 +311,16 @@ export async function POST(req: Request) {
       // phase以下はフェーズ1(インテーク)用(構造化面接AI統合 手順5)。
       // phase2に進んだセッションでは、applyIntakeUpdate()がこれ以上変更しない。
       // 段階ごとの応答(危機検知の作り直し 第2段階・仮。設定 CRISIS_RESPONSE=staged)のときは、
-      // 見守り・危機の応答の状態(db/schema.sql 11節・12節)も読む。状態の列がまだ無い(SQL未実行の)DBなら、
+      // 見守り・危機の応答の状態(db/schema.sql 11節〜13節)も読む。状態の列がまだ無い(SQL未実行の)DBなら、
       // このリクエストは第1段階の動きにする(設定を誤っても会話そのものは止めない)。
       let stagedOn = stagedResponseEnabled();
       const sessWithState = stagedOn
         ? await db.from("sessions")
-          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used")
+          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used,withdrawal_count")
           .eq("id", sessionId).single()
         : null;
       if (sessWithState?.error) {
-        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節・12節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
+        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節〜13節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
         stagedOn = false;
       }
       const sess = sessWithState && !sessWithState.error
@@ -347,7 +350,7 @@ export async function POST(req: Request) {
       //
       // 設定 CRISIS_RESPONSE=staged(第2段階・仮)のときは、src/crisis-response.mjs の assessSafetyTurn が
       // 見守り・危機の応答の状態をふまえて、このターンの扱い(plan)を決める(固定の文面を分けて出す・
-      // 気づかいのカード・打ち消し・見守り中の再サインで段階2 など。CLAUDE.md 5.16)。
+      // 気づかいのカード・引き下がりへのまとめの1通・見守り中の再サインで段階2 など。CLAUDE.md 5.16)。
       let safety: Awaited<ReturnType<typeof classify>>;
       let eventKeywords: string[];
       let eventReason: string;
@@ -386,8 +389,8 @@ export async function POST(req: Request) {
 
       if (plan) {
         // ---- 段階ごとの応答(第2段階・仮)----
-        // 通知は段階2を検知するたび(今と同じ)。記録は、段階1以上・見守りの開始/終了・打ち消し・
-        // 危機の応答の続きのターン(plan.event がある場合)に書く。
+        // 通知は段階2を検知するたび(今と同じ)。記録は、段階1以上・見守りの開始/終了・引き下がり
+        // (safety_events.retraction 列。db/schema.sql 13節)・危機の応答の続きのターン(plan.event がある場合)に書く。
         const notified = plan.notify ? await notifyCrisis(sessionId, plan.notifySubject) : false;
         if (plan.event) {
           await db.from("safety_events").insert({
@@ -441,10 +444,16 @@ export async function POST(req: Request) {
       // その場合も技術的なエラーを生徒にそのまま見せず、受け止めだけの返答で会話を続ける
       // (generateReply内で処理)。見逃さないよう flags に記録し、心理士のレビュー画面で
       // 頻度を確認できるようにしておく。
+      const hist = await selectRowsWithFallback(
+        () => db.from("messages").select("role,body,crisis,flags,crisis_step").eq("session_id", sessionId).order("seq"),
+        () => db.from("messages").select("role,body,crisis,flags").eq("session_id", sessionId).order("seq"),
+      );
+      // 段階ごとの応答が無効(本番の既定)のときも、このセッションで本人の危機の固定応答を出していれば、
+      // 以後の生成に危機のあとの指示を付ける(2026年10月5日。CLAUDE.md 5.17)。固定応答の次のターンで
+      // 「なんでもない」と書くと、ふつうの会話に戻ってしまっていたため。判定と固定応答の分岐は変えていない
+      const afterCrisis = !plan && aftercareEnabled() && hadCrisisReply(hist);
       const safetyContext = plan ? plan.safetyContexts
-        : safety.risk === "watch" ? "tierB"
-          : (safety.risk === "crisis" && safety.subject === "other") ? "thirdParty"
-            : null;
+        : defaultSafetyContexts({ risk: safety.risk, subject: safety.subject, afterCrisis });
       const rows = await loadKnowledge(db);
       // recommended_modeは手順6でretrieve()に渡し、フェーズ2ではモード一致のナレッジも
       // 引き出しやすくする(intake中は空配列なので、これまで通り影響しない)。
@@ -452,10 +461,6 @@ export async function POST(req: Request) {
         rows, text, sess.weight, sess.relation, undefined, safetyContext, sess.recommended_mode,
       );
 
-      const hist = await selectRowsWithFallback(
-        () => db.from("messages").select("role,body,crisis,flags,crisis_step").eq("session_id", sessionId).order("seq"),
-        () => db.from("messages").select("role,body,crisis,flags").eq("session_id", sessionId).order("seq"),
-      );
       const messages = hist
         // 危機の固定応答(CRISIS_REPLY)は、今まで通り生成の会話履歴に含めない。段階ごとの応答で分けた文面
         // (crisis_step あり)は、短い受け止めや案内なので、外すと会話がつながらなくなるため含める(第2段階)

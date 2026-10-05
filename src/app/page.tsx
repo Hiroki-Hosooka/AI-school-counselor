@@ -16,8 +16,12 @@ type UsedKnowledge = { id: string; src: string; cat: string; body: string };
 //   care     = 気づかいの一言(careLine。文面はサーバから届く)+ 折りたたみの窓口
 //   hotlines = 折りたたみの窓口だけ
 //   crisis   = 危機カード(今までの crisis-card と同じ)
-// crisisStep: 危機の応答を分けて出した文面の何通目か(1〜4、5 = 2回目以降の短い1通、6 = 打ち消しのあとの再受け止め)
+// crisisStep: 危機の応答を分けて出した文面の何通目か(1〜4、5 = 2回目以降の短い1通、6 = 再受け止め、
+//   7 = 引き下がりへのまとめの1通、8 = 短いまとめの1通、9 = 終わりを受け入れる1通)
 type SafetyCard = "care" | "hotlines" | "crisis";
+const CRISIS_STEP_LABELS: Record<number, string> = {
+  5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通",
+};
 type Msg = {
   role: "user" | "ai";
   body: string;
@@ -185,7 +189,7 @@ export default function Page() {
         }]);
         setSafety(r.safety);
         setFlags([r.crisis_step
-          ? `危機の応答 ${r.crisis_step === 5 ? "2回目以降の短い1通" : r.crisis_step === 6 ? "再受け止め" : `${r.crisis_step}通目`}(仮の文面)／生成をスキップ`
+          ? `危機の応答 ${CRISIS_STEP_LABELS[r.crisis_step] ?? `${r.crisis_step}通目`}(仮の文面)／生成をスキップ`
           : "危機応答に切り替え／生成をスキップ"]);
         return;
       }

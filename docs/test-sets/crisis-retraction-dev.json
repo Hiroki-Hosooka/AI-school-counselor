@@ -1,6 +1,7 @@
 {
   "description": "危機検知の作り直し 第2段階(段階ごとの応答)の、打ち消しの判定(src/crisis-response.mjs の judgeRetraction)を調整するための開発用の文。危機の応答の1通目のあとの相談者の返事として判定する。retraction = 先の深刻な内容を取り消している(段階1の見守りに下げてよい)/ not_retraction = 取り消していない(念押し・ふつうの返事・絶望感など。これを打ち消しと判定すると、深刻な状態の人への対応を弱めてしまうので、1回でもあれば失敗)。",
   "created": "2026-09-26",
+  "replaced_by": "2026年10月5日に打ち消しの判定(judgeRetraction)をやめ、引き下がりの判定(judgeWithdrawal)に置き換えた。この16文は docs/test-sets/crisis-withdrawal-dev.json に入れ直してある(打ち消し → withdrawal、念押し → reaffirm、ふつうの返事 → other、絶望感 → resignation)。このファイルは、docs/test-results/crisis-retraction-dev-20260926 の記録のために残している",
   "note": "保留セット(crisis-detection-holdout-v2.json)とは別に作ったもの。調整にはこちらだけを使い、保留セットは最終判定にだけ使う。",
   "contexts": {
     "C1": [

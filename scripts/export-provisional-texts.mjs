@@ -14,7 +14,8 @@ import path from "node:path";
 import {
   CARE_LINE_PROVISIONAL, CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL,
   CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL,
-  RETRACTION_BLOCK_PROVISIONAL, AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
+  CRISIS_WRAPUP_PROVISIONAL, CRISIS_WRAPUP_SHORT_PROVISIONAL, CRISIS_WITHDRAW_END_PROVISIONAL,
+  AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
   CRISIS_GENERATION_FALLBACK_PROVISIONAL,
   WATCH_TURNS,
 } from "../src/crisis-response.mjs";
@@ -35,9 +36,11 @@ const quote = (text) => text.split("\n").map((line) => (line ? `> ${line}` : ">"
 // 生成への指示は、見出しを除いた箇条書きの部分だけを載せる
 const bullets = (block) => block.trim().split("\n").filter((l) => !l.startsWith("#")).join("\n");
 
-const md = `# 危機の応答(段階2)の仮の文面 1通目〜4通目
+const md = `# 危機の応答(段階2)の仮の文面 1通目〜4通目・引き下がったとき
 
 > **すべて仮の文面です(心理士さんの確認待ち)。** 本番では使っていません(設定 \`CRISIS_RESPONSE=staged\` のときだけ使う)。
+> ただし「危機の応答のあとに、生成に付ける指示」(最後の「参考」)だけは、2026年10月5日から本番の既定でも使っています
+> (固定応答を出したあとの生成。仮のまま)。
 > 文面の正本は \`src/crisis-response.mjs\` です。この文書は \`node scripts/export-provisional-texts.mjs\` で作り直します(手で直さない)。
 
 ## どういうときに出すか
@@ -49,10 +52,14 @@ AI は返事を生成せず、下の決まった文面を **1通ずつ、相談�
 - 1通目を受け止めだけにして、誤検知だった場合の負担を小さくし、リスクを尋ねる質問をせずに一呼吸おきます。
 - 見守り中の気がかりなサインが重なって危機の応答を始めた場合(積み重なり)は、1通目への返事に、はっきりした危機のサイン
   (危機を示す言葉・受動的な希死念慮の言い方・判定器の危機の判定)があるときだけ2通目に進みます。
-- 途中で「冗談だよ」「大げさに言っただけ」などと打ち消された場合は、残りの文面を出さず、見守り(${WATCH_TURNS}ターン)に戻します。
-  窓口の表示はそのまま残します。見守り中に気がかりなサインがもう一度出たときは、続きの重い文面からではなく、
-  受け止めだけの短い1通(再受け止め。下の「参考」)を出します(1回の会話で1回まで。そのあとは見守りません)。
-  はっきりした危機のサインが出たときは、止めていた続きの文面に進みます。
+- 途中で「なんでもない」「忘れて」「冗談だよ」などと引き下がった場合は、**問いは止めますが、窓口は伝えます**
+  (「引き下がりは問いを止める理由にはなるが、窓口を伝えない理由にはならない」。2026年10月5日)。危機の段階は下げず、
+  会話は最後まで「危機のあと」の状態のままです(職員への通知と記録も取り消しません)。下の「引き下がったとき」の文面を出します。
+  引き下がりの言葉と一緒に、新しい危機のサインがあるときは、そちらを優先して次の文面に進みます(通知も出します)。
+  「もういい、どうせ」のような諦めは、引き下がりではなく、今どおり次の文面に進みます。
+- 見守り中の気がかりなサインが重なって始めた危機の応答を止めたあとの見守り(${WATCH_TURNS}ターン)の間に、気がかりなサインが
+  もう一度出たときは、続きの重い文面からではなく、受け止めだけの短い1通(再受け止め。下の「参考」)を出します
+  (1回の会話で1回まで。そのあとは見守りません)。はっきりした危機のサインが出たときは、止めていた続きの文面に進みます。
 - 見守り中と、危機の応答を始めたあとは、判定器に「その発言そのものに新しい危機のサインがあるか」を判定させます。
   すでに受け止めた打ち明けを、そのあとの「別に」「わかんない」のような返事で数え直さないためです。
   このとき、「課題多すぎて死ぬ」のような日常の誇張は、危機ではなく気がかり(段階1)として扱います
@@ -115,6 +122,44 @@ ${quote(CRISIS_STEP4_PROVISIONAL.no)}
 
 ${quote(CRISIS_STEP4_PROVISIONAL.unclear)}
 
+## 引き下がったとき(まとめの1通・終わりを受け入れる1通)
+
+**1通目のあとに引き下がったとき(まとめの1通)**
+**添えるもの:** 折りたたみの窓口(1通目と同じ)
+
+${quote(CRISIS_WRAPUP_PROVISIONAL)}
+
+- 引き下がる気持ちを受け止め、「さっき書いてくれたことは、ちゃんと受け取った」を一度だけ伝え、
+  ここで話すのをやめてほしいわけではないことを伝えます。話しにくい理由・先生についての問いは出しません。
+
+**2通目・3通目のあとに引き下がったとき(短いまとめの1通)**
+**添えるもの:** なし(窓口は2通目の危機カードですでに届いている)
+
+${quote(CRISIS_WRAPUP_SHORT_PROVISIONAL)}
+
+- 残りの問い(3通目の先生についての問い・4通目)は出しません。
+
+**2回目の引き下がり(終わりを受け入れる短い1通)**
+**添えるもの:** なし
+
+${quote(CRISIS_WITHDRAW_END_PROVISIONAL)}
+
+- 「今は」として、この先の対応(もう触れない など)は約束しません。3回目以降は、同じ固定の文面をくり返さず、
+  危機のあとの指示を付けた生成で受けます。
+
+**引き下がったときの流れ(例)**
+
+| | 発言 |
+|---|---|
+| 相談者 | もう全部やめたい。死にたいってずっと思ってる |
+| AI(1通目) | ${CRISIS_STEP1_PROVISIONAL}<br>[折りたたみの窓口] |
+| 相談者 | なんでもない |
+| AI(まとめの1通) | ${CRISIS_WRAPUP_PROVISIONAL.replace(/\n+/g, "<br>")}<br>[折りたたみの窓口] |
+| 相談者 | もういいって |
+| AI(終わりを受け入れる1通) | ${CRISIS_WITHDRAW_END_PROVISIONAL} |
+| 相談者 | (返事) |
+| AI | ふだんの会話に戻る(危機のあとの指示を付けた生成) |
+
 ## 相談者から見た流れ(例)
 
 | | 発言 |
@@ -136,7 +181,7 @@ ${quote(CRISIS_STEP4_PROVISIONAL.unclear)}
 
 ${quote(CARE_LINE_PROVISIONAL)}
 
-**止めたあとの再受け止め(受け止めだけの短い1通)** 打ち消し・積み重なりで止めたあとの見守り中に、気がかりなサインがもう一度出たとき
+**止めたあとの再受け止め(受け止めだけの短い1通)** 積み重なりで止めたあとの見守り中に、気がかりなサインがもう一度出たとき
 (1回の会話で1回まで。次の返事に、はっきりした危機のサインがあるときだけ続きの文面に進む)
 
 ${quote(CRISIS_AGAIN_PROVISIONAL)}
@@ -151,11 +196,7 @@ ${quote(CRISIS_REPEAT_PROVISIONAL)}
 
 ${CRISIS_GENERATION_FALLBACK_PROVISIONAL.map((t, i) => `${i + 1}つ目\n\n${quote(t)}`).join("\n\n")}
 
-**打ち消しのときに、生成に付ける指示**
-
-${bullets(RETRACTION_BLOCK_PROVISIONAL)}
-
-**危機の応答のあとに、生成に付ける指示**
+**危機の応答のあとに、生成に付ける指示**(2026年10月5日から、本番の既定でも、固定応答を出したあとの生成に付ける)
 
 ${bullets(AFTER_CRISIS_BLOCK_PROVISIONAL)}
 

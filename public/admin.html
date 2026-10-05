@@ -410,14 +410,24 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   }
 
   // 安全判定の記録(safety_events)。危機検知の作り直し 第2段階(設定 CRISIS_RESPONSE=staged。仮)で
-  // 足した列(段階・判定の根拠・見守り・打ち消し・先生についての答え・何通目か)があれば表示する。
+  // 足した列(段階・判定の根拠・見守り・引き下がり・先生についての答え・何通目か)があれば表示する。
   var WATCH_JA = { start: "見守り開始", end: "見守り終了", escalate: "見守り中の再サインで段階2へ" };
   var TEACHER_JA = { yes: "前向き", no: "後ろ向き", unclear: "どちらでもない" };
-  // 判定の根拠(decided_by)のうち、段階ごとの応答で足した印の読み方(2026年9月29日)
+  // 判定の根拠(decided_by)のうち、段階ごとの応答で足した印の読み方(2026年9月29日・10月5日)
   var RULE_NOTE_JA = {
     followup: "見守り中・危機のあとの判定(その発言の新しいサインだけ)",
-    crisis_generation: "危機の状態で生成(仮の指示)"
+    crisis_generation: "危機の状態で生成(仮の指示)",
+    withdrawal: "引き下がり→まとめの1通",
+    withdrawal_end: "2回目の引き下がり→終わりを受け入れる1通",
+    withdrawal_repeat: "3回目以降の引き下がり→生成",
+    withdrawal_ignored_sign: "引き下がりより新しいサインを優先",
+    resignation: "諦め→次の文面へ",
+    retraction: "打ち消し(2026年10月5日より前の仕組み)",
+    retraction_ignored_keyword: "打ち消しよりキーワードを優先(2026年10月5日より前)"
   };
+  // 危機の応答の何通目か(crisis_step)の読み方
+  var STEP_JA = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
+  function stepJa(n) { return STEP_JA[n] || (n + "通目"); }
   function renderSafetyEvents(events) {
     if (!events || !events.length) { safetyBlockEl.hidden = true; safetyBlockEl.innerHTML = ""; return; }
     safetyBlockEl.hidden = false;
@@ -425,13 +435,16 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       var parts = [];
       if (e.stage != null) parts.push("段階" + e.stage);
       parts.push("risk=" + e.risk + (e.subject ? "/" + e.subject : ""));
-      if (e.crisis_step) parts.push("危機の応答 " + (e.crisis_step === 5 ? "2回目以降の短い1通" : e.crisis_step === 6 ? "再受け止め" : e.crisis_step + "通目"));
+      if (e.crisis_step) parts.push("危機の応答 " + stepJa(e.crisis_step));
       if (e.watch_event) parts.push(WATCH_JA[e.watch_event] || e.watch_event);
-      if (e.retraction) parts.push("打ち消し");
+      // 2026年10月5日から、この列は「引き下がりとして扱った」(それより前の行は打ち消し)
+      if (e.retraction) parts.push("引き下がり");
       if (e.teacher_answer) parts.push("先生に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
       if (e.decided_by && e.decided_by.indexOf("crisis_generation") >= 0) parts.push(RULE_NOTE_JA.crisis_generation);
       if (e.decided_by && e.decided_by.length) {
-        parts.push("根拠: " + e.decided_by.map(function (r) { return r === "followup" ? RULE_NOTE_JA.followup : r; }).join(","));
+        // crisis_generation は上で別に出しているので、根拠の並びからは外す
+        parts.push("根拠: " + e.decided_by.filter(function (r) { return r !== "crisis_generation"; })
+          .map(function (r) { return RULE_NOTE_JA[r] || r; }).join(","));
       }
       if (e.notified) parts.push("通知済み");
       return "<dt>" + esc(fmtDate(e.created_at)) + "</dt><dd>" + esc(parts.join(" / ")) +
@@ -459,7 +472,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (m.closing) parts.push('<span class="tag amber">クロージング要約</span>');
     // 段階ごとの応答(第2段階・仮)
     if (m.safety_stage != null) parts.push('<span class="tag">段階' + esc(m.safety_stage) + '</span>');
-    if (m.crisis_step) parts.push('<span class="tag warn">危機の応答 ' + (m.crisis_step === 5 ? "2回目以降の短い1通" : m.crisis_step === 6 ? "再受け止め" : esc(m.crisis_step) + "通目") + '(仮の文面)</span>');
+    if (m.crisis_step) parts.push('<span class="tag warn">危機の応答 ' + esc(stepJa(m.crisis_step)) + '(仮の文面)</span>');
     if (m.safety_card === "care") parts.push('<span class="tag amber">気づかいの一言(仮の文面)+窓口</span>');
     if (m.safety_card === "hotlines") parts.push('<span class="tag">折りたたみの窓口</span>');
     if (m.safety_card === "crisis") parts.push('<span class="tag warn">危機カード</span>');
