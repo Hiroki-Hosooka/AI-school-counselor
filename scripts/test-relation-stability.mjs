@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply, PRIMARY_MODELS } from "../src/generate.mjs";
+import { requireKnowledgeMatchesSeeds } from "./_lib/knowledge-check.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -185,6 +186,8 @@ function countBy(rows, fn) {
 
 const db = getDb();
 const rows = await loadKnowledge(db);
+// seed にあるナレッジが DB に欠けていないか(欠けたまま課金のテストを回さない。scripts/_lib/knowledge-check.mjs)
+requireKnowledgeMatchesSeeds(rows);
 
 const startedAt = new Date();
 const perPersona = [];

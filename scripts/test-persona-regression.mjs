@@ -77,6 +77,7 @@ import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor, updatePersonMemory,
 } from "../src/generate.mjs";
+import { requireKnowledgeMatchesSeeds } from "./_lib/knowledge-check.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -862,6 +863,8 @@ if (STAGED) {
   console.log(`段階ごとの応答: 有効(仮の文面)${HAS_STAGED_COLUMNS ? "" : "。db/schema.sql 11節〜13節が未実行のため、新しい列には書き込まない(状態はこのスクリプトの中で持つ)"}\n`);
 }
 const rows = await loadKnowledge(db);
+// seed にあるナレッジが DB に欠けていないか(欠けたまま課金のテストを回さない。scripts/_lib/knowledge-check.mjs)
+requireKnowledgeMatchesSeeds(rows);
 const version = knowledgeVersion(rows);
 const resultsDir = path.join(ROOT, "docs/test-results");
 const logsDir = path.join(resultsDir, `persona-logs-${runId}`);

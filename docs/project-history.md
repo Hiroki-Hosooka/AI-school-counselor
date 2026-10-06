@@ -538,7 +538,7 @@ v1 と v2 を発言ごとに交互に判定。Tier A は各10回、それ以外�
 - (2026-10-06 に直した)README.md のモデルの並びが古かった。README.md と docs/backlog.md の確認用の件数が173件(D7 を足す前)だった。
 - CLAUDE.md 5.11 には「ブロック率はまだ実測を経ていない暫定措置」とあるが、テスト1でブロック 0/79 を記録済み(test-results/crisis-detection-summary.txt)。閾値を見直すかは未判断。
 - CLAUDE.md 2節の構成図にある docs/interviews/ は、リポジトリにない(git の HEAD のファイル一覧)。
-- ペルソナテスト時のナレッジ世代は169件(5-13)で、173件・174件ではない。テストに使ったDBに seed_knowledge_safety.sql(D3〜D6)・seed_knowledge_boundaries.sql(D7)が入っていなかった可能性がある(未確認)。
+- ペルソナテスト時のナレッジ世代は169件(5-13)で、173件・174件ではない。テストに使ったDBに seed_knowledge_safety.sql(D3〜D6)・seed_knowledge_boundaries.sql(D7)が入っていなかった可能性がある(未確認)。169件は「140件+構造化の29件」とちょうど一致し、D3〜D7 の5件が欠けた状態と数が合う。→ 2026-10-06 に、生成を使うテスト(テスト2〜4・モデル比較)の前に、DB のナレッジに seed の行が欠けていないかを確かめて止める仕組みを足した(scripts/_lib/knowledge-check.mjs)。本番の DB に D3〜D7 が入っているかも、README.md「2. テーブルを作る」の確認のSQLで確かめる必要がある。
 
 ---
 

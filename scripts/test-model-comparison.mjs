@@ -38,6 +38,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKeyPaid, requireSupabaseEnv, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure, PRICING, costUsd } from "./_lib/test-env.mjs";
 import { getDb, loadKnowledge, retrieve, buildSystem, generateReply } from "../src/generate.mjs";
+import { requireKnowledgeMatchesSeeds } from "./_lib/knowledge-check.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -106,6 +107,8 @@ console.log("");
 
 const db = getDb();
 const rows = await loadKnowledge(db);
+// seed にあるナレッジが DB に欠けていないか(欠けたまま課金のテストを回さない。scripts/_lib/knowledge-check.mjs)
+requireKnowledgeMatchesSeeds(rows);
 const chunks = retrieve(rows, "", BASELINE_WEIGHT, BASELINE_RELATION);
 const system = buildSystem(rows, chunks, BASELINE_WEIGHT, {}, 0, null);
 

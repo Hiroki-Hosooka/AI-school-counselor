@@ -285,6 +285,13 @@ cp .env.example .env.local
   混ぜてはいけない(CLAUDE.md 5.10)。`.env.local` に書くか、環境変数として渡す
 - テスト2〜4はナレッジ・会話ログを読み書きするため `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`
   も必要(本番と同じものでよい。ナレッジは要配慮個人情報ではないため)
+- **生成を使うテスト(テスト2〜4・モデル比較)は、始める前に、DB のナレッジに seed
+  (`db/seed_knowledge*.sql`)の行が欠けていないかを確かめ、欠けていれば止まる**
+  (`scripts/_lib/knowledge-check.mjs`。2026年10月6日)。2026年9月のペルソナテストの記録では
+  ナレッジが169件(140件+構造化の29件)で、D3〜D7(`seed_knowledge_safety.sql`・
+  `seed_knowledge_boundaries.sql`)が入っていなかった可能性があるため。止まったら、表示された
+  ファイルを SQL Editor で実行してから回し直す。わざと無効にしている場合だけ
+  `--allow-knowledge-mismatch` を付けて続けられる(DB にだけある行は止める理由にしない)
 - レート制限(429)に当たった場合は、どのテストも間隔を空けて自動再試行する
 - **どのテストも、結果のJSONに集計値だけでなく全試行の生の入出力を残す**
   (`all_results`/`attempts` 等のキー。「正しく判定できた分」も含めて、何を入れたら
