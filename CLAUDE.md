@@ -52,15 +52,20 @@ Postgres(Supabase。データベースとしてのみ使う)
 ```
 .
 ├── CLAUDE.md              このファイル
-├── README.md              セットアップ手順
-├── package.json / tsconfig.json / next.config.ts / eslint.config.mjs / .gitignore
+├── README.md              セットアップ手順・テストの使い方
+├── package.json / tsconfig.json / next.config.ts / eslint.config.mjs / vercel.json / .gitignore / .env.example
 ├── src/
-│   ├── safety.mjs         CRISIS_WORDS / OUTPUT_NG(route.tsとテストスクリプトの共通モジュール)
+│   ├── safety.mjs         CRISIS_WORDS / 受動パターン / OUTPUT_NG(route.tsとテストスクリプトの共通モジュール)
+│   ├── classify.mjs       危機の判定(v1・v2 の段階つき)と固定応答 CRISIS_REPLY
+│   ├── generate.mjs       ナレッジ検索・プロンプトの組み立て・生成・出力チェック・人単位の記憶
+│   ├── crisis-response.mjs 段階ごとの応答(仮)と「危機のあと」の指示(5.16・5.17)
 │   └── app/
 │       ├── layout.tsx     フォント・メタデータ
 │       ├── page.tsx       クライアント(表示のみ)
 │       ├── globals.css
 │       └── api/chat/route.ts   判断ロジック・プロンプト・安全層・DB読み書き
+├── public/
+│   └── admin.html         心理士用のログレビュー画面(合言葉で保護。5.9)
 ├── db/
 │   ├── schema.sql                    テーブル定義・トリガ・ビュー
 │   ├── seed_knowledge.sql            ナレッジ初期データ 140件
@@ -69,10 +74,21 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── seed_knowledge_boundaries.sql テスト4/5 2-1で追加した1件(出典 設。D7。秘密の約束禁止)
 │   └── knowledge.json                バックアップ(140件時点。上記の追加分は未反映)
 ├── scripts/
-│   └── test-output-check.mjs
+│   ├── test-output-check.mjs         安全層の回帰テスト(安全層に触れたら必ず流す。6節)
+│   ├── test-staged-response.mjs      段階ごとの応答・危機のあとのオフラインテスト
+│   ├── test-*.mjs                    そのほかの自動テスト(使い方は README.md「自動テスト一式」)
+│   ├── check-knowledge.mjs           DB のナレッジに seed の欠けが無いかを確かめる(読むだけ)
+│   ├── export-*.py / export-provisional-texts.mjs  結果のエクセル・仮の文面の文書を作る
+│   └── _lib/                         テストの共通部品(キー・予算・ナレッジの確認)
 └── docs/
     ├── backlog.md         優先順位つきタスク
-    └── interviews/        逐語(マスキング済み)
+    ├── project-history.md 経緯のまとめ(中間発表用の素材。出典つき)
+    ├── crisis-stage2-provisional-texts.md  仮の文面の一覧(心理士の確認用。scripts/export-provisional-texts.mjs で作る)
+    ├── prompts/           作業の指示書(テスト一式・構造化面接AIとの統合)
+    ├── structured-source/ 構造化面接AIの元資料
+    ├── test-sets/         テストの入力(保留セットは調整に使わない)
+    ├── test-results/      テストの結果
+    └── interviews/        逐語(マスキング済み)。今はリポジトリに無い
 ```
 
 ### 技術選択の理由
@@ -650,7 +666,7 @@ node scripts/test-output-check.mjs
 3. **保護者面接** — ナレッジ0件。石田先生は担当しているので次回聞く
 4. **評価AIの較正** — 心理士の採点と突き合わせていない。スコアを信用しないこと
 5. **短文・沈黙への対応** — 対面なら表情で読めるが、文字では「乗ってこない」「言葉にできない」「帰りたい」の区別がつかない
-6. **`技`(構造化面接AI統合で追加した技法カタログ)は取材による検証を経ていない** — CBT/SFBT等8技法・29件は学術論文・公的機関資料からの一次情報で、嶋先生・石田先生に「この言い回しで合っているか」を確認できていない。実際の会話で使う前に、機会を見て検証すること
+6. **`技`(構造化面接AI統合で追加した技法カタログ)は取材による検証を経ていない** — CBT/SFBT等8技法・26件(同じ手順3で足した29件のうち、嶋先生インタビュー2由来の3件を除いたもの)は学術論文・公的機関資料からの一次情報で、嶋先生・石田先生に「この言い回しで合っているか」を確認できていない。実際の会話で使う前に、機会を見て検証すること
 
 ---
 
