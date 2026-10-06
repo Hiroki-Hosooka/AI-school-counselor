@@ -20,7 +20,8 @@
 - `select src, count(*) from knowledge group by src;` が
   `理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 7 / 技 26` = 174件
   (`db/seed_knowledge_structured.sql`/`db/seed_knowledge_safety.sql` を流す前は
-  嶋37・設2・技0の140件)
+  嶋37・設2・技0の140件)。手元で `npm run check:knowledge` を打って、seed の欠けが無い(OK)ことでも確かめられる
+  (2026年9月のペルソナテストの DB は169件で、D3〜D7 が欠けていた可能性がある。docs/project-history.md 7-8節)
 - ブラウザから1往復できる
 - `messages` にユーザー発言とAI応答の両方が入っている
 - `GEMINI_API_KEY` / `SUPABASE_SERVICE_ROLE_KEY` が `NEXT_PUBLIC_` 接頭辞なしでVercelに設定され、
