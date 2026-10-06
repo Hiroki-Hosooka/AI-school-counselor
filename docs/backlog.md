@@ -14,11 +14,11 @@
 `person_memory` テーブルを追加したので、`db/schema.sql` を再実行すること。`create table if not exists`
 なので既存データに影響なし。構造化面接AI統合(structured-unstructured-merge.md)に伴い、
 `db/schema.sql` 実行後に `db/seed_knowledge_structured.sql`(手順3)→
-`db/seed_knowledge_safety.sql`(手順4)の順に流すこと)
+`db/seed_knowledge_safety.sql`(手順4)→ `db/seed_knowledge_boundaries.sql`(テスト4/5 2-1)の順に流すこと)
 
 **完了の条件**
 - `select src, count(*) from knowledge group by src;` が
-  `理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 6 / 技 26` = 173件
+  `理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 7 / 技 26` = 174件
   (`db/seed_knowledge_structured.sql`/`db/seed_knowledge_safety.sql` を流す前は
   嶋37・設2・技0の140件)
 - ブラウザから1往復できる

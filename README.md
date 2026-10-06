@@ -70,7 +70,7 @@ SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` �
 select src, count(*) from knowledge group by src order by 2 desc;
 ```
 
-`理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 6 / 技 26` の計 173 件になっていれば成功です。
+`理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 7 / 技 26` の計 174 件になっていれば成功です。
 
 ### 3. Vercelにデプロイする
 
@@ -142,12 +142,12 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 
 ### Geminiの無料枠のレート制限に注意
 
-Google AI Studioで発行したキーをそのまま使う場合、**無料枠は `gemini-2.5-flash` で10 RPM(1分に10回)**
-しかありません。1ターンの会話で安全判定+本生成の最低2回はGemini APIを呼ぶため、実証実験で複数人が
+Google AI Studioで発行したキーをそのまま使う場合、**無料枠は1分あたりの回数がとても少なく**
+(2026年9月時点の `gemini-2.5-flash` で10 RPM = 1分に10回。モデルごとの値は AI Studio のレート制限画面で確認)、1ターンの会話で安全判定+本生成の最低2回はGemini APIを呼ぶため、実証実験で複数人が
 同時に使うと簡単に上限に達し、「うまく応答できませんでした」が頻発します。
 
 **Google Cloud のプロジェクトに請求先アカウントを紐付けてください。** 申請不要で自動的にTier 1
-(`gemini-2.5-flash` で1,000 RPM)に上がります。実証実験を始める前に必ず設定してください。
+(2026年9月時点の `gemini-2.5-flash` では1,000 RPM)に上がります。実証実験を始める前に必ず設定してください。
 
 レート制限による失敗と、Geminiの安全フィルタによる失敗は、`messages.flags` に
 `生成失敗→固定応答で継続(レート制限(429))` / `(安全フィルタ等で応答が空)` として区別して記録されるので、
@@ -171,29 +171,26 @@ gemini-2.5/3.5系のモデルは既定で「思考(thinking)」が有効で、`t
 
 `route.ts` は単一モデルではなく、モデルのリストを上から順に試すようになっています(2026年9月〜)。
 
-- `PRIMARY_MODELS`(本生成用・品質優先): `gemini-3.5-flash` → `gemini-3-flash-preview` → `gemini-2.5-flash`
+- `PRIMARY_MODELS`(本生成用・品質優先): `gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` →
+  `gemini-3.5-flash` → `gemini-3-flash-preview`
 - `LITE_MODELS`(安全判定・人単位の記憶の要約用・軽量タスク向け):
-  `gemini-3.5-flash-lite` → `gemini-2.5-flash-lite`
+  `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`
+
+並び順は、2026年9月のモデル比較(`npm run test:model-comparison`。
+`docs/test-results/model-comparison-2026-09-24T16-12-03-489Z.json`)の実測で決めました。理由は
+`src/generate.mjs`(`PRIMARY_MODELS`)と `src/classify.mjs`(`LITE_MODELS`)の直前のコメントにあります。
 
 レート制限だけでなく、Googleのモデル退役(Gemini 2.0系は2026年6月1日に退役済み)にも対応するためです。
 一覧は、Google AI Studioの「レート制限」画面(<https://aistudio.google.com/rate-limit>)の
 「テキスト出力モデル」に無料枠の割り当てがある(RPM等が `0/0` ではない)ものを、
 `PRIMARY_MODELS` は通常モデル、`LITE_MODELS` は `-lite` モデルとして振り分けたものです。
 
-**`gemini-2.5-flash` は2026年10月16日(Vertex AI表記では10月20日)に退役予定です。** それまでに
-`PRIMARY_MODELS`/`LITE_MODELS` の該当行を削除し、後継モデルに置き換えてください。全滅すると
-「うまく応答できませんでした」しか返らなくなります。どのモデルが実在するかは
-<https://ai.google.dev/gemini-api/docs/models> で確認してください。
-
-**`gemini-2.5-flash-lite` は、APIキー/プロジェクトによって挙動が割れています。** 2026年9月、
-本番のAPIキーでは「no longer available to new users」という404を実際に受け取った一方、
-Google AI Studioのレート制限画面(別プロジェクト)では無料枠の割り当てが残っていることも
-確認できました。新規プロジェクトかどうかで使えるかが分かれている可能性があるため、
-`LITE_MODELS` の先頭には置かず、`gemini-3.5-flash-lite` が失敗した時だけ試す2番目に
-置いています(失敗しても次に自動でフォールバックするだけなので、載せておいて害はありません)。
-姉妹モデルの `gemini-2.5-flash`(`PRIMARY_MODELS` 側)も同じ理由で新規ユーザー向けには
-使えなくなっている可能性があります。本生成で `[HTTP_404]` のエラーが頻発する場合は、
-同様に該当行の並び順や要否を見直してください(退役日を待つ必要はありません)。
+**`gemini-2.5-flash` と `gemini-2.5-flash-lite` は、2026年9月にリストから外しました。** 無料枠・課金の
+2つのプロジェクトで「no longer available to new users」という404を受け取ったためです(Google の退役予定日は
+2026年10月16日。Vertex AI表記では10月20日)。今後も、使えなくなったモデルは `PRIMARY_MODELS`/`LITE_MODELS` の
+該当行を削除し、後継モデルに置き換えてください。全滅すると「うまく応答できませんでした」しか返らなくなります。
+どのモデルが実在するかは <https://ai.google.dev/gemini-api/docs/models> で確認してください。
+本生成で `[HTTP_404]` のエラーが頻発する場合は、退役日を待たずに該当行の並び順や要否を見直してください。
 
 `gemini-3-flash-preview` はプレビュー版ですが、無料枠での提供が確認できたため
 `PRIMARY_MODELS` に追加しています(<https://ai.google.dev/gemini-api/docs/gemini-3> 参照)。
