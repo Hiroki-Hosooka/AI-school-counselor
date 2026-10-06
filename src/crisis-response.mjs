@@ -301,6 +301,12 @@ export function defaultSafetyContexts({ risk, subject, afterCrisis }) {
 
 const riskOf = (stage) => (stage === 2 ? "crisis" : stage === 1 ? "watch" : "none");
 
+// 記録・テストの表示用の読み方(scripts/ の検証スクリプトで共通に使う。画面側の page.tsx・admin.html は別に持つ)
+// 危機の応答の何通目か(crisis_step。1〜4 は「n通目」)と、引き下がりの判定の返事の種類
+export const CRISIS_STEP_LABELS = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
+export const crisisStepLabel = (n) => (n == null ? "生成" : CRISIS_STEP_LABELS[n] ?? `${n}通目`);
+export const REPLY_TYPE_LABELS = { withdrawal: "引き下がり", resignation: "諦め", reaffirm: "念押し", other: "ふつうの返事" };
+
 // ----------------------------------------------------------------------------
 // 1ターンの扱いを決める(副作用なし。scripts/test-staged-response.mjs でオフラインに確かめている)
 //
@@ -449,8 +455,9 @@ export function planSafetyTurn({ staged, state, withdrawal = null, teacherAnswer
         nextState: { ...next, crisis_state: `paused${n}`, watch_turns_left: 0, withdrawal_count: 2 },
       });
     }
+    // 返事が watch 相当なら、ほかの段階1の生成と同じく Tier B の指示も付ける(2026年10月6日)
     return build({
-      ...common, decidedBy: [...rules, "withdrawal_repeat"], safetyContexts: ["afterCrisis"],
+      ...common, decidedBy: [...rules, "withdrawal_repeat"], safetyContexts: [...(stage === 1 ? ["tierB"] : []), "afterCrisis"],
       nextState: { ...next, crisis_state: `paused${n}`, watch_turns_left: 0, withdrawal_count: count + 1 },
     });
   };

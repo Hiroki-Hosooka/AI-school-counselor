@@ -362,7 +362,10 @@ ${stageText}${compositeNote}
 // 「区切りの判断」(sinceSummaryに基づく、5〜6ターンごとの定期的な要約提案。
 // CLAUDE.md 9節の用語集の「区切り」はこちらを指す)とは別物。両方が同時に
 // 該当することもあるが、混同しないよう別セクションのまま保つ。
-function buildClosingBlock(closingState, userGoal) {
+// afterCrisis: 危機の応答のあとのセッション(5.16・5.17)。危機のあとの指示が「いつでも」を禁じているので、
+// クロージングの一言からも「いつでも」を外す(2026年10月6日。指示どうしがぶつからないように。CLAUDE.md 5.6 の
+// 「クロージングの『いつでもどうぞ』は言う」は、危機のあとのセッションには当てはめない)
+function buildClosingBlock(closingState, userGoal, afterCrisis = false) {
   const stateNote = {
     none: "まだクロージング(今日の会話を終えるかどうかの話)は出ていません。",
     awaiting_choice: "直前のあなたの返答で「続けるか、今日はここまでにするか」を尋ねています。" +
@@ -402,9 +405,12 @@ function buildClosingBlock(closingState, userGoal) {
    要約の作り方:感情を反映しつつ簡潔に。明るい面(本人が見つけた工夫・気づき)を
    強調しつつ、結論はあなたが言い切らず、「今日話した中で、これは持って帰れそうだな、
    って思うことはある?」のように、まとめの言葉を本人自身に語ってもらう。ゴールに対して
-   まだ曖昧な部分があれば、取り繕わず正直に示す。最後に「しんどくなったら、いつでも
+   まだ曖昧な部分があれば、取り繕わず正直に示す。最後に${afterCrisis
+    ? `「しんどくなったら、こういうところに頼っていいよ」という趣旨を一言添える(このセッションでは
+   「いつでも」という言い方はしない。具体的な窓口名・電話番号は書かなくてよい。別途画面に表示される)。`
+    : `「しんどくなったら、いつでも
    こういうところに頼っていいよ」という趣旨を一言添える(具体的な窓口名・電話番号は
-   書かなくてよい。別途画面に表示される)。
+   書かなくてよい。別途画面に表示される)。`}
    本人が続けたいと返してきた場合は、出力の"closing_event"に"continue"を入れる。
 5. 上記のいずれにも当てはまらないターンでは、出力の"closing_event"は"none"のままにする。
 
@@ -460,6 +466,14 @@ const PHASE2_OUTPUT_SCHEMA = `,
   "mode_update": ["本人が自発的に進め方を変えたいと望んだ場合のみ、新しいrecommended_mode配列。希望していなければ空配列"],
   "closing_event": "none または asked または continue または close"`;
 
+// 生成で使う進め方(intake = インテークの台本 / phase2 = 自由な進め方)。危機の応答のあと(afterCrisis)は、
+// インテーク中でも台本を止めて phase2 の進め方にする(sessions.phase は intake のまま。CLAUDE.md 5.13)。
+// buildSystem と、クロージングの記録(applyClosingUpdate)の両方で使う(2026年10月6日)
+export function flowPhaseFor(intake, safetyContext) {
+  const contexts = toSafetyContexts(safetyContext);
+  return intake?.phase === "intake" && !contexts.includes("afterCrisis") ? "intake" : "phase2";
+}
+
 // コンテキストキャッシュ(Gemini暗黙キャッシュ)について(2026年9月・persona-tests-4-5.md
 // 「費用を下げる工夫」項目5の検証結果。ユーザーの指示によりプロンプト変更を検討したが、
 // 実装は見送った)。
@@ -500,11 +514,11 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   // 台本(つらさの点数などの質問)を出さず、自由な進め方にする(台本と自由な進め方を混ぜるのではなく、
   // 台本を止める。CLAUDE.md 5.13・5.16・5.17)。
   // sessions.phase は intake のまま変えない(applyIntakeUpdate は出力に intake が無ければ何もしない)。
-  const phase = intake?.phase === "intake" && !contexts.includes("afterCrisis") ? "intake" : "phase2";
+  const phase = flowPhaseFor(intake, safetyContext);
   const flowBlock = phase === "intake"
     ? buildIntakeBlock(intake)
     : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode)
-      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal);
+      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"));
   const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA;
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
@@ -840,8 +854,11 @@ export function applyModeUpdate(sess, out) {
 // ============================================================================
 const CLOSING_EVENT_TO_STATE = { asked: "awaiting_choice", continue: "confirmed_continue", close: "closed" };
 
-export function applyClosingUpdate(sess, out) {
-  if (sess.phase !== "phase2") return {};
+// flowPhase: そのターンの生成で使った進め方(flowPhaseFor の値)。省略すると sess.phase。
+// 危機の応答のあとはインテーク中でも phase2 の進め方(クロージングのルールつき)で生成するので、そのときの
+// closing_event も記録する(記録しないと、区切りのカードが出ず、次のターンも「まだ出ていない」と扱われる。2026年10月6日)
+export function applyClosingUpdate(sess, out, flowPhase = sess.phase) {
+  if (flowPhase !== "phase2") return {};
   const next = CLOSING_EVENT_TO_STATE[out.closing_event];
   if (!next) return {};
   return { closing_state: next };

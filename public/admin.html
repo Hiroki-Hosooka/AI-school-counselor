@@ -437,8 +437,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       parts.push("risk=" + e.risk + (e.subject ? "/" + e.subject : ""));
       if (e.crisis_step) parts.push("危機の応答 " + stepJa(e.crisis_step));
       if (e.watch_event) parts.push(WATCH_JA[e.watch_event] || e.watch_event);
-      // 2026年10月5日から、この列は「引き下がりとして扱った」(それより前の行は打ち消し)
-      if (e.retraction) parts.push("引き下がり");
+      // 2026年10月5日から、この列は「引き下がりとして扱った」。それより前の行は打ち消し(段階を下げて残りの文面を止めた)
+      // なので、判定の根拠(decided_by に retraction があるか)で読み分ける
+      if (e.retraction) parts.push((e.decided_by || []).indexOf("retraction") >= 0 ? "打ち消し(以前の仕組み)" : "引き下がり");
       if (e.teacher_answer) parts.push("先生に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
       if (e.decided_by && e.decided_by.indexOf("crisis_generation") >= 0) parts.push(RULE_NOTE_JA.crisis_generation);
       if (e.decided_by && e.decided_by.length) {

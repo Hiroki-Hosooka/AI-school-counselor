@@ -71,11 +71,11 @@ const STAGED = stagedResponseEnabled();
 import {
   stagedResponseEnabled, assessSafetyTurn, normalizeSafetyState, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, finalizeCrisisGeneration,
-  aftercareEnabled, defaultSafetyContexts,
+  aftercareEnabled, defaultSafetyContexts, SAFETY_STATE_COLUMNS, crisisStepLabel, REPLY_TYPE_LABELS,
 } from "../src/crisis-response.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
-  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, updatePersonMemory,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor, updatePersonMemory,
 } from "../src/generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -222,12 +222,9 @@ async function assessWithRetry(text, recentMessages, state) {
   );
 }
 
-// 危機の応答の何通目かの表し方(5 = 2回目以降の短い1通、6 = 再受け止め、7 = まとめの1通、8 = 短いまとめの1通、
-// 9 = 終わりを受け入れる1通)
-const STEP_LABELS = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
-const stepLabel = (n) => STEP_LABELS[n] ?? `${n}通目`;
-// 引き下がりの判定(src/crisis-response.mjs の judgeWithdrawal)の返事の種類
-const REPLY_TYPE_LABELS = { withdrawal: "引き下がり", resignation: "諦め", reaffirm: "念押し", other: "ふつうの返事" };
+// 危機の応答の何通目かの表し方(src/crisis-response.mjs の crisisStepLabel。5 = 2回目以降の短い1通、6 = 再受け止め、
+// 7 = まとめの1通、8 = 短いまとめの1通、9 = 終わりを受け入れる1通)と、引き下がりの判定の返事の種類(REPLY_TYPE_LABELS)
+const stepLabel = crisisStepLabel;
 
 // 段階ごとの応答で足した DB の列(db/schema.sql 11節〜13節)があるか。無ければ書き込まない
 // (会話の状態はこのスクリプトの中で持っているので、列が無くても検証はできる)。メインの処理で確かめる。
@@ -255,7 +252,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       knowledge_version: knowledgeVersion(rows),
     })
     .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state"
-      + (HAS_STAGED_COLUMNS ? ",watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used,withdrawal_count" : ""))
+      + (HAS_STAGED_COLUMNS ? `,${SAFETY_STATE_COLUMNS}` : ""))
     .single();
   if (sessionErr || !sessionRow) {
     console.error(`[${personaId}] セッション作成に失敗しました:`, sessionErr);
@@ -415,7 +412,8 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
 
     const updated = applyTurnUpdate(sessState, out);
     const intakePatch = {
-      ...applyIntakeUpdate(sessState, out), ...applyModeUpdate(sessState, out), ...applyClosingUpdate(sessState, out),
+      ...applyIntakeUpdate(sessState, out), ...applyModeUpdate(sessState, out),
+      ...applyClosingUpdate(sessState, out, flowPhaseFor(sessState, safetyContext)),
     };
     const mergedIntake = { ...sessState, ...intakePatch };
     const justClosed = intakePatch.closing_state === "closed";
@@ -858,7 +856,7 @@ console.log(`予算: 上限¥${budget.limitYen} 使用済み¥${Math.round(budge
 const db = getDb();
 if (STAGED) {
   // 書き込む列がすべてあるか(11節の一部だけが入った DB で、セッション作成が失敗しないように)
-  const { error: sessColErr } = await db.from("sessions").select("watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used,withdrawal_count").limit(1);
+  const { error: sessColErr } = await db.from("sessions").select(SAFETY_STATE_COLUMNS).limit(1);
   const { error: msgColErr } = await db.from("messages").select("safety_stage,crisis_step,safety_card,crisis_generated").limit(1);
   HAS_STAGED_COLUMNS = !sessColErr && !msgColErr;
   console.log(`段階ごとの応答: 有効(仮の文面)${HAS_STAGED_COLUMNS ? "" : "。db/schema.sql 11節〜13節が未実行のため、新しい列には書き込まない(状態はこのスクリプトの中で持つ)"}\n`);

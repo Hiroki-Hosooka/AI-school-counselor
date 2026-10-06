@@ -82,6 +82,9 @@ def main():
     ]
     header(ws_t, 1, [c[0] for c in cols], [c[1] for c in cols])
     col = {name: get_column_letter(i + 1) for i, (name, _) in enumerate(cols)}
+    # 長い文を折り返す列(列の並びが変わっても、名前で決める)
+    names = [name for name, _ in cols]
+    wrap_cols = {names.index(n) + 1 for n in ("生徒の発言", "判定の理由(各回)", "固定の文面")}
     recs_sorted = sorted(recs, key=lambda r: (r["rep"], r["persona"], r["turn"]))
     last = len(recs_sorted) + 1
     for i, r in enumerate(recs_sorted, start=2):
@@ -104,7 +107,7 @@ def main():
         for j, v in enumerate(row, start=1):
             c = ws_t.cell(row=i, column=j, value=v)
             c.font = base
-            if j in (4, 10, 22):
+            if j in wrap_cols:
                 c.alignment = wrap
     ws_t.freeze_panes = "E2"
     ws_t.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{last}"
@@ -114,7 +117,7 @@ def main():
     ws = ws_sum
     ws.column_dimensions["A"].width = 10
     ws.column_dimensions["B"].width = 6
-    for letter in "CDEFGHI":
+    for letter in "CDEFGHIJ":
         ws.column_dimensions[letter].width = 15
     r = 1
 

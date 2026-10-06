@@ -36,7 +36,7 @@ import path from "node:path";
 import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
 import { LITE_MODELS } from "../src/classify.mjs";
 import {
-  assessSafetyTurn, planSafetyTurn, normalizeSafetyState, needsWithdrawalJudge,
+  assessSafetyTurn, planSafetyTurn, normalizeSafetyState, needsWithdrawalJudge, crisisStepLabel, REPLY_TYPE_LABELS,
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL, CRISIS_WRAPUP_PROVISIONAL,
 } from "../src/crisis-response.mjs";
 
@@ -66,9 +66,8 @@ process.env.CRISIS_CLASSIFIER_TIMEOUT_MS = arg("timeout-ms", "120000");
 
 // 文脈の AI の発言(fixed = 仮の文面の何通目か)は、今の文面に置き換える
 const FIXED = { 1: CRISIS_STEP1_PROVISIONAL, 2: CRISIS_STEP2_PROVISIONAL, 3: CRISIS_STEP3_PROVISIONAL, 7: CRISIS_WRAPUP_PROVISIONAL };
-const LABEL_JA = { withdrawal: "引き下がり", resignation: "諦め", reaffirm: "念押し", other: "ふつうの返事", new_sign: "新しいサイン" };
-const STEP_JA = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
-const stepJa = (n) => (n == null ? "生成" : STEP_JA[n] ?? `${n}通目`);
+const LABEL_JA = { ...REPLY_TYPE_LABELS, new_sign: "新しいサイン" };
+const stepJa = crisisStepLabel;
 
 // ---- 判定する文 ----
 const set = JSON.parse(readFileSync(SET_PATH, "utf8"));
@@ -89,13 +88,15 @@ const items = HOLDOUT
   });
 
 // 期待する扱い(固定の文面の何通目か。null = 生成)。引き下がり → 1通目のあとはまとめの1通、2・3通目のあとは短いまとめの1通、
-// まとめのあとは終わりを受け入れる1通。それ以外は今どおり次の文面(まとめのあとは生成。新しいサインなら止めていた続き)
-function expectedStep(item) {
+// まとめのあとは終わりを受け入れる1通。それ以外は今どおり次の文面(まとめのあとは生成。新しいサインなら止めていた続き)。
+// 分類器がそのターンを段階2(新しいサイン)と判定したときは、ラベルにかかわらず、引き下がりより優先して次の文面へ進むのが
+// 規則どおり(detectionStage を渡すと、それに合わせる。2026年10月6日)。まとめのあと(3通目のあとのまとめを除く)なら止めていた続き
+function expectedStep(item, detectionStage = null) {
   const st = item.state.crisis_state;
   const wrap = st.startsWith("wrap");
   const n = Number(st.replace(/\D/g, ""));
+  if (item.label === "new_sign" || detectionStage === 2) return n + 1;
   if (item.label === "withdrawal") return wrap ? 9 : n === 1 ? 7 : 8;
-  if (item.label === "new_sign") return n + 1;
   return wrap ? null : n + 1;
 }
 
@@ -122,7 +123,7 @@ async function judgeOnce(item) {
   const a = DRY ? dryAssess(item) : await assessSafetyTurn(item.text, item.context, item.state);
   const errs = [a.staged.classifierError, a.withdrawal?.error, a.teacher?.error].filter(Boolean).join(" | ") || null;
   const p = a.plan;
-  const expected = expectedStep(item);
+  const expected = expectedStep(item, a.staged.stage);
   const withdrawalRoute = [7, 8, 9].includes(p.crisisStep) || p.decidedBy.includes("withdrawal_repeat");
   return {
     transient: isTransient(errs), ms: Date.now() - t0,
@@ -218,11 +219,13 @@ const perItem = items.map((it) => {
     ok: count(rs, (r) => r.ok), withdrawal_route: count(rs, (r) => r.withdrawal_route),
     reply_types: rs.map((r) => r.reply_type), detection_stages: rs.map((r) => r.detection_stage),
     steps: rs.map((r) => r.crisis_step), expected_step: expectedStep(it), notify: rs.map((r) => r.notify),
+    expected_steps: rs.map((r) => r.expected_step),
   };
 });
 const summaryNumbers = {
   withdrawal_routed: count(W, (r) => r.withdrawal_route), withdrawal_judgments: W.length,
   withdrawal_ok: count(W, (r) => r.ok),
+  withdrawal_stage2: count(W, (r) => r.detection_stage === 2),
   non_withdrawal_routed_as_withdrawal: count(notW, (r) => r.withdrawal_route), non_withdrawal_judgments: notW.length,
   resignation_routed_as_withdrawal: count(R, (r) => r.withdrawal_route), resignation_judgments: R.length,
   resignation_stage: [0, 1, 2].map((s) => count(R, (r) => r.detection_stage === s)),
@@ -242,11 +245,14 @@ L(DRY
   ? "条件: 試し実行。分類器・引き下がりの判定の代わりにラベルを使った(状態の流れ・集計・エクセルの書き出しだけの確認。判定の精度は測っていない)"
   : `条件: 分類モデルは ${PRIMARY_MODEL} のみ、1回あたりの待ち時間の上限 ${process.env.CRISIS_CLASSIFIER_TIMEOUT_MS}ms(本番は15000ms)`);
 if (stopped) L(`\n★ 停止: ${stopped}`);
-if (paused) L(`\n★ ${paused}\n  再開: node scripts/test-crisis-withdrawal.mjs${HOLDOUT ? " --holdout" : ""} --out=${path.relative(ROOT, OUT)}`);
+// 再開のコマンドには、渡した引数(--set・--reps・--holdout など)をそのまま載せる(--out だけ今の記録に置き換える)
+const passthrough = process.argv.slice(2).filter((a) => !a.startsWith("--out="));
+if (paused) L(`\n★ ${paused}\n  再開: node scripts/test-crisis-withdrawal.mjs ${[...passthrough, `--out=${path.relative(ROOT, OUT)}`].join(" ")}`);
 L("");
 L("【結果】");
 L(`  引き下がりの文が、まとめの1通・短いまとめ・終わりを受け入れる1通に進んだ: ${rate(summaryNumbers.withdrawal_routed, W.length)}`
   + `(期待どおりの文面: ${rate(summaryNumbers.withdrawal_ok, W.length)}。進まなかった回は今どおり次の文面。問いが1つ多くなる側の取りこぼし)`);
+L(`  うち分類器が段階2(新しいサイン)と判定して、引き下がりより優先して次の文面へ進んだ: ${rate(summaryNumbers.withdrawal_stage2, W.length)}`);
 L(`  諦め・念押し・ふつうの返事を、引き下がりとして扱った: ${rate(summaryNumbers.non_withdrawal_routed_as_withdrawal, notW.length)}`
   + `(扱うと、そこで問いをやめる。窓口は出る)`);
 L(`  うち諦め(「もういい、どうせ」など)を引き下がりとして扱った: ${rate(summaryNumbers.resignation_routed_as_withdrawal, R.length)}`);
@@ -263,7 +269,7 @@ L("");
 L("【文ごと(期待どおりの回数 / 判定回数。返事の種類・分類器の段階・出した文面は回の順)】");
 for (const p of perItem) {
   L(`  ${p.id.padEnd(4)} ${LABEL_JA[p.label]}(${p.context_id}) ${rate(p.ok, p.n)}  種類=${JSON.stringify(p.reply_types.map((t) => (t ? LABEL_JA[t] ?? t : "判定なし")))}`
-    + ` 段階=${JSON.stringify(p.detection_stages)} 文面=${JSON.stringify(p.steps.map(stepJa))}(期待: ${stepJa(p.expected_step)})  「${p.text}」`);
+    + ` 段階=${JSON.stringify(p.detection_stages)} 文面=${JSON.stringify(p.steps.map(stepJa))}(期待: ${JSON.stringify(p.expected_steps.map(stepJa))})  「${p.text}」`);
 }
 const summary = {
   set: path.relative(ROOT, SET_PATH), out: path.relative(ROOT, OUT), holdout: HOLDOUT, dry_run: DRY, reps: REPS,

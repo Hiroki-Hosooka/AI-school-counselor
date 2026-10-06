@@ -32,7 +32,7 @@ import {
   CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration, aftercareEnabled, hadCrisisReply, defaultSafetyContexts,
 } from "../src/crisis-response.mjs";
 import { classifyStaged } from "../src/classify.mjs";
-import { checkOutput, buildSystem, retrieve, generateReply } from "../src/generate.mjs";
+import { checkOutput, buildSystem, retrieve, generateReply, applyClosingUpdate, flowPhaseFor } from "../src/generate.mjs";
 
 let failed = 0;
 let passed = 0;
@@ -220,6 +220,8 @@ console.log("1. planSafetyTurn の状態の移り変わり");
   check("まとめのあと続きへ進んでからの引き下がり(2回目)→ 終わりを受け入れる1通",
     s2c1.crisisStep === 9 && s2c1.nextState.crisis_state === "paused2" && s2c1.nextState.withdrawal_count === 2);
   const s2c2 = planSafetyTurn({ staged: S0, state: { ...step1, crisis_state: "step2", withdrawal_count: 2 }, withdrawal: "withdrawal" });
+  const s2c2w = planSafetyTurn({ staged: S1_WATCH, state: { ...step1, crisis_state: "step2", withdrawal_count: 2 }, withdrawal: "withdrawal" });
+  check("3回目以降の引き下がりの返事が watch 相当 → Tier B の指示も付ける", eq(s2c2w.safetyContexts, ["tierB", "afterCrisis"]));
   check("3回目以降の引き下がり → 固定の文面をくり返さず、危機のあとの指示つきの生成(問いは止める)",
     s2c2.action === "generate" && eq(s2c2.safetyContexts, ["afterCrisis"]) && s2c2.nextState.crisis_state === "paused2"
       && s2c2.nextState.withdrawal_count === 3 && s2c2.decidedBy.includes("withdrawal_repeat") && s2c2.stage === 2);
@@ -716,6 +718,20 @@ console.log("5. 本番の既定(段階ごとの応答が無効)でも、固定�
     after.includes("危機の応答のあと") && after.includes("深掘りしない") && after.includes("秘密にする") && after.includes("人につながる道は閉じない")
       && !after.includes("# 現在のフェーズ:インテーク"));
   const ids = retrieve(rows, "なんでもない", "rapport", "visitor", undefined, defaultSafetyContexts({ risk: "none", afterCrisis: true }), []).map((k) => k.id);
+  // インテーク中に固定応答を出したあと: 自由な進め方(クロージングのルールつき)で生成するので、クロージングも記録する(2026年10月6日)
+  const afterCtx = defaultSafetyContexts({ risk: "none", subject: "self", afterCrisis: true });
+  check("インテーク中でも危機のあとは、生成の進め方が phase2(台本を止める)", flowPhaseFor(intake, afterCtx) === "phase2" && flowPhaseFor(intake, []) === "intake");
+  check("インテーク中で危機のあとのターンの「区切る」(closing_event = close)を記録する",
+    eq(applyClosingUpdate(intake, { closing_event: "close" }, flowPhaseFor(intake, afterCtx)), { closing_state: "closed" })
+      && eq(applyClosingUpdate(intake, { closing_event: "close" }), {}));
+  // 危機のあとのセッションでは、クロージングの一言からも「いつでも」を外す(危機のあとの指示とぶつからないように)
+  const phase2 = { phase: "phase2", closing_state: "none", recommended_mode: [] };
+  const closingAfter = buildSystem(rows, [], "rapport", {}, 0, null, afterCtx, phase2);
+  const closingNormal = buildSystem(rows, [], "rapport", {}, 0, null, [], phase2);
+  // (指示の文面そのものは「『いつでも』という言い方はしない」と書くので、勧める一言の側だけを見る)
+  check("危機のあとのクロージングの一言に「いつでも」を入れない(ふだんのクロージングは今まで通り)",
+    closingAfter.includes("「しんどくなったら、こういうところに頼っていいよ」") && !closingAfter.includes("しんどくなったら、いつでも")
+      && closingNormal.includes("しんどくなったら、いつでも"));
   check("固定応答のあとの生成: 深掘りしない等の知識(T31・T32・D3)を必ず引く", ["T31", "T32", "D3"].every((id) => ids.includes(id)), ids.join(","));
 }
 

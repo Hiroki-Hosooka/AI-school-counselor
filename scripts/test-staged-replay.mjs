@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep } from "./_lib/test-env.mjs";
 import { LITE_MODELS, CLASSIFIER_CONTEXT_MESSAGES } from "../src/classify.mjs";
-import { assessSafetyTurn, normalizeSafetyState } from "../src/crisis-response.mjs";
+import { assessSafetyTurn, normalizeSafetyState, crisisStepLabel, REPLY_TYPE_LABELS } from "../src/crisis-response.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -47,9 +47,7 @@ process.env.CRISIS_CLASSIFIER_TIMEOUT_MS = arg("timeout-ms", "120000");
 
 const input = JSON.parse(readFileSync(INPUT, "utf8"));
 if (PERSONAS) input.personas = input.personas.filter((p) => PERSONAS.includes(p.id));
-const STEP_LABELS = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
-const stepLabel = (n) => STEP_LABELS[n] ?? `${n}通目`;
-const REPLY_TYPE_LABELS = { withdrawal: "引き下がり", resignation: "諦め", reaffirm: "念押し", other: "ふつうの返事" };
+const stepLabel = crisisStepLabel;
 const isTransient = (t) => !!t && /\[RATE_LIMIT\]|\[HTTP_503\]|\[TIMEOUT\]/.test(t);
 
 async function assessOnce(text, context, state) {
@@ -165,7 +163,9 @@ L(`段階ごとの応答の再生(${input.personas.map((p) => p.id).join("・")}
 L("========================================");
 L(`入力: ${path.relative(ROOT, INPUT)}  記録: ${path.relative(ROOT, OUT)}`);
 L(`各ペルソナ ${REPS}回。分類モデルは ${PRIMARY_MODEL} のみ(無料枠)。返事は生成しない。文脈は記録どおりのやりとり`);
-if (paused) L(`\n★ ${paused}\n  再開: node scripts/test-staged-replay.mjs --reps=${REPS} --out=${path.relative(ROOT, OUT)}`);
+// 再開のコマンドには、渡した引数(--reps・--personas・--input など)をそのまま載せる(--out だけ今の記録に置き換える)
+const passthrough = process.argv.slice(2).filter((a) => !a.startsWith("--out="));
+if (paused) L(`\n★ ${paused}\n  再開: node scripts/test-staged-replay.mjs ${[...passthrough, `--out=${path.relative(ROOT, OUT)}`].join(" ")}`);
 L("");
 for (const r of runs) {
   L(`【${r.persona} ${r.rep}回目】 固定の文面・危機の状態の生成: ${r.flow.join(" → ") || "なし"}`);
@@ -176,7 +176,7 @@ for (const r of runs) {
   L(`  生徒役の自由な発言(キーワード・受動パターンなし)で段階1以上になったターン: ${r.ordinary_raised.length ? `${r.ordinary_raised.length}回` : "なし"}`);
   for (const o of r.ordinary_raised) L(`    T${o.turn}「${o.text}」 判定の段階${o.detection_stage} 規則=${(o.decided_by ?? []).join(",")} 票=${JSON.stringify(o.votes)} 理由=${JSON.stringify(o.reasons)}`);
   L(`  同じ固定の文面が2回出ていないか: ${r.duplicate_fixed ? `出た(${r.duplicate_fixed}回)` : "出ていない"}(固定の文面 ${r.fixed_count}通)`);
-  L(`  引き下がりとして扱ったターン: ${r.withdrawal_turns.length ? r.withdrawal_turns.map((w) => `T${w.turn}「${w.text}」→${w.crisis_step == null ? "生成" : stepLabel(w.crisis_step)}`).join(" / ") : "なし"}`);
+  L(`  引き下がりとして扱ったターン: ${r.withdrawal_turns.length ? r.withdrawal_turns.map((w) => `T${w.turn}「${w.text}」→${stepLabel(w.crisis_step)}`).join(" / ") : "なし"}`);
   L(`  引き下がったあとに問い(2通目・3通目)を出したターン: ${r.questions_after_withdrawal.length ? r.questions_after_withdrawal.map((t) => `T${t}`).join(",") : "なし"}`);
   L(`  職員に通知するターン: ${r.notify_turns.length ? r.notify_turns.map((t) => `T${t}`).join(",") : "なし"}`);
   L("");

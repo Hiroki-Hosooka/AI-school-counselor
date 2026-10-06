@@ -52,7 +52,7 @@ import {
 } from "@/classify.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
-  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
 } from "@/generate.mjs";
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
@@ -503,9 +503,11 @@ export async function POST(req: Request) {
       // (weight/relationと同じ、db/schema.sql 9.3の意図)。
       // applyModeUpdate/applyClosingUpdateはsess.phase==="phase2"の時だけ働く
       // (手順6・7)。それぞれ別のキー(recommended_mode/closing_state)しか
-      // 返さないので、そのままマージしてよい。
+      // 返さないので、そのままマージしてよい。ただしクロージングは、危機の応答のあとでインテーク中でも
+      // 自由な進め方(クロージングのルールつき)で生成したターンなら記録する(flowPhaseFor。2026年10月6日)。
       const intakePatch = {
-        ...applyIntakeUpdate(sess, out), ...applyModeUpdate(sess, out), ...applyClosingUpdate(sess, out),
+        ...applyIntakeUpdate(sess, out), ...applyModeUpdate(sess, out),
+        ...applyClosingUpdate(sess, out, flowPhaseFor(sess, safetyContext)),
       };
       const mergedIntake = { ...sess, ...intakePatch };
       // このターンでクロージングの要約に入った(closing_stateがclosedになった)かどうか。
