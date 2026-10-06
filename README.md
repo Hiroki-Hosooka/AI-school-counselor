@@ -72,6 +72,11 @@ select src, count(*) from knowledge group by src order by 2 desc;
 
 `理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 7 / 技 26` の計 174 件になっていれば成功です。
 
+手元で `npm run check:knowledge` を打っても確かめられます(`.env.local` の `SUPABASE_URL` /
+`SUPABASE_SERVICE_ROLE_KEY` を使う。DB は読むだけで、Gemini も呼ばない)。seed にある行が DB に
+欠けていれば、どのファイルを実行し直せばよいかを表示します。seed を実行し直すと、そのファイルにある行は
+seed の内容で上書きされる(DB で本文を直した行があれば元に戻る)ので注意してください。
+
 ### 3. Vercelにデプロイする
 
 GitHubにpushしたこのリポジトリを、Vercelのダッシュボードから「Add New... → Project」で
@@ -290,7 +295,7 @@ cp .env.example .env.local
   (`scripts/_lib/knowledge-check.mjs`。2026年10月6日)。2026年9月のペルソナテストの記録では
   ナレッジが169件(140件+構造化の29件)で、D3〜D7(`seed_knowledge_safety.sql`・
   `seed_knowledge_boundaries.sql`)が入っていなかった可能性があるため。止まったら、表示された
-  ファイルを SQL Editor で実行してから回し直す。わざと無効にしている場合だけ
+  ファイルを SQL Editor で実行してから回し直す(`npm run check:knowledge` で事前にも確かめられる)。わざと無効にしている場合だけ
   `--allow-knowledge-mismatch` を付けて続けられる(DB にだけある行は止める理由にしない)
 - レート制限(429)に当たった場合は、どのテストも間隔を空けて自動再試行する
 - **どのテストも、結果のJSONに集計値だけでなく全試行の生の入出力を残す**

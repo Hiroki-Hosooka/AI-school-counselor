@@ -17,6 +17,7 @@
     "test:relation-stability": "node scripts/test-relation-stability.mjs",
     "test:persona-regression": "node scripts/test-persona-regression.mjs",
     "test:model-comparison": "node scripts/test-model-comparison.mjs",
+    "check:knowledge": "node scripts/check-knowledge.mjs",
     "test:all": "npm run test:safety && npm run test:staged-response && npm run test:crisis && npm run test:ng-leak && npm run test:relation-stability && npm run test:persona-regression"
   },
   "dependencies": {

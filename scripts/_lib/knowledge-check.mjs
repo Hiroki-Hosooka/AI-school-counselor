@@ -66,6 +66,7 @@ export function requireKnowledgeMatchesSeeds(rows, allowMismatch = process.argv.
     .map(([file, ids]) => `  ${file}: ${ids.slice(0, 12).join(", ")}${ids.length > 12 ? ` …(${ids.length}件)` : ""}`);
   const msg = `DB の有効なナレッジ(${r.dbCount}件)に、seed にある ${r.missing.length}件が入っていません。\n${lines.join("\n")}\n`
     + "Supabase の SQL Editor で上のファイルを実行してから回してください(README.md「2. テーブルを作る」の順番)。\n"
+    + "実行すると、そのファイルにある行は seed の内容で上書きされます(DB で本文を直した行があれば、先に控えておく)。\n"
     + "わざと入れていない(無効にしている)場合だけ、--allow-knowledge-mismatch を付けて続けられます。";
   if (allowMismatch) {
     console.warn(`警告: ${msg}`);
