@@ -172,6 +172,12 @@ export const AFTER_CRISIS_BLOCK_PROVISIONAL = `
 ・インテークの質問(相談の種類・つらさの点数など)は続けない
 ・本人が話したいことに沿って、ゆっくり会話を続ける。本人が話題を変えたら、それに合わせてよい`;
 
+// 危機の応答のあとのセッションで、クロージング(今日の会話を区切るとき)の最後に添える一言の趣旨(2026年10月6日)。
+// src/generate.mjs の buildClosingBlock が使う。ふだんのセッションは「しんどくなったら、いつでもこういうところに頼っていいよ」
+// (CLAUDE.md 5.6 の「クロージングでは『いつでも』を言う」)だが、危機のあとの指示が「いつでも」を禁じているので、
+// 指示どうしがぶつからないよう、こちらでは「いつでも」を外す。
+export const AFTER_CRISIS_CLOSING_LINE_PROVISIONAL = "「しんどくなったら、こういうところに頼っていいよ」";
+
 // 危機の状態で、固定の文面を出さずに生成で受けるターン(分類器だけの危機の判定・2回目以降の打ち明け)に足す指示。
 // AFTER_CRISIS_BLOCK_PROVISIONAL と一緒に使う(2026年9月29日)。
 export const CRISIS_GENERATION_BLOCK_PROVISIONAL = `

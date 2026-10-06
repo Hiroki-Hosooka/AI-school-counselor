@@ -13,7 +13,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
-import { AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL } from "./crisis-response.mjs";
+import {
+  AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
+} from "./crisis-response.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
 //
@@ -406,7 +408,7 @@ function buildClosingBlock(closingState, userGoal, afterCrisis = false) {
    強調しつつ、結論はあなたが言い切らず、「今日話した中で、これは持って帰れそうだな、
    って思うことはある?」のように、まとめの言葉を本人自身に語ってもらう。ゴールに対して
    まだ曖昧な部分があれば、取り繕わず正直に示す。最後に${afterCrisis
-    ? `「しんどくなったら、こういうところに頼っていいよ」という趣旨を一言添える(このセッションでは
+    ? `${AFTER_CRISIS_CLOSING_LINE_PROVISIONAL}という趣旨を一言添える(このセッションでは
    「いつでも」という言い方はしない。具体的な窓口名・電話番号は書かなくてよい。別途画面に表示される)。`
     : `「しんどくなったら、いつでも
    こういうところに頼っていいよ」という趣旨を一言添える(具体的な窓口名・電話番号は

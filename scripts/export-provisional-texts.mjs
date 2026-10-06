@@ -15,7 +15,7 @@ import {
   CARE_LINE_PROVISIONAL, CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL,
   CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL,
   CRISIS_WRAPUP_PROVISIONAL, CRISIS_WRAPUP_SHORT_PROVISIONAL, CRISIS_WITHDRAW_END_PROVISIONAL,
-  AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
+  AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
   CRISIS_GENERATION_FALLBACK_PROVISIONAL,
   WATCH_TURNS,
 } from "../src/crisis-response.mjs";
@@ -199,6 +199,13 @@ ${CRISIS_GENERATION_FALLBACK_PROVISIONAL.map((t, i) => `${i + 1}つ目\n\n${quot
 **危機の応答のあとに、生成に付ける指示**(2026年10月5日から、本番の既定でも、固定応答を出したあとの生成に付ける)
 
 ${bullets(AFTER_CRISIS_BLOCK_PROVISIONAL)}
+
+**危機の応答のあとのセッションで、会話を区切るときの一言**(2026年10月6日から。本番の既定でも、固定応答を出したあとのセッションで使う)
+ふだんのセッションでは、会話を区切るときに「しんどくなったら、いつでもこういうところに頼っていいよ」という趣旨の一言を添える
+(扉を開けておくため、ここでは「いつでも」を言う)。危機の応答のあとのセッションでは、上の指示が「いつでも」を禁じているので、
+次の趣旨の一言にしている(窓口の名前・番号はAIに書かせず、画面のカードで表示する)。
+
+${quote(AFTER_CRISIS_CLOSING_LINE_PROVISIONAL)}
 
 **危機の状態で、固定の文面を出さずに生成で受けるときに足す指示**(上の「危機の応答のあと」の指示と一緒に付ける)
 
