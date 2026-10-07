@@ -491,6 +491,31 @@ function runVotes(input, n, prompt) {
 // mode: "normal"(通常の状態。CLASSIFIER_PROMPT_V2)| "followup"(見守り中・危機の応答を始めたあと。
 //       CLASSIFIER_PROMPT_V2_FOLLOWUP。src/crisis-response.mjs の assessSafetyTurn だけが使う)。
 //       キーワード・受動パターン・慣用表現の規則は、どちらでも同じ。
+// 字数・回数の上限を超えた発言に使う、AIを使わない照合(2026年10月7日)。
+// route.ts は上限で止める前にこれを通し、本人のはっきりした危機のサインがあれば、止めずに固定応答・通知・記録を出す
+// (CLAUDE.md 5.2)。以前は上限の判定が危機の判定より前にあり、長い打ち明けほど判定も通知もされなかった。
+// classifyStaged の規則のうち、キーワード・受動パターン(段階2)と慣用表現(段階1)だけを使い、分類器は呼ばない
+// (上限を超えた発言に AI の費用を使わないため。設定 CRISIS_DETECTION=v1 のときも、この照合は v2 の規則で行う)。
+// 本人か第三者かは分類器が無いと分からないので、本人とする(迷ったら本人。classifyStaged と同じ考え方)。
+// limit: "too_long"(字数)| "rate_limited"(回数)。判定の根拠(decidedBy)の最後に付けて、記録で見分けられるようにする。
+export function classifyLocal(text, limit) {
+  const rules = crisisRulesV2(text);
+  let stage = 0;
+  const decidedBy = [];
+  const raise = (s, why) => { stage = Math.max(stage, s); decidedBy.push(why); };
+  if (rules.patterns.length) raise(2, "pattern");
+  if (rules.keywords.length) raise(2, "keyword");
+  if (rules.idiomExempted.length) raise(1, "idiom");
+  if (limit) decidedBy.push(limit);
+  const risk = stage === 2 ? "crisis" : stage === 1 ? "watch" : "none";
+  const limitJa = limit === "rate_limited" ? "回数" : "字数";
+  return {
+    risk, subject: "self", stage, decidedBy,
+    keywords: rules.keywords, patterns: rules.patterns, idiomExempted: rules.idiomExempted,
+    model: { risk: "照合のみ", subject: "self", reason: `${limitJa}の上限を超えた発言のため、分類器は使わずキーワード・受動パターンだけで照合した` },
+  };
+}
+
 export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes(), mode = "normal" } = {}) {
   const followUp = mode === "followup";
   const rules = crisisRulesV2(text);

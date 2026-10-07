@@ -14,6 +14,7 @@
 | 2 | 危機の応答のあとに、生成に付ける指示 | `src/crisis-response.mjs` の `AFTER_CRISIS_BLOCK_PROVISIONAL`(`docs/crisis-stage2-provisional-texts.md` の「参考」) | 仮のまま本番で使うと人が決めた(2026年10月5日。CLAUDE.md 5.17) |
 | 3 | 危機のあとのセッションで、会話を区切るときの一言 | `src/crisis-response.mjs` の `AFTER_CRISIS_CLOSING_LINE_PROVISIONAL`(同じ文書の「参考」) | ふだんは「いつでも」を言うが、危機のあとは外す(2026年10月6日。CLAUDE.md 5.6 の例外) |
 | 4 | 生成に失敗したときの固定の返事(2つを順に使う) | `src/generate.mjs` の `GENERATION_FAILURE_REPLIES` | コードのコメントに「文面はまだ案」とある |
+| 4b | 送れなかったとき・上限(字数・回数)のときの文面 | `src/notices.mjs` | 2026年10月7日に、英語のエラーなどを見せないよう差し替えた。上限を超えても危機のサインがあれば固定応答(1)を出す |
 
 ## B. 段階ごとの応答(本番ではまだ使っていない。CLAUDE.md 5.16)
 

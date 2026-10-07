@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { CRISIS_REPLY } from "../src/classify.mjs";
 import { buildSystem, GENERATION_FAILURE_REPLIES } from "../src/generate.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
 import {
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
   CRISIS_WRAPUP_PROVISIONAL, CRISIS_WRAPUP_SHORT_PROVISIONAL, CRISIS_WITHDRAW_END_PROVISIONAL,
@@ -118,6 +119,8 @@ const md = `# 心理士さんに確認していただきたい文面
 - 石田先生が危機のときに確かめていらっしゃる「方法・時期・場所」の質問(リスクアセスメント)は、AI ではしません。
   訓練を受けた人が、対面で、学校につなげられる状態でこそ働く手順だと考えたためです。取り入れたのは態度だけです
   (淡々と受ける・話せたこと自体を受け止める・人につなぐ)。
+- 1回に送れる字数(${MAX_TEXT_LENGTH}字)や、1時間に送れる回数の上限を超えた発言でも、はっきりした言葉・遠回しな言い方の照合だけは
+  通し、危機のサインがあれば、上限で止めずに A1 の文面を出して職員に通知します(2026年10月7日から)。
 - 画面の下には、いつも次の表示があります。
 
 ${quote(footNote)}
@@ -173,6 +176,32 @@ ${GENERATION_FAILURE_REPLIES.map((t, i) => `${i === 0 ? "1回目" : "2回目以�
 ${asks([
   "「もう少しだけ聞かせてもらえる?」は、つらい話をもう一度書かせる負担になりませんか。",
   "打ち明けのあとの会話で不具合が起きたときにも、この文面が出ます。それでよいでしょうか。",
+])}
+
+### A4. 送れなかったとき・上限のときの文面
+
+2026年10月7日から、技術的なエラーの中身(英語のメッセージなど)は生徒に見せず、次の文面にしています。
+上限を超えた発言でも、危機のサインがあれば、これらではなく A1 を出します。
+
+**1回に送れる字数(${MAX_TEXT_LENGTH}字)を超えたとき**
+
+${quote(TOO_LONG_NOTICE)}
+
+**1時間に送れる回数の上限を超えたとき**
+
+${quote(RATE_LIMIT_NOTICE)}
+
+**通信の失敗やシステムの不具合で送れなかったとき**
+
+${quote(SEND_FAILED_NOTICE)}
+
+**最初につながらなかったとき(画面の上の帯に出ます)**
+
+${quote(NOT_CONNECTED_NOTICE)}
+
+${asks([
+  "上限のときの文面は、突き放した感じになっていないでしょうか。",
+  "「いますぐ誰かと話したいときは、画面の下の窓口に電話することもできます」を添えるのは、送れなかった場面に合っていますか。",
 ])}
 
 ---
@@ -354,7 +383,7 @@ ${asks([
 - 作り直し: \`node scripts/export-review-texts.mjs\`(手で直さない)
 - A1 \`src/classify.mjs\` の \`CRISIS_REPLY\`。窓口・カード・画面の文言は \`src/app/page.tsx\`
 - A2 の一言、E の受付の質問は \`src/generate.mjs\` の \`buildSystem\` が組み立てる指示から取り出している
-- A3 \`src/generate.mjs\` の \`GENERATION_FAILURE_REPLIES\`
+- A3 \`src/generate.mjs\` の \`GENERATION_FAILURE_REPLIES\`。A4 \`src/notices.mjs\`
 - B・C \`src/crisis-response.mjs\`(名前の末尾が \`_PROVISIONAL\`)
 - D のナレッジは \`db/seed_knowledge*.sql\` の本文(DB で直した場合は DB の方が新しい)
 

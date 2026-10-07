@@ -7,6 +7,8 @@
 // ============================================================================
 
 import { CRISIS_WORDS, OUTPUT_NG, crisisRulesV2 } from "../src/safety.mjs";
+import { classifyLocal } from "../src/classify.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
 
 // index.ts の checkOutput() と同じロジック
 const checkOutput = (text) => OUTPUT_NG.filter((re) => re.test(text));
@@ -142,6 +144,35 @@ for (const text of V2_IDIOM) {
 }
 console.log("\n[v2] 自分自身・つらさ等の語があれば慣用表現として外さない");
 for (const text of V2_IDIOM_GUARDED) check(`「${text}」`, v2Stage2(text), "段階2にならなかった");
+
+// --------------------------------------------------------------------------
+// 字数・回数の上限を超えた発言の照合(2026年10月7日。src/classify.mjs の classifyLocal)
+// route.ts は上限で止める前にこれを通し、段階2なら止めずに固定応答・通知・記録を出す(CLAUDE.md 5.2)。
+// 上限の字数を超えた先にだけキーワードがある長い打ち明けも、見逃さないこと。
+// --------------------------------------------------------------------------
+console.log("\n[上限] 字数・回数の上限を超えた発言でも、はっきりした危機のサインは段階2");
+const filler = "今日は部活のことでいろいろあって、".repeat(Math.ceil(MAX_TEXT_LENGTH / 17) + 5);
+const LOCAL_CASES = [
+  ["字数の上限を超えた先にだけキーワード", filler + "もう死にたい", "too_long", 2, "keyword"],
+  ["字数の上限を超えた先にだけ受動パターン", filler + "最近、朝が来なければいいのにってずっと思ってる", "too_long", 2, "pattern"],
+  ["回数の上限でキーワード", "死にたい", "rate_limited", 2, "keyword"],
+  ["字数の上限・サインなし", filler + "明日も学校がある", "too_long", 0, null],
+  ["回数の上限・慣用表現だけ(段階1。止める)", "恥ずかしすぎて消えたい", "rate_limited", 1, "idiom"],
+];
+for (const [label, text, limit, stage, rule] of LOCAL_CASES) {
+  const r = classifyLocal(text, limit);
+  const ok = r.stage === stage && r.decidedBy.includes(limit) && (rule == null || r.decidedBy.includes(rule))
+    && (stage !== 2 || (r.risk === "crisis" && r.subject === "self"));
+  check(`${label}(${text.length}字)→ 段階${stage}`, ok, `結果: 段階${r.stage} ${r.risk}/${r.subject} ${JSON.stringify(r.decidedBy)}`);
+}
+check(`字数の上限の文が、本当に上限(${MAX_TEXT_LENGTH}字)を超えている`, (filler + "もう死にたい").length > MAX_TEXT_LENGTH
+  && !crisisRulesV2(filler.slice(0, MAX_TEXT_LENGTH)).keywords.length);
+
+console.log("\n[上限・エラーの文面] 生徒に見せる文面が出力チェック(OUTPUT_NG)に当たらないこと");
+for (const [name, text] of Object.entries({ TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE })) {
+  const hit = checkOutput(text);
+  check(name, hit.length === 0 && !/[A-Za-z]{3,}/.test(text), hit.length ? `一致: ${hit.join(", ")}` : "英字が入っている");
+}
 
 console.log(`\n${failures === 0 ? "全件通過" : `${failures} 件失敗`}`);
 process.exitCode = failures === 0 ? 0 : 1;

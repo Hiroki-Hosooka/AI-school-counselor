@@ -35,7 +35,7 @@
 //   SUPABASE_URL             必須
 //   SUPABASE_SERVICE_ROLE_KEY 必須(RLSを迂回してDBを読み書きするため。絶対にNEXT_PUBLIC_を付けない)
 //   CRISIS_WEBHOOK_URL       任意  Slack / Discord などの Incoming Webhook
-//   RATE_LIMIT_PER_HOUR      任意  既定 60
+//   RATE_LIMIT_PER_HOUR      任意  既定 60(超えた発言でも、本人のはっきりした危機のサインがあれば固定応答を返す)
 //   ADMIN_TOKEN              任意  管理画面(public/admin.html)用の合言葉。
 //                                  admin_sessions/admin_session_detail はこれと
 //                                  一致しないと401を返す(docs/backlog.md 1-2)
@@ -48,8 +48,9 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  classify, classifyStaged, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES, CRISIS_REPLY,
+  classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES, CRISIS_REPLY,
 } from "@/classify.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
@@ -144,6 +145,42 @@ async function notifyCrisis(sessionId: string, subject: string = "self") {
   } catch {
     return false;
   }
+}
+
+// 字数・回数の上限を超えた発言に、本人のはっきりした危機のサイン(キーワード・受動パターン)があったときの応答
+// (2026年10月7日)。AI は使わず、いつもの固定応答(CRISIS_REPLY・危機カード)を返し、職員に通知し、記録する
+// (CLAUDE.md 5.2・5.3)。回数の上限に当たった生徒は続けて送れないので、段階ごとの応答(仮)が有効なときも、
+// 分けた文面ではなく全部入りの固定応答にし、状態を「危機の応答を出し終えた(done)」にして、以後の生成に
+// 危機のあとの指示が付くようにする。段階ごとの応答の列(db/schema.sql 11節〜)が無い DB では、今までの列だけ書く。
+async function overLimitCrisisReply(
+  db: SupabaseClient, sessionId: string, text: string, local: ReturnType<typeof classifyLocal>,
+) {
+  const { data: sess } = await db.from("sessions").select("id").eq("id", sessionId).single();
+  if (!sess) return json({ error: "セッションが見つかりません" }, 404);
+  const { data: userMsg } = await db.from("messages")
+    .insert({ session_id: sessionId, role: "user", body: text }).select("seq").single();
+  const notified = await notifyCrisis(sessionId, "self");
+  const event = {
+    session_id: sessionId, risk: "crisis", subject: "self",
+    keywords: [...local.keywords, ...local.patterns.map((p: string) => `パターン:${p}`)],
+    model_risk: local.model.risk, model_reason: `${local.model.reason}(段階2: ${local.decidedBy.join(",")})`, notified,
+  };
+  const staged = stagedResponseEnabled();
+  const stagedEvent = staged ? await db.from("safety_events").insert({ ...event, stage: 2, decided_by: local.decidedBy }) : null;
+  if (!staged || stagedEvent?.error) await db.from("safety_events").insert(event);
+  const { data: aiMsg } = await db.from("messages").insert({
+    session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
+  }).select("seq").single();
+  const touched = { last_at: new Date().toISOString() };
+  const stagedUpdate = staged
+    ? await db.from("sessions").update({ ...touched, crisis_state: "done", crisis_trigger: "direct", watch_turns_left: 0 }).eq("id", sessionId)
+    : null;
+  if (!staged || stagedUpdate?.error) await db.from("sessions").update(touched).eq("id", sessionId);
+  return json({
+    reply: CRISIS_REPLY, crisis: true,
+    safety: { risk: "crisis", subject: "self", keywords: local.keywords.length, model: local.model.risk },
+    user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
+  });
 }
 
 // ============================================================================
@@ -300,12 +337,23 @@ export async function POST(req: Request) {
       const sessionId = String(payload.session_id ?? "").trim();
       const text = String(payload.text ?? "").trim();
       if (!clientId || !sessionId || !text) return json({ error: "パラメータが不足しています" }, 400);
-      if (text.length > 2000) return json({ error: "長すぎます" }, 400);
 
-      // レート制限
-      const { data: used } = await db.rpc("recent_turn_count", { p_client_id: clientId });
-      if ((used ?? 0) >= RATE_LIMIT) {
-        return json({ error: "しばらく時間をおいてから、またどうぞ。", rate_limited: true }, 429);
+      // 字数・回数の上限(2026年10月7日)。上限を超えた発言でも、止める前に AI を使わない照合
+      // (キーワード・受動パターン。src/classify.mjs の classifyLocal)だけは通し、本人のはっきりした危機のサインが
+      // あれば、いつもの固定応答・通知・記録を出す(CLAUDE.md 5.2)。以前は上限の判定が危機の判定より前にあり、
+      // 長い打ち明けほど判定も通知もされなかった。サインが無ければ、今までどおり止めて、生徒向けの文面
+      // (src/notices.mjs。notice)を返す(error は記録・開発用)。
+      let overLimit: "too_long" | "rate_limited" | null = text.length > MAX_TEXT_LENGTH ? "too_long" : null;
+      if (!overLimit) {
+        const { data: used } = await db.rpc("recent_turn_count", { p_client_id: clientId });
+        if ((used ?? 0) >= RATE_LIMIT) overLimit = "rate_limited";
+      }
+      if (overLimit) {
+        const local = classifyLocal(text, overLimit);
+        if (local.stage === 2) return await overLimitCrisisReply(db, sessionId, text, local);
+        return overLimit === "too_long"
+          ? json({ error: "長すぎます", notice: TOO_LONG_NOTICE }, 400)
+          : json({ error: "しばらく時間をおいてから、またどうぞ。", notice: RATE_LIMIT_NOTICE, rate_limited: true }, 429);
       }
 
       // phase以下はフェーズ1(インテーク)用(構造化面接AI統合 手順5)。

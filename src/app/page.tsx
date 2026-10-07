@@ -6,6 +6,8 @@
    =========================================================================== */
 
 import { Fragment, useEffect, useRef, useState } from "react";
+// 上限・エラーのときに生徒に見せる文面(サーバと共通。src/notices.mjs)。技術的な中身は見せず、コンソールに残す
+import { SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "@/notices.mjs";
 
 type Weight = "rapport" | "main" | "goal" | "plan";
 type Relation = "visitor" | "complainant" | "customer";
@@ -118,7 +120,12 @@ export default function Page() {
       }),
     });
     const data = await res.json().catch(() => ({ error: "応答を読み取れませんでした" }));
-    if (!res.ok) throw new Error(data.error || `通信に失敗しました (${res.status})`);
+    if (!res.ok) {
+      // notice: サーバが用意した生徒向けの文面(字数・回数の上限のとき)。error は開発用の中身
+      const err: Error & { notice?: string } = new Error(data.error || `通信に失敗しました (${res.status})`);
+      if (typeof data.notice === "string") err.notice = data.notice;
+      throw err;
+    }
     return data;
   }
 
@@ -154,8 +161,9 @@ export default function Page() {
       setSub("接続済み");
       setBanner("");
     } catch (e) {
+      console.error("接続できませんでした:", e);
       setSub("接続できません");
-      setBanner(e instanceof Error ? e.message : String(e));
+      setBanner(NOT_CONNECTED_NOTICE);
     }
   }
 
@@ -219,8 +227,10 @@ export default function Page() {
       setFlags(r.flags || []);
     } catch (e) {
       setThinking(false);
-      const message = e instanceof Error ? e.message : String(e);
-      setMessages((m) => [...m, { role: "ai", body: "うまく応答できませんでした。\n" + message, error: true }]);
+      // 生徒には技術的な中身(ブラウザの英語のメッセージなど)を見せない(2026年10月7日)
+      console.error("送れませんでした:", e);
+      const notice = (e as { notice?: unknown })?.notice;
+      setMessages((m) => [...m, { role: "ai", body: typeof notice === "string" ? notice : SEND_FAILED_NOTICE, error: true }]);
     }
   }
 
@@ -228,7 +238,7 @@ export default function Page() {
     const v = (overrideText ?? inputValue).trim();
     if (!v || busy) return;
     if (!sessionIdRef.current) {
-      setBanner("まだ接続できていません。設定を確認してください。");
+      setBanner(NOT_CONNECTED_NOTICE);
       return;
     }
     setInputValue("");

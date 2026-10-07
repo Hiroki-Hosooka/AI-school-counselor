@@ -130,7 +130,7 @@ Vercelダッシュボード → Project → Settings → Environment Variables
 | `SUPABASE_URL` | ○ | Supabaseダッシュボード → Project Settings → API に表示されるURL |
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | 同上。`service_role` の方(anon keyではない) |
 | `CRISIS_WEBHOOK_URL` | | Slack や Discord の Incoming Webhook |
-| `RATE_LIMIT_PER_HOUR` | | 既定 60 |
+| `RATE_LIMIT_PER_HOUR` | | 既定 60。超えた発言(と2000字を超えた発言)でも、本人のはっきりした危機のサインがあれば固定応答と通知を出す(CLAUDE.md 5.2) |
 | `ADMIN_TOKEN` | | 管理画面(`/admin.html`)の合言葉。未設定だと管理画面は常に401になり閲覧できない。**長く推測不能な値にすること**(例: `openssl rand -hex 16` 等で生成)。"admin"のような推測されやすい値は、生徒の危機対応記録・相談内容が漏れる直接の原因になる |
 | `TEST_GEMINI_API_KEY` | | `npm run test:crisis`(docs/backlog.md 1-3)専用のGeminiキー。**Vercelには設定しない** (本番の`GEMINI_API_KEY`と分離するため。CLAUDE.md 5.10) |
 
