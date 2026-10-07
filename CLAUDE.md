@@ -84,6 +84,8 @@ Postgres(Supabase。データベースとしてのみ使う)
     ├── backlog.md         優先順位つきタスク
     ├── project-history.md 経緯のまとめ(中間発表用の素材。出典つき)
     ├── crisis-stage2-provisional-texts.md  仮の文面の一覧(心理士の確認用。scripts/export-provisional-texts.mjs で作る)
+    ├── psychologist-review-texts.md        心理士さんに確認していただく文面の全部(scripts/export-review-texts.mjs で作る)
+    ├── psychologist-review-checklist.md    心理士さんに確認をお願いしたいことの一覧
     ├── prompts/           作業の指示書(テスト一式・構造化面接AIとの統合)
     ├── structured-source/ 構造化面接AIの元資料
     ├── test-sets/         テストの入力(保留セットは調整に使わない)

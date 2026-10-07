@@ -2,8 +2,9 @@
 
 > リポジトリのあちこちに書かれた「心理士の確認待ち」を1か所に集めたもの。次に先生方と話すときの資料の元にする。
 > 文面の正本はコードにある(各項目の「どこ」)。ずれないように、この一覧には文面そのものは写さない。
-> 危機の応答の仮の文面は `node scripts/export-provisional-texts.mjs` で `docs/crisis-stage2-provisional-texts.md` に
-> まとめて書き出せる(手で直さない)。
+> 先生方に見ていただく文面は、`node scripts/export-review-texts.mjs` で `docs/psychologist-review-texts.md` に
+> まとめて書き出せる(この一覧の A〜D の文面と、画面のカード・最初の受付の質問を含む。手で直さない)。
+> 段階ごとの応答の詳しい説明は `docs/crisis-stage2-provisional-texts.md`(`node scripts/export-provisional-texts.mjs`)。
 
 ## A. 本番ですでに使っているもの(優先)
 
