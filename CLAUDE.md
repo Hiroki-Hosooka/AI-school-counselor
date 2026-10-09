@@ -90,7 +90,8 @@ Postgres(Supabase。データベースとしてのみ使う)
     ├── structured-source/ 構造化面接AIの元資料
     ├── test-sets/         テストの入力(保留セットは調整に使わない)
     ├── test-results/      テストの結果
-    └── interviews/        逐語(マスキング済み)。今はリポジトリに無い
+    ├── crisis-keywords-v3.md 危機キーワード v3(案。文献・根拠つき。11章は否定のキーワード)
+    └── interviews/        インタビューのまとめ(マスキング済みのものだけ。マスキング前の音声・逐語は置かない)
 ```
 
 ### 技術選択の理由
