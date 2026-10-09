@@ -59,6 +59,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── classify.mjs       危機の判定(v1・v2 の段階つき)と固定応答 CRISIS_REPLY
 │   ├── generate.mjs       ナレッジ検索・プロンプトの組み立て・生成・出力チェック・人単位の記憶
 │   ├── crisis-response.mjs 段階ごとの応答(仮)と「危機のあと」の指示(5.16・5.17)
+│   ├── crisis-keywords-v3.mjs 危機キーワード v3(案。設定 CRISIS_KEYWORDS=v3 のときだけ)と否定のキーワード(A・B)
 │   └── app/
 │       ├── layout.tsx     フォント・メタデータ
 │       ├── page.tsx       クライアント(表示のみ)

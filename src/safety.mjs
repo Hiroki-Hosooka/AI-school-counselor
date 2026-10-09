@@ -155,6 +155,8 @@ const SHAME_IDIOM_V2 = new RegExp(
   `${SHAME_WORD}(すぎ|過ぎ|くて|さで)(て|で)?[、,]?(マジで|まじで|ほんとに|本当に|もう|ガチで|がちで|マジ|まじ)?${WISH}|${WISH}(くらい|ぐらい|ほど)${SHAME_TAIL}`,
   "g",
 );
+// crisis-keywords-v3.mjs(v3)も同じ誇張の除外を使う
+export const SHAME_IDIOM_PATTERN = SHAME_IDIOM_V2;
 const IDIOM_GUARD = /自分|生き|存在|人生|毎日|ずっと|いつも|つら|辛|しんど|苦し|疲れ|無理|限界|嫌|寂し|さみし|孤独|誰も|死|消え/;
 
 // 慣用表現の部分を中立の言い方に置き換える(分類器に渡す文用)。IDIOM_GUARD に当たるときは置き換えない。

@@ -152,6 +152,20 @@ async function notifyCrisis(sessionId: string, subject: string = "self") {
 // (CLAUDE.md 5.2・5.3)。回数の上限に当たった生徒は続けて送れないので、段階ごとの応答(仮)が有効なときも、
 // 分けた文面ではなく全部入りの固定応答にし、状態を「危機の応答を出し終えた(done)」にして、以後の生成に
 // 危機のあとの指示が付くようにする。段階ごとの応答の列(db/schema.sql 11節〜)が無い DB では、今までの列だけ書く。
+// safety_events.keywords に残す「どの規則に当たったか」。v2 はキーワードの代表表記とパターンの ID、
+// v3 は語の ID・代表表記・段階・根拠の種類(【要確認】の語は心理士の確認待ちだと見分けられるように)
+type Hit = { id: string; label: string; stage: number; kind: string[]; provisional: boolean };
+function keywordLog(r: { keywords: string[]; patterns: string[]; idiomExempted: string[]; hits?: Hit[]; keywordVersion?: string }): string[] {
+  const idioms = (r.idiomExempted ?? []).map((p) => `(慣用表現→段階1)${p}`);
+  if (r.keywordVersion === "v3") {
+    return [
+      ...(r.hits ?? []).map((h) => `v3:${h.id} ${h.label}(段階${h.stage}・${h.kind.join("/")})${h.provisional ? "【要確認】" : ""}`),
+      ...idioms,
+    ];
+  }
+  return [...r.keywords, ...r.patterns.map((p) => `パターン:${p}`), ...idioms];
+}
+
 async function overLimitCrisisReply(
   db: SupabaseClient, sessionId: string, text: string, local: ReturnType<typeof classifyLocal>,
 ) {
@@ -162,7 +176,7 @@ async function overLimitCrisisReply(
   const notified = await notifyCrisis(sessionId, "self");
   const event = {
     session_id: sessionId, risk: "crisis", subject: "self",
-    keywords: [...local.keywords, ...local.patterns.map((p: string) => `パターン:${p}`)],
+    keywords: keywordLog(local),
     model_risk: local.model.risk, model_reason: `${local.model.reason}(段階2: ${local.decidedBy.join(",")})`, notified,
   };
   const staged = stagedResponseEnabled();
@@ -421,11 +435,7 @@ export async function POST(req: Request) {
         safety = v2;
         // どの規則で段階が決まったかを、既存の列(keywords・model_reason)にも残す
         // (第2段階の専用の列 stage・decided_by は、設定 CRISIS_RESPONSE=staged のときだけ書く)
-        eventKeywords = [
-          ...v2.keywords,
-          ...v2.patterns.map((p: string) => `パターン:${p}`),
-          ...v2.idiomExempted.map((p: string) => `(慣用表現→段階1)${p}`),
-        ];
+        eventKeywords = keywordLog(v2);
         const stageForLog = plan ? plan.stage : v2.stage;
         const rulesForLog: string[] = plan ? plan.decidedBy : v2.decidedBy;
         eventReason = `${v2.model.reason}(段階${stageForLog}: ${rulesForLog.join(",") || "なし"})`;

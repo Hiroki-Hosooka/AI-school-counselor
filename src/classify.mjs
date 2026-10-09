@@ -13,6 +13,15 @@
 // ============================================================================
 
 import { CRISIS_WORDS, crisisRulesV2, paraphraseShameIdioms } from "./safety.mjs";
+import { crisisRulesV3 } from "./crisis-keywords-v3.mjs";
+
+// 危機キーワードの版。設定 CRISIS_KEYWORDS=v3 のときだけ v3(docs/crisis-keywords-v3.md。検証の結果を人が確認するまで既定にしない)。
+// v3 には「段階1の語」(floor。少なくとも段階1)と、当たった語の根拠(hits)がある。v2 にはどちらも無いので空にする
+export const keywordVersion = () => (process.env.CRISIS_KEYWORDS === "v3" ? "v3" : "v2");
+export function crisisRules(text, version = keywordVersion()) {
+  if (version === "v3") return { ...crisisRulesV3(text), version };
+  return { ...crisisRulesV2(text), floor: [], hits: [], version };
+}
 
 // 危機判定時の固定応答(生成は完全にスキップする。CLAUDE.md 5.2)。文言を変える場合は
 // この分岐の意図(態度だけを示し、手順には踏み込まない)を壊していないか確認すること。
@@ -498,13 +507,14 @@ function runVotes(input, n, prompt) {
 // (上限を超えた発言に AI の費用を使わないため。設定 CRISIS_DETECTION=v1 のときも、この照合は v2 の規則で行う)。
 // 本人か第三者かは分類器が無いと分からないので、本人とする(迷ったら本人。classifyStaged と同じ考え方)。
 // limit: "too_long"(字数)| "rate_limited"(回数)。判定の根拠(decidedBy)の最後に付けて、記録で見分けられるようにする。
-export function classifyLocal(text, limit) {
-  const rules = crisisRulesV2(text);
+export function classifyLocal(text, limit, { version } = {}) {
+  const rules = crisisRules(text, version);
   let stage = 0;
   const decidedBy = [];
   const raise = (s, why) => { stage = Math.max(stage, s); decidedBy.push(why); };
   if (rules.patterns.length) raise(2, "pattern");
   if (rules.keywords.length) raise(2, "keyword");
+  if (rules.floor.length) raise(1, "keyword_floor");
   if (rules.idiomExempted.length) raise(1, "idiom");
   if (limit) decidedBy.push(limit);
   const risk = stage === 2 ? "crisis" : stage === 1 ? "watch" : "none";
@@ -512,13 +522,14 @@ export function classifyLocal(text, limit) {
   return {
     risk, subject: "self", stage, decidedBy,
     keywords: rules.keywords, patterns: rules.patterns, idiomExempted: rules.idiomExempted,
+    floor: rules.floor, hits: rules.hits, keywordVersion: rules.version,
     model: { risk: "照合のみ", subject: "self", reason: `${limitJa}の上限を超えた発言のため、分類器は使わずキーワード・受動パターンだけで照合した` },
   };
 }
 
-export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes(), mode = "normal" } = {}) {
+export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes(), mode = "normal", version } = {}) {
   const followUp = mode === "followup";
-  const rules = crisisRulesV2(text);
+  const rules = crisisRules(text, version);
   // 文脈の中の相談者の発言も、慣用表現は中立の言い方に置き換える(過去の慣用表現に判定が引きずられないように)
   const context = (recentMessages ?? []).map((m) => (m?.role === "ai" ? m : { ...m, text: paraphraseShameIdioms(m?.text).text }));
   const results = await runVotes(
@@ -540,6 +551,8 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   // 分類器が危機と判定したら段階2。すべての回が第三者(other)の場合も段階2とし、subject で区別する
   // (以前は段階を上げず、記録上「段階0・規則なし」になっていた。risk・subject と分岐は変わらない)
   if (anyCrisis) raise(2, "classifier");
+  // v3 の段階1の語(少なくとも段階1。分類器が crisis なら上で段階2になっている)
+  if (rules.floor.length) raise(1, "keyword_floor");
   if (rules.idiomExempted.length) raise(1, "idiom");
   if (ok.some((r) => r.risk === "watch")) raise(1, "classifier_watch");
   if (errors.length) raise(1, "classifier_error");
@@ -552,6 +565,7 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   return {
     risk, subject, stage, decidedBy,
     keywords: rules.keywords, patterns: rules.patterns, idiomExempted: rules.idiomExempted,
+    floor: rules.floor, hits: rules.hits, keywordVersion: rules.version,
     model: { risk: ok.map((r) => r.risk).join("/") || "判定器エラー", subject, reason: decisive?.reason ?? "判定器エラー" },
     classifierError: errors.length ? errors.map((r) => r.error).join(" | ") : null,
     usedModel: decisive?.model ?? null,
