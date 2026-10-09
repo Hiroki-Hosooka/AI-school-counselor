@@ -26,7 +26,7 @@ function loadEnvFile(file) {
 export function requireTestGeminiKey(root) {
   loadEnvFile(`${root}/.env.local`);
   loadEnvFile(`${root}/.env`);
-  const key = process.env.TEST_GEMINI_API_KEY;
+  const key = process.env.TEST_GEMINI_API_KEY ?? process.env.TEST_GEMINI_API_KEY1;
   if (!key) {
     console.error("TEST_GEMINI_API_KEY が設定されていません。");
     console.error("本番の GEMINI_API_KEY とは別の、合成テスト専用のキーを用意してください(CLAUDE.md 5.10)。");
@@ -45,8 +45,14 @@ export function requireTestGeminiKeyPool(root) {
   loadEnvFile(`${root}/.env.local`);
   loadEnvFile(`${root}/.env`);
   const listRaw = process.env.TEST_GEMINI_API_KEYS;
+  // 番号つきの名前(TEST_GEMINI_API_KEY1, TEST_GEMINI_API_KEY2, ...)でも渡せる(クラウドの環境の設定で、1本ずつ登録する場合)
+  const numbered = Object.keys(process.env)
+    .filter((k) => /^TEST_GEMINI_API_KEY\d+$/.test(k))
+    .sort((a, b) => Number(a.slice(19)) - Number(b.slice(19)))
+    .map((k) => process.env[k].trim()).filter(Boolean);
   const pool = listRaw
     ? listRaw.split(",").map((k) => k.trim()).filter(Boolean)
+    : numbered.length ? numbered
     : (process.env.TEST_GEMINI_API_KEY ? [process.env.TEST_GEMINI_API_KEY] : []);
   if (!pool.length) {
     console.error("TEST_GEMINI_API_KEY(S) が設定されていません。");

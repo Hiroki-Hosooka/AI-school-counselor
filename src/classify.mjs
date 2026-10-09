@@ -535,6 +535,13 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   const results = await runVotes(
     buildClassifierInput(rules.classifierText, context), votes, followUp ? CLASSIFIER_PROMPT_V2_FOLLOWUP : CLASSIFIER_PROMPT_V2,
   );
+  return combineStaged(rules, results, { followUp });
+}
+
+// 照合の結果(crisisRules)と分類器の各回の結果(runVotes)から段階を決める。
+// classifyStaged から分けてあるのは、キーワードの版の比較(scripts/test-crisis-keywords-v3.mjs)で、
+// 同じ分類器の結果に v2 と v3 の照合をそれぞれ当てて比べるため(分類器に渡す文は、どちらの版でも同じ)。
+export function combineStaged(rules, results, { followUp = false } = {}) {
   const done = results.filter((r) => !r.skipped);
   const ok = done.filter((r) => r.ok);
   const errors = done.filter((r) => !r.ok);
@@ -552,7 +559,7 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   // (以前は段階を上げず、記録上「段階0・規則なし」になっていた。risk・subject と分岐は変わらない)
   if (anyCrisis) raise(2, "classifier");
   // v3 の段階1の語(少なくとも段階1。分類器が crisis なら上で段階2になっている)
-  if (rules.floor.length) raise(1, "keyword_floor");
+  if (rules.floor?.length) raise(1, "keyword_floor");
   if (rules.idiomExempted.length) raise(1, "idiom");
   if (ok.some((r) => r.risk === "watch")) raise(1, "classifier_watch");
   if (errors.length) raise(1, "classifier_error");
@@ -565,7 +572,7 @@ export async function classifyStaged(text, recentMessages = [], { votes = classi
   return {
     risk, subject, stage, decidedBy,
     keywords: rules.keywords, patterns: rules.patterns, idiomExempted: rules.idiomExempted,
-    floor: rules.floor, hits: rules.hits, keywordVersion: rules.version,
+    floor: rules.floor ?? [], hits: rules.hits ?? [], keywordVersion: rules.version,
     model: { risk: ok.map((r) => r.risk).join("/") || "判定器エラー", subject, reason: decisive?.reason ?? "判定器エラー" },
     classifierError: errors.length ? errors.map((r) => r.error).join(" | ") : null,
     usedModel: decisive?.model ?? null,

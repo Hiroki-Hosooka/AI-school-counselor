@@ -1,0 +1,166 @@
+{
+  "description": "危機キーワード v3 の開発用の例文(docs/prompts/crisis-keywords-v3.md 3章をそのまま写したもの)。調整に使ってよい。保留セットではない",
+  "created": "2026-10-09",
+  "groups": {
+    "variant": "表記ゆれ。すべて段階2に当たるべき",
+    "false_positive": "誤検知の確認。段階2になってはいけない(最後の4つは段階1を許容。どの文も段階1は誤検知に数えない)",
+    "abuse": "他人への暴言。本人の危機ではない"
+  },
+  "items": [
+    {
+      "text": "シニタイ",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "しにたーい",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "死にてえ",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "死にたみ",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "タヒにたい",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "消えちゃいたい",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "キエタイ",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "生きていたくない",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "朝なんか来なければいいのに",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "生まれてこなきゃよかった",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "死んだほうがマシ",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "自分がいない方が家族は楽",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "アムカした",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "OD した",
+      "group": "variant",
+      "expect": "段階2"
+    },
+    {
+      "text": "髪切っちゃう",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "good",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "宿題助けて",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "居場所がない",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "自殺のニュース見た",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "肩触られた",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "性的少数者について調べてる",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "親に怒鳴られた",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "部活で腕を切った",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "明日起きなければならない",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "あいつがいない方がいい",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "楽になりたいから早くテスト終われ",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "この話もう終わりにしたい",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "生きてる意味なくない?(笑)",
+      "group": "false_positive",
+      "expect": "段階2にならない(段階1は許容)"
+    },
+    {
+      "text": "死ね",
+      "group": "abuse",
+      "expect": "本人の危機ではない(段階2にならない)"
+    },
+    {
+      "text": "しね",
+      "group": "abuse",
+      "expect": "本人の危機ではない(段階2にならない)"
+    },
+    {
+      "text": "4ね",
+      "group": "abuse",
+      "expect": "本人の危機ではない(段階2にならない)"
+    }
+  ]
+}
