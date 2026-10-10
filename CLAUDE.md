@@ -89,6 +89,7 @@ Postgres(Supabase。データベースとしてのみ使う)
     ├── psychologist-review-texts.md        心理士さんに確認していただく文面の全部(scripts/export-review-texts.mjs で作る)
     ├── psychologist-review-checklist.md    心理士さんに確認をお願いしたいことの一覧
     ├── proposal-concern-personalization.md 「〜が心配」を生成で一人ひとりに合わせる案(提案だけ。費用の見込みつき)
+    ├── changes-since-shima3-interview.md  嶋先生インタビュー3(10/7)からの変更のまとめ
     ├── prompts/           作業の指示書(テスト一式・構造化面接AIとの統合)
     ├── structured-source/ 構造化面接AIの元資料
     ├── test-sets/         テストの入力(保留セットは調整に使わない)
