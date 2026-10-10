@@ -9,6 +9,7 @@
 import { CRISIS_WORDS, OUTPUT_NG, crisisRulesV2 } from "../src/safety.mjs";
 import { crisisRulesV3, matchNegation, crisisCategoryOf } from "../src/crisis-keywords-v3.mjs";
 import { classifyLocal } from "../src/classify.mjs";
+import { CONTEXT_FAILURE_REPLIES_PROVISIONAL, contextFailureReply, CRISIS_GENERATION_EXTRA_NG } from "../src/crisis-response.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
 
 // index.ts の checkOutput() と同じロジック
@@ -261,6 +262,28 @@ console.log("\n[上限・エラーの文面] 生徒に見せる文面が出力�
 for (const [name, text] of Object.entries({ TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE })) {
   const hit = checkOutput(text);
   check(name, hit.length === 0 && !/[A-Za-z]{3,}/.test(text), hit.length ? `一致: ${hit.join(", ")}` : "英字が入っている");
+}
+
+console.log("\n[生成失敗の場面の一言] 出力チェック(OUTPUT_NG と危機の生成の追加チェック)を通り、言い直させない・「いつでも」を言わないこと");
+for (const [name, text] of Object.entries(CONTEXT_FAILURE_REPLIES_PROVISIONAL)) {
+  const hit = [...checkOutput(text), ...CRISIS_GENERATION_EXTRA_NG.filter((re) => re.test(text)).map(String)];
+  const bad = /聞かせて|受け取れな|いつでも|重い|これ以上/.test(text);
+  check(`一言 ${name}`, hit.length === 0 && !bad, hit.length ? `一致: ${hit.join(", ")}` : "言い直させる・受け取れない・いつでも等の言い方");
+}
+console.log("\n[生成失敗の場面の一言] 場面・回数ごとの出し分け(2026年10月11日。docs/proposal-safety-filter-fallback.md)");
+{
+  const T = CONTEXT_FAILURE_REPLIES_PROVISIONAL;
+  const cases = [
+    ["ふつうの会話は今どおり(null)", contextFailureReply([], 0), null],
+    ["危機のあと 1回目: 一言+危機カード・確認待ち", contextFailureReply(["afterCrisis"], 0), { scene: "afterCrisis", reply: T.afterCrisis, card: "crisis", review: true }],
+    ["危機のあと+気がかり → 危機のあとを優先", contextFailureReply(["tierB", "afterCrisis"], 0), { scene: "afterCrisis", reply: T.afterCrisis, card: "crisis", review: true }],
+    ["危機のあと 2回目: 短い別の一言", contextFailureReply(["afterCrisis"], 1), { scene: "afterCrisis", reply: T.second, card: "crisis", review: true }],
+    ["危機のあと 3回目: 一言なし・カードだけ", contextFailureReply(["afterCrisis"], 2), { scene: "afterCrisis", reply: "", card: "crisis", review: true }],
+    ["気がかり: 一言+折りたたみの窓口・確認待ちにしない", contextFailureReply(["tierB"], 0), { scene: "tierB", reply: T.tierB, card: "hotlines", review: false }],
+    ["第三者: 一言・カードなし・確認待ち", contextFailureReply(["thirdParty"], 0), { scene: "thirdParty", reply: T.thirdParty, card: null, review: true }],
+    ["第三者 3回目: 一言なしなら窓口のカード", contextFailureReply(["thirdParty"], 2), { scene: "thirdParty", reply: "", card: "hotlines", review: true }],
+  ];
+  for (const [label, got, want] of cases) check(label, JSON.stringify(got) === JSON.stringify(want), `結果: ${JSON.stringify(got)}`);
 }
 
 console.log(`\n${failures === 0 ? "全件通過" : `${failures} 件失敗`}`);

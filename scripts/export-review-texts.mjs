@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { CRISIS_REPLY } from "../src/classify.mjs";
 import { buildSystem, GENERATION_FAILURE_REPLIES } from "../src/generate.mjs";
+import { CONTEXT_FAILURE_REPLIES_PROVISIONAL } from "../src/crisis-response.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
 import {
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
@@ -180,13 +181,19 @@ ${asks([
 
 ### A3. 返事が作れなかったときの文面
 
-**出るとき:** システムの不具合などで AI の返事が作れなかったとき。同じ文面を2回出さないよう、1回目と2回目以降で変えています。
+**出るとき:** システムの不具合や Google 側の安全フィルターなどで AI の返事が作れなかったとき。ふつうの会話では次の文面です。
+同じ文面を2回出さないよう、1回目と2回目以降で変えています。
 
 ${GENERATION_FAILURE_REPLIES.map((t, i) => `${i === 0 ? "1回目" : "2回目以降"}\n\n${quote(t)}`).join("\n\n")}
 
+**危機のあと・気がかり・第三者の心配の会話では**、上の文面ではなく、場面ごとの一言を出します(2026年10月11日。打ち明けを言い直させないため)。
+危機のあとは窓口のカードも添えます。同じ会話で2回目は短い別の一言、3回目以降は一言を出さず窓口のカードだけにします。
+
+${[["危機のあと", CONTEXT_FAILURE_REPLIES_PROVISIONAL.afterCrisis], ["気がかり", CONTEXT_FAILURE_REPLIES_PROVISIONAL.tierB], ["第三者の心配", CONTEXT_FAILURE_REPLIES_PROVISIONAL.thirdParty], ["2回目(どの場面も)", CONTEXT_FAILURE_REPLIES_PROVISIONAL.second]].map(([k, t]) => `${k}\n\n${quote(t)}`).join("\n\n")}
+
 ${asks([
-  "「もう少しだけ聞かせてもらえる?」は、つらい話をもう一度書かせる負担になりませんか。",
-  "打ち明けのあとの会話で不具合が起きたときにも、この文面が出ます。それでよいでしょうか。",
+  "ふつうの会話の「もう少しだけ聞かせてもらえる?」は、つらい話をもう一度書かせる負担になりませんか。",
+  "場面ごとの一言の「ちゃんと受け取っているよ」は、返事が作れなかった場面で言ってよい言葉でしょうか。",
 ])}
 
 ### A4. 送れなかったとき・上限のときの文面

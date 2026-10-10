@@ -527,7 +527,7 @@ function MessageBubble({ msg, onRate, onChoose }: {
   const cls = "msg " + (msg.role === "user" ? "user" : "ai") + (card === "crisis" ? " crisis" : "") + (msg.summary ? " summary" : "");
   return (
     <div className={cls}>
-      <div className="bubble">{msg.body}</div>
+      {msg.body ? <div className="bubble">{msg.body}</div> : null}
       {card === "crisis" && (
         <div className="crisis-card">
           <h4>話せる窓口</h4>

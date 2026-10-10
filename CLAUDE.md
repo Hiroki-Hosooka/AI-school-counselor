@@ -92,7 +92,7 @@ Postgres(Supabase。データベースとしてのみ使う)
     ├── proposal-concern-personalization.md 「〜が心配」を生成で一人ひとりに合わせる案(提案だけ。費用の見込みつき)
     ├── changes-since-shima3-interview.md  嶋先生インタビュー3(10/7)からの変更のまとめ
     ├── leftover-audit-20261011.md   指示書ごとのやり残しの一覧(2026年10月11日。報告だけ)
-    ├── proposal-safety-filter-fallback.md 安全フィルターでブロックされたときの一言の案(未実装)
+    ├── proposal-safety-filter-fallback.md 安全フィルターでブロックされたときの一言の設計(2026年10月11日に実装)
     ├── prompts/           作業の指示書(テスト一式・構造化面接AIとの統合)
     ├── structured-source/ 構造化面接AIの元資料
     ├── test-sets/         テストの入力(保留セットは調整に使わない)
@@ -396,7 +396,10 @@ Google側の遮断は屋上屋であり、むしろ害になり得る。該当�
 > (`docs/test-results/safety-filter-20261011-summary.txt` と同名の .xlsx)。無料枠のレート制限で、本生成の約半分は
 > フォールバック先のモデル(3.7/3.6/3.5-flash・3-flash-preview)が応答した。分類器への入力のうち10回に
 > `HARASSMENT:MEDIUM` の評価が付いた(Google の既定 `BLOCK_MEDIUM_AND_ABOVE` なら止められていた可能性がある)ので、
-> **閾値を既定に戻さないこと。** ブロックされたときに場面ごとの固定の一言で受ける案は `docs/proposal-safety-filter-fallback.md`(未実装)。
+> **閾値を既定に戻さないこと。** ブロックなどで本生成に失敗したとき、危機のあと・気がかり・第三者の場面では、場面ごとの固定の一言
+> (`src/crisis-response.mjs` の `contextFailureReply`・`CONTEXT_FAILURE_REPLIES_PROVISIONAL`。仮・心理士の確認待ち)で受け、危機のあとは
+> 危機カードを添える。同じ会話で2回目は短い別の一言、3回目以降はカードだけ。危機のあと・第三者では管理画面の「確認待ち」に並べる
+> (職員への通知は出さない)。実際のエラー文も `messages.flags` に残す(2026年10月11日に人が決めて実装。`docs/proposal-safety-filter-fallback.md`)。
 > モデルを入れ替えたときは、テスト1とこの測定を回し直してブロック率を確かめ、ここに追記すること。
 
 ### 5.12 危機対応は一枚岩ではない(Tier A=selfだけが固定応答)

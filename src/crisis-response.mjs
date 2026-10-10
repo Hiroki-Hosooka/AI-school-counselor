@@ -276,6 +276,37 @@ export function finalizeCrisisGeneration(gen, priorFallbackCount = 0) {
   return { out: { ...gen.out, reply }, flags: [`${CRISIS_FALLBACK_FLAG}(${why})`], fallback: true };
 }
 
+// ----------------------------------------------------------------------------
+// 【仮の文面】生成に失敗した(安全フィルターのブロック・すべてのモデルの失敗)ときの、場面ごとの一言
+// (2026年10月11日に人が決めた設計。docs/proposal-safety-filter-fallback.md。心理士の確認待ち)。
+// 本番の既定でも使う。ふつうの会話は今どおり src/generate.mjs の GENERATION_FAILURE_REPLIES。
+// 決まり: 打ち明けを言い直させない(「もう少し聞かせて」と言わない)・「受け取れなかった」と言わない・「いつでも」と言わない・
+// AI の限界で区切らない。同じ会話で同じ一言を2回出さない(2回目は短い別の一言、3回目以降は一言を出さず窓口のカードだけ)
+export const CONTEXT_FAILURE_REPLIES_PROVISIONAL = {
+  afterCrisis: "ごめんね、いまうまく言葉が出てこなかった。でも、ここまで書いてくれたことは、ちゃんと受け取っているよ。",
+  tierB: "ごめんね、いまうまく返せなかった。しんどい気持ちを書いてくれたこと、ちゃんと受け取っているよ。",
+  thirdParty: "ごめんね、いまうまく返せなかった。その人のことを心配して書いてくれたこと、ちゃんと受け取っているよ。",
+  second: "うまく返せなくてごめんね。急がなくていいよ。",
+};
+export const CONTEXT_FAILURE_FLAG = "生成失敗→場面の一言";
+
+// 生成に失敗したターンの、場面ごとの一言とカード。場面(危機のあと・気がかり・第三者)でなければ null(今どおりの固定の返事)。
+//   contexts         そのターンの安全の文脈(defaultSafetyContexts または段階ごとの応答の safetyContexts)
+//   priorCount       この会話で、すでにこの一言を出した回数(messages.flags の CONTEXT_FAILURE_FLAG で数える)
+// 戻り値 { scene, reply, card, review }。reply が空なら一言を出さずカードだけ(3回目以降)。
+//   card: 危機のあと = crisis(危機カード)/ 気がかり = hotlines(折りたたみの窓口)/ 第三者 = null(画面下の常設の窓口はある)
+//   review: 管理画面の「確認待ち」に並べるか(危機のあと・第三者。職員への通知は出さない)
+export function contextFailureReply(contexts, priorCount = 0) {
+  const cs = Array.isArray(contexts) ? contexts : [];
+  const scene = cs.includes("afterCrisis") ? "afterCrisis" : cs.includes("thirdParty") ? "thirdParty" : cs.includes("tierB") ? "tierB" : null;
+  if (!scene) return null;
+  const card = scene === "afterCrisis" ? "crisis" : scene === "tierB" ? "hotlines" : null;
+  const reply = priorCount <= 0 ? CONTEXT_FAILURE_REPLIES_PROVISIONAL[scene]
+    : priorCount === 1 ? CONTEXT_FAILURE_REPLIES_PROVISIONAL.second : "";
+  // 3回目以降で一言を出さないときは、第三者の場面でも窓口のカードを出す(何も出ない吹き出しにしない)
+  return { scene, reply, card: reply ? card : (card ?? "hotlines"), review: scene !== "tierB" };
+}
+
 // 段階1以上のときに、「大丈夫」の直後のAIの返事に「よかった」が含まれていたら記録する(作り直しはしない。嶋先生 10/7)。
 // 本番の既定でも使う。戻り値は messages.flags に入れる文字列(無ければ null。14節の列は本番に無いことがあるので、以前からある flags に入れる)
 export function daijoubuYokattaNote(userText, reply, stage) {

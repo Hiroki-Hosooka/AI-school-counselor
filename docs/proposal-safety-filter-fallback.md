@@ -1,6 +1,7 @@
 # 提案:安全フィルターで応答がブロックされたときに、固定の短い一言で受ける
 
-> 2026年10月11日。**設計案だけで、まだ実装していない。文面はすべて仮(心理士さんの確認待ち)。**
+> 2026年10月11日。**人が「その形でいい」と決めて、同じ日に実装した**(通知は出さず、確認待ちに並べるだけ)。**文面はすべて仮(心理士さんの確認待ち)。**
+> 実装: `src/crisis-response.mjs` の `contextFailureReply`、`src/app/api/chat/route.ts`。確かめ: `scripts/test-output-check.mjs` の最後の2節。
 > 指示書 next-steps-20261011 3-4。測定の結果は `docs/test-results/safety-filter-20261011-summary.txt`(ブロック 0/303)。
 
 ## 1. 今の動き

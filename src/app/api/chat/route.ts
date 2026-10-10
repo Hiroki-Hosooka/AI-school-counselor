@@ -63,6 +63,7 @@ import {
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
   aftercareEnabled, hadCrisisReply, defaultSafetyContexts, SAFETY_STATE_COLUMNS,
   buildCrisisReply, CRISIS_ENDINGS_PROVISIONAL, nextEndingVariant, daijoubuYokattaNote, CHOICE_NOTE_PROVISIONAL,
+  contextFailureReply, CONTEXT_FAILURE_FLAG,
 } from "@/crisis-response.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -600,6 +601,30 @@ export async function POST(req: Request) {
       const finalized = crisisGenerated
         ? finalizeCrisisGeneration(generated, priorCrisisFallbacks)
         : { out: generated.out, flags: generated.flags };
+      // 生成に失敗した(安全フィルターのブロック・すべてのモデルの失敗)とき、危機のあと・気がかり・第三者の場面なら、
+      // ふつうの固定の返事(「もう少し聞かせて」)ではなく、場面ごとの一言とカードで受ける(2026年10月11日。仮。
+      // docs/proposal-safety-filter-fallback.md)。危機の状態で生成したターン(段階ごとの応答)は上の固定の返事のまま
+      const priorContextFallbacks = hist.filter((h) => Array.isArray(h.flags)
+        && (h.flags as string[]).some((f) => f.startsWith(CONTEXT_FAILURE_FLAG))).length;
+      const fallback = !crisisGenerated && generated.generationFailed
+        ? contextFailureReply(safetyContext, priorContextFallbacks) : null;
+      if (fallback) {
+        finalized.out = { ...finalized.out, reply: fallback.reply };
+        finalized.flags = [`${CONTEXT_FAILURE_FLAG}(${fallback.scene}・${generated.failureCause})`];
+      }
+      // 実際のエラー文も短く残す(以前は原因の分類だけで、中身が DB に残らなかった。やり残しの一覧 2-2)
+      if (generated.generationFailed && generated.failureDetail) {
+        finalized.flags = [...finalized.flags, `失敗の詳細: ${String(generated.failureDetail).slice(0, 160)}`];
+      }
+      // 危機のあと・第三者の場面で失敗したときは、管理画面の「確認待ち」に並べる(職員への通知は出さない。人が決めた)
+      if (fallback?.review) {
+        await db.from("safety_events").insert({
+          session_id: sessionId, risk: safety.risk !== "none" ? safety.risk : "watch", subject: safety.subject,
+          keywords: [], model_risk: safety.model.risk, notified: false,
+          model_reason: `【生成失敗・確認待ち】${fallback.scene === "afterCrisis" ? "危機のあと" : "第三者の心配"}の返事を生成できず、場面の一言で受けた(${generated.failureCause})`,
+        });
+      }
+      const fallbackCard: string | null = fallback ? fallback.card : null;
       const out = finalized.out;
       // 段階1以上で「大丈夫」の直後の返事に「よかった/安心した」があれば記録だけする(作り直さない。嶋先生 10/7。本番の既定でも)
       const stageForNote = plan ? plan.stage
@@ -628,7 +653,7 @@ export async function POST(req: Request) {
       // 危機のあと(段階ごとの応答のとき)の区切りでは、決まった締めの文面を別の行で足し、区切りのカードはそちらに出す
       const endingAppend = !!plan && justClosed && planContexts.includes("crisisEnding");
 
-      const { data: aiMsg } = await db.from("messages").insert({
+      const aiRow = {
         session_id: sessionId, role: "ai", body: out.reply,
         weight, relation, question_level: out.question_level, role_kind: out.role,
         summarized: out.did_summarize === true,
@@ -641,7 +666,16 @@ export async function POST(req: Request) {
         // 段階ごとの応答(第2段階)のときだけ: このターンの段階と、返事の下に出すカードと、
         // 危機の状態で生成した返事か(管理画面で見分けるため。db/schema.sql 12節)
         ...(plan ? { safety_stage: plan.stage, safety_card: plan.card, crisis_generated: crisisGenerated } : {}),
-      }).select("seq").single();
+        // 生成失敗の場面の一言に添えるカード(本番の既定でも。safety_card は db/schema.sql 11節の列)
+        ...(fallbackCard ? { safety_card: fallbackCard } : {}),
+      };
+      let { data: aiMsg, error: aiErr } = await db.from("messages").insert(aiRow).select("seq").single();
+      // 11節が未実行の DB で safety_card が無いときも、返事そのものは必ず保存する(カードは画面にだけ出す)
+      if (aiErr && fallbackCard && !plan) {
+        const { safety_card: _omit, ...rest } = aiRow as Record<string, unknown>;
+        void _omit;
+        ({ data: aiMsg, error: aiErr } = await db.from("messages").insert(rest).select("seq").single());
+      }
 
       // 危機のあと(段階ごとの応答のとき)に本人が終わりの合図を出したら、決まった締めの文面を1つ足す(3案を人ごとに順に。嶋先生 10/7。仮)。
       // 「応援し続ける」は何度伝えてもよいが、言い回しは毎回変える
@@ -685,7 +719,7 @@ export async function POST(req: Request) {
           : { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
         closing: justClosed && !endingAppend,
         after,
-        card: plan?.card ?? null,
+        card: fallbackCard ?? plan?.card ?? null,
         care_line: plan?.card === "care" ? CARE_LINE_PROVISIONAL : null,
         user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
       });
