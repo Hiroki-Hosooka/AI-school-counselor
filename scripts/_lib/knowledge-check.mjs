@@ -26,6 +26,7 @@ export const SEED_FILES = [
   "db/seed_knowledge_structured.sql",
   "db/seed_knowledge_safety.sql",
   "db/seed_knowledge_boundaries.sql",
+  "db/seed_knowledge_shima3.sql",
 ];
 
 // seed の insert 文の各行(  ('ID', '出典', ...)から ID を取り出す
