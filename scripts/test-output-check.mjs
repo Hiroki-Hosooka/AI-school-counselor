@@ -161,7 +161,7 @@ console.log("\n[v2] 自分自身・つらさ等の語があれば慣用表現と
 for (const text of V2_IDIOM_GUARDED) check(`「${text}」`, v2Stage2(text), "段階2にならなかった");
 
 // --------------------------------------------------------------------------
-// 危機キーワード v3(案。src/crisis-keywords-v3.mjs。設定 CRISIS_KEYWORDS=v3 のときだけ使う)
+// 危機キーワード v3(src/crisis-keywords-v3.mjs。2026年10月10日に採用して既定。CRISIS_KEYWORDS=v2 で以前のリスト)
 // 例文は docs/prompts/crisis-keywords-v3.md 3章(開発用)と、上の v2 の文。分類器は使わない照合だけの確かめ
 // --------------------------------------------------------------------------
 const v3Stage = (t) => { const r = crisisRulesV3(t); return r.keywords.length || r.patterns.length ? 2 : r.floor.length || r.idiomExempted.length ? 1 : 0; };

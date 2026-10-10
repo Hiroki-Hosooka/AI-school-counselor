@@ -16,9 +16,10 @@ import { CRISIS_WORDS, crisisRulesV2, paraphraseShameIdioms } from "./safety.mjs
 import { crisisRulesV3 } from "./crisis-keywords-v3.mjs";
 import { buildCrisisReply } from "./crisis-texts.mjs";
 
-// 危機キーワードの版。設定 CRISIS_KEYWORDS=v3 のときだけ v3(docs/crisis-keywords-v3.md。検証の結果を人が確認するまで既定にしない)。
+// 危機キーワードの版。既定は v3(docs/crisis-keywords-v3.md。2026年10月10日に保留セット v3 での最終判定を人が確認して採用。
+// CLAUDE.md 5.12)。設定 CRISIS_KEYWORDS=v2 のときだけ以前のリストに戻る。
 // v3 には「段階1の語」(floor。少なくとも段階1)と、当たった語の根拠(hits)がある。v2 にはどちらも無いので空にする
-export const keywordVersion = () => (process.env.CRISIS_KEYWORDS === "v3" ? "v3" : "v2");
+export const keywordVersion = () => (process.env.CRISIS_KEYWORDS === "v2" ? "v2" : "v3");
 export function crisisRules(text, version = keywordVersion()) {
   if (version === "v3") return { ...crisisRulesV3(text), version };
   return { ...crisisRulesV2(text), floor: [], hits: [], version };
