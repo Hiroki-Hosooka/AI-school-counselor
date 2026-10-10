@@ -1,0 +1,25 @@
+========================================
+Gemini の安全フィルターの測定(CLAUDE.md 5.11)
+========================================
+記録: docs/test-results/safety-filter-20261011.jsonl  済み 303/303
+キー: 無料枠(テスト用)のみ。入力はすべて合成。分類器 gemini-3.5-flash-lite → gemini-3.1-flash-lite / 本生成 gemini-3.8-flash → gemini-3.7-flash → gemini-3.6-flash → gemini-3.5-flash → gemini-3-flash-preview(本番と同じフォールバック)
+安全設定(本番と同じ): HARASSMENT=BLOCK_ONLY_HIGH, HATE_SPEECH=BLOCK_ONLY_HIGH, SEXUALLY_EXPLICIT=BLOCK_ONLY_HIGH, DANGEROUS_CONTENT=BLOCK_ONLY_HIGH
+
+【場面ごと】  送った回数 / ブロックのあった回(入力のブロック・出力のブロック・空の応答)/ 生徒に固定の返事が出た回
+  A 危機の判定(分類器): 117回 / ブロック 0回(入力 0・出力 0・空 0) / 分類器のエラー 0回  応答したモデル: {"gemini-3.1-flash-lite":22,"gemini-3.5-flash-lite":96}
+  B 危機のあとの生成: 72回 / ブロック 0回(入力 0・出力 0・空 0) / 生成失敗の固定の返事 0回  応答したモデル: {"gemini-3.8-flash":27,"gemini-3.7-flash":24,"gemini-3.6-flash":12,"gemini-3.5-flash":3,"gemini-3-flash-preview":6}
+  C 気がかりの生成: 84回 / ブロック 0回(入力 0・出力 0・空 0) / 生成失敗の固定の返事 0回  応答したモデル: {"gemini-3.7-flash":24,"gemini-3.8-flash":25,"gemini-3.6-flash":24,"gemini-3.5-flash":1,"gemini-3-flash-preview":10}
+  D 第三者の生成: 30回 / ブロック 0回(入力 0・出力 0・空 0) / 生成失敗の固定の返事 0回  応答したモデル: {"gemini-3.7-flash":9,"gemini-3.6-flash":12,"gemini-3-flash-preview":8,"gemini-3.5-flash":1}
+
+【ブロックのあった回の内訳】
+  なし
+
+【NEGLIGIBLE 以外の安全評価が付いた回(ブロックはされていない。参考)】
+  92回。{"HARASSMENT:LOW":81,"HATE_SPEECH:LOW":57,"HARASSMENT:MEDIUM":10}
+
+【ブロックされたときに生徒の画面に出るもの(今のコード)】
+  分類器(A): ブロックは分類器のエラーとして扱い、キーワードが当たっていれば段階2のまま、当たっていなければ段階1以上(安全側)。
+  本生成(B〜D): 次のモデルに切り替えて試し、すべて失敗すると3秒おいてもう1回試す。それでも失敗したら、生成失敗の固定の返事を出す:
+    「ごめん、いま自分の方でうまく受け取れなかったみたい。もう少しだけ聞かせてもらえる?」
+    「またうまく受け取れなくてごめん。焦らなくていいから、ちょっとずつでも大丈夫だよ。」
+  画面下の常設の窓口表示(119番・24時間子供SOSダイヤル)はいつも出ている。危機の固定応答(段階2)は生成しないのでブロックされない。

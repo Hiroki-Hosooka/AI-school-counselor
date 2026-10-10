@@ -1,0 +1,61 @@
+{
+  "done": 303,
+  "planned": 303,
+  "paused": null,
+  "safety_settings": [
+    {
+      "category": "HARM_CATEGORY_HARASSMENT",
+      "threshold": "BLOCK_ONLY_HIGH"
+    },
+    {
+      "category": "HARM_CATEGORY_HATE_SPEECH",
+      "threshold": "BLOCK_ONLY_HIGH"
+    },
+    {
+      "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+      "threshold": "BLOCK_ONLY_HIGH"
+    },
+    {
+      "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+      "threshold": "BLOCK_ONLY_HIGH"
+    }
+  ],
+  "scenes": {
+    "A": {
+      "sent": 117,
+      "blocked": 0,
+      "prompt_blocked": 0,
+      "output_blocked": 0,
+      "empty": 0,
+      "fallback_reply": 0,
+      "classifier_error": 0
+    },
+    "B": {
+      "sent": 72,
+      "blocked": 0,
+      "prompt_blocked": 0,
+      "output_blocked": 0,
+      "empty": 0,
+      "fallback_reply": 0,
+      "classifier_error": 0
+    },
+    "C": {
+      "sent": 84,
+      "blocked": 0,
+      "prompt_blocked": 0,
+      "output_blocked": 0,
+      "empty": 0,
+      "fallback_reply": 0,
+      "classifier_error": 0
+    },
+    "D": {
+      "sent": 30,
+      "blocked": 0,
+      "prompt_blocked": 0,
+      "output_blocked": 0,
+      "empty": 0,
+      "fallback_reply": 0,
+      "classifier_error": 0
+    }
+  }
+}
