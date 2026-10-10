@@ -80,6 +80,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── test-staged-response.mjs      段階ごとの応答・危機のあとのオフラインテスト
 │   ├── test-*.mjs                    そのほかの自動テスト(使い方は README.md「自動テスト一式」)
 │   ├── check-knowledge.mjs           DB のナレッジに seed の欠けが無いかを確かめる(読むだけ)
+│   ├── run-until-done.mjs            無料枠の上限で止まったテストを、上限が戻ったら自動で続きから再開する
 │   ├── export-*.py / export-provisional-texts.mjs  結果のエクセル・仮の文面の文書を作る
 │   └── _lib/                         テストの共通部品(キー・予算・ナレッジの確認)
 └── docs/

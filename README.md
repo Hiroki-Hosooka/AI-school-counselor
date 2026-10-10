@@ -264,6 +264,13 @@ https://(デプロイ先のドメイン)/admin.html
 
 ## 自動テスト一式(docs/backlog.md 1-3)
 
+**無料枠の上限で止まったときは、自動で続きから再開できる**(2026年10月11日):
+`node scripts/run-until-done.mjs -- node scripts/test-xxx.mjs --out=docs/test-results/xxx.jsonl ...`。
+テストが中断(終了コード3)したら、15分待って再開し、3回続けて中断したら1日の上限とみなして次のリセット
+(太平洋時間の0時。日本時間の16時か17時)の5分後まで待って再開する。**必ず --out を付ける**(同じ記録から続ける)。
+長く待つので `nohup` で切り離して動かすとよい。対象は終了コード3で中断を知らせるテスト
+(test-safety-filter・test-crisis-keywords-v3・test-crisis-negation・test-crisis-followup・test-crisis-staged・test-staged-replay)。
+
 ナレッジやプロンプトを変えたときに悪化していないかを、人手を介さず機械的に確認するための
 テスト群。もともとの4本の詳細仕様は `docs/prompts/automated-testing-harness.md`、
 構造化面接AI統合後に更新した5本の仕様(Tier A/B分離の妥当性、インテーク完了率等を追加)は
