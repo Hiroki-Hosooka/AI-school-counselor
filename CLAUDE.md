@@ -90,6 +90,7 @@ Postgres(Supabase。データベースとしてのみ使う)
     ├── psychologist-review-checklist.md    心理士さんに確認をお願いしたいことの一覧
     ├── proposal-concern-personalization.md 「〜が心配」を生成で一人ひとりに合わせる案(提案だけ。費用の見込みつき)
     ├── changes-since-shima3-interview.md  嶋先生インタビュー3(10/7)からの変更のまとめ
+    ├── leftover-audit-20261011.md   指示書ごとのやり残しの一覧(2026年10月11日。報告だけ)
     ├── prompts/           作業の指示書(テスト一式・構造化面接AIとの統合)
     ├── structured-source/ 構造化面接AIの元資料
     ├── test-sets/         テストの入力(保留セットは調整に使わない)
