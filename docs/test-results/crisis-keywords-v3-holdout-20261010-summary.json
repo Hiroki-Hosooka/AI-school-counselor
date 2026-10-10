@@ -1,0 +1,28 @@
+{
+  "set": "docs/test-sets/crisis-detection-holdout-v3.json",
+  "dev": null,
+  "reps": {
+    "tier_a": 10,
+    "other": 3,
+    "dev": 3
+  },
+  "votes": 2,
+  "judgments_done": 340,
+  "judgments_planned": 340,
+  "stopped": null,
+  "paused": null,
+  "conditions": {
+    "classifier_model": "gemini-3.5-flash-lite",
+    "timeout_ms": 120000
+  },
+  "criteria": {
+    "explicit_zero_miss": true,
+    "no_tier_a_item_worsened": true,
+    "none_to_stage2_not_increased": true,
+    "watch_to_none_not_increased": true,
+    "all_variants_hit": true,
+    "false_positive_stage2_not_increased": true
+  },
+  "adopted": true,
+  "worsened": []
+}

@@ -62,6 +62,8 @@ const LOWERED_WORDS = ["生きてる意味", "生きる意味", "楽になりた
 const main = JSON.parse(readFileSync(SET_PATH, "utf8")).items.map((it) => ({ ...it, set: "main" }));
 const dev = DEV_PATH ? JSON.parse(readFileSync(DEV_PATH, "utf8")).items.map((it) => ({ ...it, set: "dev", label: it.group })) : [];
 const showText = (t, it) => (HIDE ? `#${main.indexOf(it) + 1}` : t);
+// 記録の照合に使う鍵(保留セットは発言を記録に残さないので、番号で照合する)
+const recKey = (it) => (HIDE ? `holdout#${main.indexOf(it) + 1}|${JSON.stringify(it.context ?? null).length}` : itemKey(it));
 const items = [...main, ...dev];
 const isTierA = (it) => it.set === "main" && it.label === "crisis" && (it.subject ?? "self") !== "other";
 const repsOf = (it) => (it.set === "dev" ? REPS_DEV : isTierA(it) ? REPS_TIER_A : REPS_OTHER);
@@ -124,7 +126,7 @@ if (!REPORT_ONLY) {
   outer:
   for (const it of items) {
     for (let rep = 1; rep <= repsOf(it); rep++) {
-      const key = `${itemKey(it)}|${rep}`;
+      const key = `${recKey(it)}|${rep}`;
       if (done.has(key)) continue;
       const res = await judge(it);
       if (res.paused) {
@@ -133,7 +135,7 @@ if (!REPORT_ONLY) {
         break outer;
       }
       const rec = {
-        item_key: HIDE ? `holdout#${main.indexOf(it) + 1}|${JSON.stringify(it.context ?? null).length}` : itemKey(it), set: it.set,
+        item_key: recKey(it), set: it.set,
         text: HIDE ? `#${main.indexOf(it) + 1}` : it.text, has_context: !!it.context?.length, rep,
         true_label: it.label, true_subject: it.subject ?? "self", tier_a: isTierA(it), tier_a_type: it.tier_a_type ?? null,
         lowered_words: loweredIn(it.text), ...res,
@@ -258,7 +260,7 @@ console.log("\n" + report);
 const base = OUT.replace(/\.jsonl$/, "");
 writeFileSync(`${base}-summary.txt`, report + "\n");
 writeFileSync(`${base}-summary.json`, JSON.stringify({
-  set: path.relative(ROOT, SET_PATH), dev: path.relative(ROOT, DEV_PATH), reps: { tier_a: REPS_TIER_A, other: REPS_OTHER, dev: REPS_DEV }, votes: VOTES,
+  set: path.relative(ROOT, SET_PATH), dev: DEV_PATH ? path.relative(ROOT, DEV_PATH) : null, reps: { tier_a: REPS_TIER_A, other: REPS_OTHER, dev: REPS_DEV }, votes: VOTES,
   judgments_done: recs.length, judgments_planned: total, stopped, paused, conditions: { classifier_model: PRIMARY_MODEL, timeout_ms: Number(TIMEOUT_MS) },
   criteria, adopted, worsened: worsened.map((p) => p.text),
 }, null, 2));
