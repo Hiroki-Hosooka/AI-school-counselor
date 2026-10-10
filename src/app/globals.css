@@ -143,3 +143,10 @@ input:focus{border-color:var(--indigo)}
   .msg.ai .bubble{font-size:15.5px;line-height:1.95}
   header{padding:11px 15px 0}footer{padding:11px 15px 13px}
 }
+
+/* チップ(危機の流れの見直し・仮。AIの返事の下に並べる。押しつけないよう、控えめな見た目にする) */
+.choice-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0 19px;font-family:var(--gothic);max-width:calc(100% - 19px)}
+.choice-chip{font:inherit;font-size:13.5px;line-height:1.4;text-align:left;background:var(--paper,#fff);color:var(--ink,#222);
+  border:1px solid var(--sand-deep,#cbbfa8);border-radius:16px;padding:6px 12px;cursor:pointer;max-width:100%}
+.choice-chip:hover,.choice-chip:focus-visible{background:var(--moss-bg,#eef2ec);outline:none;border-color:var(--moss,#6E8B74)}
+.choice-note{flex-basis:100%;margin:2px 2px 0;font-size:12px;color:var(--ink-faint,#888)}

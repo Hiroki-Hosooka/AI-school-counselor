@@ -232,7 +232,7 @@ const NEGATION_ENTRIES = [
   { id: "A-4", type: "A", label: "死ぬのはこわい", forms: ["死ぬのはこわい", "死ぬのは怖い", "死ぬの怖い", "死ぬのこわい", "しぬのはこわい", "しぬのこわい"], provisional: true },
   { id: "B-1", type: "B", label: "冗談", forms: ["冗談", "じょうだん", "じょーだん"] },
   // 「うそ」「ねた」はかなでは別の言葉(ほうそう・ねたい)にまぎれるので、語尾つき・単独のときだけ(下の re)
-  { id: "B-2", type: "B", label: "嘘", forms: ["嘘"], kata: ["ウソ"], re: /(^|[^ぁ-ん])うそ(だよ|だ|です|だから|うそ|w|笑|$)/ },
+  { id: "B-2", type: "B", label: "嘘", forms: ["嘘"], kata: ["ウソ"], re: /うそ(だよ|だ|です|だから|うそ|w|笑|$)/ },
   { id: "B-3", type: "B", label: "ネタ", kata: ["ネタ"], re: /(^|[^ぁ-ん])ねた(だよ|だ|です|だから|w|笑|$)/ },
   { id: "B-4", type: "B", label: "本気じゃない", forms: ["本気じゃない", "ほんきじゃない", "本心じゃない", "ほんしんじゃない"] },
   { id: "B-5", type: "B", label: "大げさに言っただけ・盛った", forms: ["大げさに言っただけ", "おおげさにいっただけ", "大袈裟に言っただけ", "盛った"] }, // 「もった」(持った)はかなでは入れない
@@ -242,7 +242,15 @@ const NEGATION_ENTRIES = [
 export const NEGATION_KEYWORDS = NEGATION_ENTRIES;
 
 // 念押しの後ろ(正規化後)。「冗談じゃない」「うそじゃねえ」「冗談とかじゃなくて」「冗談抜きで」「死にたくないわけじゃない」
-const REAFFIRM_AFTER = /^((とか)?(じゃな|ではな|じゃね|でわな|ぬき|抜き)|な?(わけ|訳)(じゃ|では|でも))/;
+// 「冗談で言ってるんじゃない」「嘘だったらよかったのに」(否定の語を、さらに否定している・そうであってほしいと願っている形)
+const REAFFIRM_AFTER = new RegExp(
+  "^((とか|で(言|い)て(る|た)?ん?|で(書|か)いて(る|た)?ん?)?(じゃな|ではな|じゃね|でわな)|ぬき|抜き|な?(わけ|訳)(じゃ|では|でも)" +
+  "|(だ|だた)?(ら|なら|であれば)(よかた|良かた|いい|いいのに))",
+);
+// 発言の中の念押しの言葉(「本気」「本当に」「マジで」など。直後が「じゃない」なら念押しではない)。
+// これがあれば B(冗談・取り消し)の語は数えない(「冗談っぽく書いたけど、けっこう本気」「ネタじゃなくてマジで」)。
+// 段階を下げる入口(スケーリング)に進めないための、安全側の扱い(2026年10月9日。開発用の文で確かめた)。A は数える
+const REAFFIRM_WORD = /(本気|ほんき|本当に|ほんとうに|ほんとに|まじで|がちで)(?!じゃな|ではな|でわな|にしな|にとらな|にすんな|にしちゃだめ)/;
 
 // 発言の中の否定の語を探す。戻り値 { type: "A" | "B" | null, words: [代表表記…], ids: [...] }。
 // A と B の両方があれば A(応答の形が違うため。docs/design-crisis-flow-shima3.md 2章)
@@ -277,6 +285,30 @@ export function matchNegation(text) {
     }
     if (hit) found.push(e);
   }
-  const type = found.some((e) => e.type === "A") ? "A" : found.length ? "B" : null;
-  return { type, words: found.map((e) => e.label), ids: found.map((e) => e.id) };
+  const reaffirmed = REAFFIRM_WORD.test(norm);
+  const counted = reaffirmed ? found.filter((e) => e.type === "A") : found;
+  const type = counted.some((e) => e.type === "A") ? "A" : counted.length ? "B" : null;
+  return { type, words: counted.map((e) => e.label), ids: counted.map((e) => e.id), reaffirmed };
+}
+
+// v2 の照合(本番の既定。v3 を採用するまで)と v1 のキーワードから種類を決める。v3 の表の章と同じ分け方。
+// 受動パターン(P1〜)はすべて希死念慮。「助けて」「誰も助けて」は種類不明
+const V2_CATEGORY = {
+  suicidal: ["死にたい", "しにたい", "消えたい", "きえたい", "いなくなりたい", "自殺", "自死", "生きてる意味", "生きる意味がない",
+    "終わりにしたい", "楽になりたい", "死にたくなる", "死んでしまいたい", "消えてしまいたい", "消えたくなる", "死のうかな", "いなくなっちゃいたい"],
+  selfharm: ["自傷", "リストカット", "リスカ", "オーバードーズ", "傷つけ", "切っちゃう"],
+  sexual: ["触られ", "脱がさ", "性的"],
+  violence: ["殴られ", "叩かれ", "蹴られ", "暴力", "虐待", "怒鳴られ"],
+  bullying: ["晒され", "お金を取られ", "カツアゲ", "恐喝", "脅され", "無視され続け"],
+};
+export function categoryFromV2(keywords = [], patterns = []) {
+  if ((patterns ?? []).length) return "suicidal";
+  const words = new Set(keywords ?? []);
+  return CATEGORY_PRIORITY.find((c) => V2_CATEGORY[c].some((w) => words.has(w))) ?? null;
+}
+
+// 判定の結果(classifyStaged / classifyLocal / classify の戻り値)から種類を決める。v3 なら当たった語の章、v2・v1 なら上の表
+export function categoryOfSafety(r) {
+  if (r?.hits?.length) return crisisCategoryOf(r.hits);
+  return categoryFromV2(r?.keywords, r?.patterns);
 }

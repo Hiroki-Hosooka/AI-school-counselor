@@ -424,11 +424,29 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     resignation: "諦め→次の文面へ",
     retraction: "打ち消し(2026年10月5日より前の仕組み)",
     retraction_ignored_keyword: "打ち消しよりキーワードを優先(2026年10月5日より前)",
+    // 危機の流れの見直し(2026年10月9日・嶋先生 10/7。仮)
+    scaling: "否定→スケーリングのチップ",
+    scaling_kept: "スケーリングの結果、下げない",
+    lowered: "スケーリングの結果、段階1に下げた(通知と記録は取り消していない)",
+    raised_after_lowered: "下げたあと、はっきりした危機のサインで段階2に戻した",
+    negation_A: "否定A(生きたい気持ち)", negation_B: "否定B(冗談・取り消し)", negation_C: "否定C(最小化・引き下がり)",
+    negation_reference: "危機のキーワードと否定が同じ発言(新しいサインとして数えず、通知した)",
+    negation_reference_figurative: "危機のキーワードと否定が同じ発言で、比喩・強調と判定(通知しない)",
+    choice: "チップを押したターン(分類器にかけない)",
+    choice_b1: "組B: このやり取りがうっとうしい", choice_b2: "組B: おっくう。でも聞いてほしい→組C", choice_c: "組Cを選んだ",
+    keyword_floor: "段階1の語(キーワード v3)",
     too_long: "字数の上限を超えた発言(分類器は使わず、キーワード・受動パターンだけで照合)",
     rate_limited: "回数の上限を超えた発言(分類器は使わず、キーワード・受動パターンだけで照合)"
   };
   // 危機の応答の何通目か(crisis_step)の読み方
-  var STEP_JA = { 5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通" };
+  var STEP_JA = {
+    1: "1通目", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "3通目への答えへの一言",
+    5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通(以前)", 8: "短いまとめの1通(以前)", 9: "終わりを受け入れる1通(以前)",
+    10: "スケーリングの問い", 11: "スケーリングの受け止め", 12: "組Cの前置き", 13: "組Cへの受け止め", 14: "危機のあとの終わり方"
+  };
+  var NEG_JA = { A: "A 生きたい気持ち", B: "B 冗談・取り消し", C: "C 最小化・引き下がり" };
+  var CATEGORY_JA = { suicidal: "希死念慮", selfharm: "自傷・過量服薬", violence: "暴力・虐待", sexual: "性被害", bullying: "重大ないじめ" };
+  var CHOICE_SET_JA = { scaling: "気持ちのスケーリング", B: "組B(話したくない)", C: "組C(話せない背景)" };
   function stepJa(n) { return STEP_JA[n] || (n + "通目"); }
   function renderSafetyEvents(events) {
     if (!events || !events.length) { safetyBlockEl.hidden = true; safetyBlockEl.innerHTML = ""; return; }
@@ -442,7 +460,12 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       // 2026年10月5日から、この列は「引き下がりとして扱った」。それより前の行は打ち消し(段階を下げて残りの文面を止めた)
       // なので、判定の根拠(decided_by に retraction があるか)で読み分ける
       if (e.retraction) parts.push((e.decided_by || []).indexOf("retraction") >= 0 ? "打ち消し(以前の仕組み)" : "引き下がり");
-      if (e.teacher_answer) parts.push("先生に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
+      if (e.teacher_answer) parts.push("相談先や大人に話すこと: " + (TEACHER_JA[e.teacher_answer] || e.teacher_answer));
+      if (e.crisis_category) parts.push("種類: " + (CATEGORY_JA[e.crisis_category] || e.crisis_category));
+      if (e.negation_type) parts.push("否定 " + (NEG_JA[e.negation_type] || e.negation_type) + (e.negation_words && e.negation_words.length ? "(" + e.negation_words.join("・") + ")" : ""));
+      if (e.scale != null) parts.push("スケーリング " + e.scale);
+      if (e.lowered) parts.push("段階1に下げた");
+      if (e.figurative) parts.push("比喩・強調と判定(通知しない)");
       if (e.decided_by && e.decided_by.indexOf("crisis_generation") >= 0) parts.push(RULE_NOTE_JA.crisis_generation);
       if (e.decided_by && e.decided_by.length) {
         // crisis_generation は上で別に出しているので、根拠の並びからは外す
@@ -479,6 +502,15 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (m.safety_card === "care") parts.push('<span class="tag amber">気づかいの一言(仮の文面)+窓口</span>');
     if (m.safety_card === "hotlines") parts.push('<span class="tag">折りたたみの窓口</span>');
     if (m.safety_card === "crisis") parts.push('<span class="tag warn">危機カード</span>');
+    // チップ(危機の流れの見直し・仮。db/schema.sql 14節)。AIの返事に付けたものと、相談者が押した・書いたもの
+    if (m.choices && m.choices.length) {
+      parts.push('<span class="tag amber">チップ(' + esc(CHOICE_SET_JA[m.choice_set] || m.choice_set || "") + '): ' +
+        esc(m.choices.map(function (c) { return c.id + " " + c.label; }).join(" / ")) + '</span>');
+    }
+    if (m.choice_id) {
+      parts.push('<span class="tag warn">選んだもの ' + esc(m.choice_id) + '(' + (m.choice_input === "typed" ? "数字を書いた" : "ボタン") + ')</span>');
+    }
+    if (m.ending_variant) parts.push('<span class="tag">締めの文面 ' + esc(m.ending_variant) + '案目(仮)</span>');
     // 危機の状態で、固定の文面を出さずに指示つきの生成で返した応答(db/schema.sql 12節)
     if (m.crisis_generated) {
       var fallback = (m.flags || []).some(function (f) { return String(f).indexOf("危機の状態の生成→固定の返事") === 0; });

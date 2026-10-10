@@ -36,7 +36,10 @@ const arg = (name, def) => {
   return a ? a.slice(name.length + 3) : def;
 };
 const SET_PATH = path.resolve(ROOT, arg("set", "docs/test-sets/crisis-detection.json"));
-const DEV_PATH = path.resolve(ROOT, arg("dev", "docs/test-sets/crisis-keywords-v3-dev.json"));
+const DEV_ARG = arg("dev", "docs/test-sets/crisis-keywords-v3-dev.json");
+const DEV_PATH = DEV_ARG === "none" ? null : path.resolve(ROOT, DEV_ARG);
+// 保留セット(ファイル名に holdout を含む)は中身を見ない(docs/prompts/crisis-keywords-v3.md 5章)。発言は表示・集計に出さず、番号だけにする
+const HIDE = /holdout/.test(path.basename(SET_PATH));
 const REPS_TIER_A = Number(arg("reps-tier-a", 10));
 const REPS_OTHER = Number(arg("reps-other", 3));
 const REPS_DEV = Number(arg("reps-dev", 3));
@@ -57,7 +60,8 @@ const LOWERED_WORDS = ["生きてる意味", "生きる意味", "楽になりた
   "助けて", "たすけて", "触られ", "さわられ", "性的", "無視され続け", "怒鳴られ", "どなられ"];
 
 const main = JSON.parse(readFileSync(SET_PATH, "utf8")).items.map((it) => ({ ...it, set: "main" }));
-const dev = JSON.parse(readFileSync(DEV_PATH, "utf8")).items.map((it) => ({ ...it, set: "dev", label: it.group }));
+const dev = DEV_PATH ? JSON.parse(readFileSync(DEV_PATH, "utf8")).items.map((it) => ({ ...it, set: "dev", label: it.group })) : [];
+const showText = (t, it) => (HIDE ? `#${main.indexOf(it) + 1}` : t);
 const items = [...main, ...dev];
 const isTierA = (it) => it.set === "main" && it.label === "crisis" && (it.subject ?? "self") !== "other";
 const repsOf = (it) => (it.set === "dev" ? REPS_DEV : isTierA(it) ? REPS_TIER_A : REPS_OTHER);
@@ -109,7 +113,7 @@ if (existsSync(OUT)) {
   }
 }
 const total = items.reduce((s, it) => s + repsOf(it), 0);
-console.log(`テストセット: ${path.relative(ROOT, SET_PATH)}(${main.length}件)+ 開発用 ${path.relative(ROOT, DEV_PATH)}(${dev.length}件)`);
+console.log(`テストセット: ${path.relative(ROOT, SET_PATH)}(${main.length}件)${DEV_PATH ? `+ 開発用 ${path.relative(ROOT, DEV_PATH)}(${dev.length}件)` : ""}${HIDE ? "(保留セット: 発言は表示しない)" : ""}`);
 console.log(`判定: Tier A 各${REPS_TIER_A}回・その他 各${REPS_OTHER}回・開発用 各${REPS_DEV}回 = ${total}判定(1判定につき分類器${VOTES}回並行。v2・v3 は同じ結果を使う)`);
 console.log(`分類器の呼び出しの見込み: 約${total * VOTES}回(キー${KEY_POOL.length}本)`);
 console.log(`記録: ${path.relative(ROOT, OUT)}(済み ${done.size}件)\n`);
@@ -124,23 +128,25 @@ if (!REPORT_ONLY) {
       if (done.has(key)) continue;
       const res = await judge(it);
       if (res.paused) {
-        paused = `無料枠の上限または混雑のため中断(「${it.text.slice(0, 20)}」: ${String(res.error).slice(0, 160)})`;
-        console.log(`\n★ ${paused}\n  再開: node scripts/test-crisis-keywords-v3.mjs --out=${path.relative(ROOT, OUT)}`);
+        paused = `無料枠の上限または混雑のため中断(「${HIDE ? "保留セット" : it.text.slice(0, 20)}」: ${String(res.error).slice(0, 160)})`;
+        console.log(`\n★ ${paused}\n  再開: node scripts/test-crisis-keywords-v3.mjs ${process.argv.slice(2).filter((a) => !a.startsWith("--out=")).join(" ")} --out=${path.relative(ROOT, OUT)}`);
         break outer;
       }
       const rec = {
-        item_key: itemKey(it), set: it.set, text: it.text, has_context: !!it.context?.length, rep,
+        item_key: HIDE ? `holdout#${main.indexOf(it) + 1}|${JSON.stringify(it.context ?? null).length}` : itemKey(it), set: it.set,
+        text: HIDE ? `#${main.indexOf(it) + 1}` : it.text, has_context: !!it.context?.length, rep,
         true_label: it.label, true_subject: it.subject ?? "self", tier_a: isTierA(it), tier_a_type: it.tier_a_type ?? null,
         lowered_words: loweredIn(it.text), ...res,
+        ...(HIDE ? { votes: res.votes.map(({ reason, ...v }) => v), v2: { ...res.v2, hits: res.v2.hits.map((h) => h.split(" ")[0]) }, v3: { ...res.v3, hits: res.v3.hits.map((h) => h.split(" ")[0]) } } : {}),
       };
       const line = JSON.stringify(rec);
       appendFileSync(OUT, line + "\n");
       done.set(key, JSON.parse(line));
       count++;
       const mark = (s) => (rec.tier_a ? (s.tier_a ? "○" : "×") : `段${s.stage}`);
-      console.log(`[${count}/${total}] ${String(rec.true_label).padEnd(14)} v2 ${mark(rec.v2).padEnd(4)} v3 ${mark(rec.v3).padEnd(4)} ${rec.v3.decided_by.join(",")} 「${it.text.slice(0, 22)}」`);
+      console.log(`[${count}/${total}] ${String(rec.true_label).padEnd(14)} v2 ${mark(rec.v2).padEnd(4)} v3 ${mark(rec.v3).padEnd(4)} ${rec.v3.decided_by.join(",")} 「${showText(it.text.slice(0, 22), it)}」`);
       if (rec.tier_a_type === "explicit" && !rec.v3.tier_a) {
-        stopped = `v3 が明示的な表現を見逃した: 「${it.text}」(${rep}回目。規則=${rec.v3.decided_by.join(",")}、分類器エラー=${rec.classifier_error ?? "なし"})`;
+        stopped = `v3 が明示的な表現を見逃した: 「${showText(it.text, it)}」(${rep}回目。規則=${rec.v3.decided_by.join(",")}、分類器エラー=${rec.classifier_error ?? "なし"})`;
         console.log(`\n★★★ 停止: ${stopped}`);
         break outer;
       }

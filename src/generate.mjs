@@ -15,6 +15,7 @@ import { OUTPUT_NG } from "./safety.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
 import {
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
+  DAIJOUBU_RULE_PROVISIONAL, CHOICE_B1_BLOCK_PROVISIONAL, choiceCBlock, intakeStyleOf, STAGE1_CLOSING_LINE_PROVISIONAL,
 } from "./crisis-response.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
@@ -177,7 +178,8 @@ const SAFETY_CONTEXT_BLOCKS = {
 ・危機の内容そのもの(なぜそう思うのか等)を深掘りしない
 ・「この場面で参照できる知識」に、人に言うことへの障壁を探る問いがあれば、状況に合えば触れてよいが、
   無理に今すぐ聞き出そうとしない
-・情報を詰め込みすぎない。今回のターンで全部を扱おうとしない`,
+・情報を詰め込みすぎない。今回のターンで全部を扱おうとしない
+${DAIJOUBU_RULE_PROVISIONAL}`,
   thirdParty: `
 
 # 今回のターンについて(重要・第三者の安全への懸念)
@@ -191,6 +193,13 @@ const SAFETY_CONTEXT_BLOCKS = {
 ・相談者自身にも同じようなサインがないかは、詰問にならない範囲でさりげなく気にかけてよい`,
   afterCrisis: AFTER_CRISIS_BLOCK_PROVISIONAL,
   crisisGeneration: CRISIS_GENERATION_BLOCK_PROVISIONAL,
+  // 危機の流れの見直し(嶋先生 10/7。段階ごとの応答のときだけ。仮)。組Cの指示は、選んだもの(sessions.crisis_choice_c)と
+  // インテークの進め方(共感/解決)で組み立てるので、関数にしている
+  choiceB1: CHOICE_B1_BLOCK_PROVISIONAL,
+  choiceC: (intake) => choiceCBlock(intake?.crisis_choice_c, intakeStyleOf(intake)),
+  // 終わり方の文脈(クロージングの一言を変えるだけ。ここでは何も足さない。buildClosingBlock が見る)
+  stage1Ending: "",
+  crisisEnding: "",
 };
 
 // フェーズ1(インテーク)の進捗を文章化する(構造化面接AI統合 手順5)。
@@ -367,7 +376,29 @@ ${stageText}${compositeNote}
 // afterCrisis: 危機の応答のあとのセッション(5.16・5.17)。危機のあとの指示が「いつでも」を禁じているので、
 // クロージングの一言からも「いつでも」を外す(2026年10月6日。指示どうしがぶつからないように。CLAUDE.md 5.6 の
 // 「クロージングの『いつでもどうぞ』は言う」は、危機のあとのセッションには当てはめない)
-function buildClosingBlock(closingState, userGoal, afterCrisis = false) {
+// endingStyle(段階ごとの応答のときだけ。嶋先生 10/7。仮):
+//   "crisis" = 危機のあと。最後の一言は書かせず、route.ts が決まった文面(CRISIS_ENDINGS_PROVISIONAL)を足す
+//   "stage1" = 段階1(気がかり)。労い+「またここに来てね」+窓口の場所を一言
+//   null     = 今まで(段階0 は石田先生の「いつでもどうぞ」の趣旨。本番の既定の危機のあとは「いつでも」を外した一言)
+export const endingStyleOf = (contexts) => (contexts.includes("crisisEnding") ? "crisis" : contexts.includes("stage1Ending") ? "stage1" : null);
+function closingLine(afterCrisis, endingStyle) {
+  if (endingStyle === "crisis") {
+    return `何も添えずに終える(このあとに、決まった締めの文面と窓口の表示が続く。あなたの側で締めの挨拶を書かない)。
+   あなたの限界を理由に区切る言い方はしない。`;
+  }
+  if (endingStyle === "stage1") {
+    return `${STAGE1_CLOSING_LINE_PROVISIONAL}を添える(「いつでも」という言い方はしない。
+   具体的な窓口名・電話番号は書かなくてよい。別途画面に表示される)。`;
+  }
+  return afterCrisis
+    ? `${AFTER_CRISIS_CLOSING_LINE_PROVISIONAL}という趣旨を一言添える(このセッションでは
+   「いつでも」という言い方はしない。具体的な窓口名・電話番号は書かなくてよい。別途画面に表示される)。`
+    : `「しんどくなったら、いつでも
+   こういうところに頼っていいよ」という趣旨を一言添える(具体的な窓口名・電話番号は
+   書かなくてよい。別途画面に表示される)。`;
+}
+
+function buildClosingBlock(closingState, userGoal, afterCrisis = false, endingStyle = null) {
   const stateNote = {
     none: "まだクロージング(今日の会話を終えるかどうかの話)は出ていません。",
     awaiting_choice: "直前のあなたの返答で「続けるか、今日はここまでにするか」を尋ねています。" +
@@ -407,12 +438,7 @@ function buildClosingBlock(closingState, userGoal, afterCrisis = false) {
    要約の作り方:感情を反映しつつ簡潔に。明るい面(本人が見つけた工夫・気づき)を
    強調しつつ、結論はあなたが言い切らず、「今日話した中で、これは持って帰れそうだな、
    って思うことはある?」のように、まとめの言葉を本人自身に語ってもらう。ゴールに対して
-   まだ曖昧な部分があれば、取り繕わず正直に示す。最後に${afterCrisis
-    ? `${AFTER_CRISIS_CLOSING_LINE_PROVISIONAL}という趣旨を一言添える(このセッションでは
-   「いつでも」という言い方はしない。具体的な窓口名・電話番号は書かなくてよい。別途画面に表示される)。`
-    : `「しんどくなったら、いつでも
-   こういうところに頼っていいよ」という趣旨を一言添える(具体的な窓口名・電話番号は
-   書かなくてよい。別途画面に表示される)。`}
+   まだ曖昧な部分があれば、取り繕わず正直に示す。最後に${closingLine(afterCrisis, endingStyle)}
    本人が続けたいと返してきた場合は、出力の"closing_event"に"continue"を入れる。
 5. 上記のいずれにも当てはまらないターンでは、出力の"closing_event"は"none"のままにする。
 
@@ -508,7 +534,10 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
     ? "★ しばらく区切りがありません。この辺りで「今までの話、一回まとめてみようか」と提案し、出てきたことを並べ直すターンを取ることを検討してください。ズレを直す機会です。"
     : "いまはまだ区切りのタイミングではありません。";
   const contexts = toSafetyContexts(safetyContext);
-  const safetyBlock = contexts.map((c) => SAFETY_CONTEXT_BLOCKS[c] ?? "").join("");
+  const safetyBlock = contexts.map((c) => {
+    const b = SAFETY_CONTEXT_BLOCKS[c];
+    return typeof b === "function" ? b(intake) : b ?? "";
+  }).join("");
   // phase: intake(Turn1〜4のスロットフィリング) | phase2(それ以降)。
   // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
   // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。
@@ -520,7 +549,7 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   const flowBlock = phase === "intake"
     ? buildIntakeBlock(intake)
     : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode)
-      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"));
+      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"), endingStyleOf(contexts));
   const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA;
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。

@@ -41,15 +41,18 @@
 //                                  一致しないと401を返す(docs/backlog.md 1-2)
 //   CRISIS_DETECTION         任意  v1 にすると危機検知を以前の判定に戻す(既定は v2)
 //   CRISIS_RESPONSE          任意  staged にすると段階ごとの応答(第2段階・仮の文面。心理士の確認待ち)。
-//                                  本番では設定しない。有効にする前に db/schema.sql 11節〜13節を実行すること
+//                                  本番では設定しない。有効にする前に db/schema.sql 11節〜14節を実行すること
+//   CRISIS_STEP3_VARIANT     任意  段階ごとの応答の3通目(相談先や大人に話したいか)の候補 A / B / C(既定 A。仮)
+//   CRISIS_KEYWORDS          任意  v3 にすると危機キーワード v3(案)。既定は v2(検証の結果を人が確認するまで)
 //   CRISIS_AFTERCARE         任意  off にすると、固定応答を出したあとの生成に危機のあとの指示を付けない
 //                                  (2026年10月5日より前の動き)。既定は付ける(CLAUDE.md 5.17)
 // ============================================================================
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES, CRISIS_REPLY,
+  classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES,
 } from "@/classify.mjs";
+import { categoryOfSafety } from "@/crisis-keywords-v3.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.mjs";
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
@@ -58,7 +61,8 @@ import {
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
-  aftercareEnabled, hadCrisisReply, defaultSafetyContexts,
+  aftercareEnabled, hadCrisisReply, defaultSafetyContexts, SAFETY_STATE_COLUMNS,
+  buildCrisisReply, CRISIS_ENDINGS_PROVISIONAL, nextEndingVariant, daijoubuYokattaNote, CHOICE_NOTE_PROVISIONAL,
 } from "@/crisis-response.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -105,7 +109,10 @@ async function selectRowsWithFallback(...attempts: SelectAttempt[]): Promise<Row
 // 画面に返すとき、気づかいのカード(safety_card = care)には仮の一言を添える
 // (文面はサーバ側の src/crisis-response.mjs にだけ置く。クライアントは表示だけ)
 function withCareLine(m: Row) {
-  return { ...m, care_line: m.safety_card === "care" ? CARE_LINE_PROVISIONAL : null };
+  return {
+    ...m, care_line: m.safety_card === "care" ? CARE_LINE_PROVISIONAL : null,
+    choice_note: Array.isArray(m.choices) && m.choices.length ? CHOICE_NOTE_PROVISIONAL : null,
+  };
 }
 
 // 管理画面(admin.html)用の合言葉チェック。ログイン画面は作らず、
@@ -182,16 +189,21 @@ async function overLimitCrisisReply(
   const staged = stagedResponseEnabled();
   const stagedEvent = staged ? await db.from("safety_events").insert({ ...event, stage: 2, decided_by: local.decidedBy }) : null;
   if (!staged || stagedEvent?.error) await db.from("safety_events").insert(event);
+  // 「〜が、とても心配です」は、当たった語の種類で組む(src/crisis-texts.mjs。2026年10月9日)
+  const category = categoryOfSafety(local);
+  const reply = buildCrisisReply(category);
   const { data: aiMsg } = await db.from("messages").insert({
-    session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
+    session_id: sessionId, role: "ai", body: reply, crisis: true,
   }).select("seq").single();
   const touched = { last_at: new Date().toISOString() };
   const stagedUpdate = staged
-    ? await db.from("sessions").update({ ...touched, crisis_state: "done", crisis_trigger: "direct", watch_turns_left: 0 }).eq("id", sessionId)
+    ? await db.from("sessions").update({
+      ...touched, crisis_state: "done", crisis_trigger: "direct", watch_turns_left: 0, crisis_category: category,
+    }).eq("id", sessionId)
     : null;
   if (!staged || stagedUpdate?.error) await db.from("sessions").update(touched).eq("id", sessionId);
   return json({
-    reply: CRISIS_REPLY, crisis: true,
+    reply, crisis: true,
     safety: { risk: "crisis", subject: "self", keywords: local.keywords.length, model: local.model.risk },
     user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
   });
@@ -250,6 +262,10 @@ export async function POST(req: Request) {
         .eq("id", sessionId).maybeSingle();
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        // 14節(危機の流れの見直し)の列: 出したチップ・押したチップ・締めの文面の何案目か
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant")
+          .eq("session_id", sessionId).order("seq"),
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated")
           .eq("session_id", sessionId).order("seq"),
@@ -335,6 +351,9 @@ export async function POST(req: Request) {
         return json({ session: null, messages: [] }); // クライアント側が start を呼び直す
       }
       const msgs = await selectRowsWithFallback(
+        // 14節(危機の流れの見直し)の列: 返事に付けたチップ・押したチップ
+        () => db.from("messages").select("seq,role,body,used,flags,crisis,rating,closing,crisis_step,safety_card,choices,choice_set,choice_id")
+          .eq("session_id", s.id).order("seq"),
         () => db.from("messages").select("seq,role,body,used,flags,crisis,rating,closing,crisis_step,safety_card")
           .eq("session_id", s.id).order("seq"),
         () => db.from("messages").select("seq,role,body,used,flags,crisis,rating,closing")
@@ -350,6 +369,8 @@ export async function POST(req: Request) {
       const clientId = String(payload.client_id ?? "").trim();
       const sessionId = String(payload.session_id ?? "").trim();
       const text = String(payload.text ?? "").trim();
+      // 押したチップ(段階ごとの応答のときだけ意味を持つ。直前の返事に付けた組のものかは assessSafetyTurn が確かめる)
+      const choiceId = typeof payload.choice_id === "string" ? payload.choice_id.slice(0, 8) : null;
       if (!clientId || !sessionId || !text) return json({ error: "パラメータが不足しています" }, 400);
 
       // 字数・回数の上限(2026年10月7日)。上限を超えた発言でも、止める前に AI を使わない照合
@@ -378,11 +399,11 @@ export async function POST(req: Request) {
       let stagedOn = stagedResponseEnabled();
       const sessWithState = stagedOn
         ? await db.from("sessions")
-          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,watch_turns_left,crisis_state,crisis_trigger,care_shown,reentry_used,repeat_used,withdrawal_count")
+          .select(`id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,${SAFETY_STATE_COLUMNS}`)
           .eq("id", sessionId).single()
         : null;
       if (sessWithState?.error) {
-        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節〜13節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
+        console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節〜14節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
         stagedOn = false;
       }
       const sess = sessWithState && !sessWithState.error
@@ -426,7 +447,7 @@ export async function POST(req: Request) {
           .map((m: { role: string; body: string }) => ({ role: m.role === "ai" ? "ai" : "user", text: m.body }));
         let v2: Awaited<ReturnType<typeof classifyStaged>>;
         if (stagedOn) {
-          const assessed = await assessSafetyTurn(text, classifierContext, sess);
+          const assessed = await assessSafetyTurn(text, classifierContext, sess, choiceId);
           v2 = assessed.staged;
           plan = assessed.plan;
         } else {
@@ -450,25 +471,43 @@ export async function POST(req: Request) {
         // 通知は段階2を検知するたび(今と同じ)。記録は、段階1以上・見守りの開始/終了・引き下がり
         // (safety_events.retraction 列。db/schema.sql 13節)・危機の応答の続きのターン(plan.event がある場合)に書く。
         const notified = plan.notify ? await notifyCrisis(sessionId, plan.notifySubject) : false;
+        // 相談者が押したチップ・書いた数字(スケーリング)を、相談者の発言の行に記録する(研究のデータとしても使う)
+        if (plan.userChoice && userMsg?.seq != null) {
+          await db.from("messages").update({
+            choice_set: plan.userChoice.set, choice_id: plan.userChoice.id, choice_input: plan.userChoice.input,
+          }).eq("seq", userMsg.seq);
+        }
         if (plan.event) {
           await db.from("safety_events").insert({
             session_id: sessionId, risk: plan.event.risk, subject: plan.event.subject, keywords: eventKeywords,
             model_risk: safety.model.risk, model_reason: eventReason, notified,
             stage: plan.event.stage, decided_by: plan.event.decided_by, watch_event: plan.event.watch_event,
             retraction: plan.event.retraction, teacher_answer: plan.event.teacher_answer, crisis_step: plan.event.crisis_step,
+            negation_type: plan.event.negation_type, negation_words: plan.event.negation_words, scale: plan.event.scale,
+            lowered: plan.event.lowered, figurative: plan.event.figurative, crisis_category: plan.event.crisis_category,
           });
         }
-        // 段階2(本人): 生成をスキップして、分けた固定の文面の1通を返す(CLAUDE.md 5.2 の分岐を保つ)
-        if (plan.action === "fixed") {
-          const { data: aiMsg } = await db.from("messages").insert({
-            session_id: sessionId, role: "ai", body: plan.text, crisis: true,
-            safety_stage: plan.stage, crisis_step: plan.crisisStep, safety_card: plan.card,
-          }).select("seq").single();
+        // 段階2(本人): 生成をスキップして、固定の文面を返す(CLAUDE.md 5.2 の分岐を保つ)。
+        // 吹き出しが複数(2通目の「心配」+3通目)のときは1行ずつ保存し、画面は1〜2秒おいて1つずつ出す。
+        // チップは最後の吹き出しの行に記録する
+        if (plan.action === "fixed" && plan.bubbles) {
+          const replies: { body: string; card: string | null; crisis_step: number; seq?: number }[] = [];
+          for (const [i, b] of plan.bubbles.entries()) {
+            const last = i === plan.bubbles.length - 1;
+            const { data: aiMsg } = await db.from("messages").insert({
+              session_id: sessionId, role: "ai", body: b.text, crisis: true,
+              safety_stage: plan.stage, crisis_step: b.crisisStep, safety_card: b.card,
+              ...(last && plan.choices ? { choices: plan.choices.items, choice_set: plan.choices.set } : {}),
+            }).select("seq").single();
+            replies.push({ body: b.text, card: b.card, crisis_step: b.crisisStep, seq: aiMsg?.seq });
+          }
           await db.from("sessions").update({ ...plan.nextState, last_at: new Date().toISOString() }).eq("id", sessionId);
           return json({
             reply: plan.text, crisis: true, crisis_step: plan.crisisStep, card: plan.card, care_line: null,
+            replies, choices: plan.choices?.items ?? null, choice_set: plan.choices?.set ?? null,
+            choice_note: plan.choices ? CHOICE_NOTE_PROVISIONAL : null,
             safety: { risk: plan.risk, subject: plan.subject, keywords: safety.keywords.length, model: safety.model.risk, stage: plan.stage },
-            user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
+            user_seq: userMsg?.seq, ai_seq: replies[replies.length - 1]?.seq,
           });
         }
       } else {
@@ -483,12 +522,14 @@ export async function POST(req: Request) {
 
         // 本人の危機(Tier A・self)なら生成をスキップして固定応答。この分岐だけは変更しない。
         if (isSelfCrisis) {
+          // 「〜が、とても心配です」は、当たった語の種類で組む(src/crisis-texts.mjs。2026年10月9日。「重い」は使わない)
+          const reply = buildCrisisReply(categoryOfSafety(safety));
           const { data: aiMsg } = await db.from("messages").insert({
-            session_id: sessionId, role: "ai", body: CRISIS_REPLY, crisis: true,
+            session_id: sessionId, role: "ai", body: reply, crisis: true,
           }).select("seq").single();
           await db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId);
           return json({
-            reply: CRISIS_REPLY, crisis: true,
+            reply, crisis: true,
             safety: { risk: safety.risk, subject: safety.subject, keywords: safety.keywords.length, model: safety.model.risk },
             user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
           });
@@ -510,7 +551,14 @@ export async function POST(req: Request) {
       // 以後の生成に危機のあとの指示を付ける(2026年10月5日。CLAUDE.md 5.17)。固定応答の次のターンで
       // 「なんでもない」と書くと、ふつうの会話に戻ってしまっていたため。判定と固定応答の分岐は変えていない
       const afterCrisis = !plan && aftercareEnabled() && hadCrisisReply(hist);
-      const safetyContext = plan ? plan.safetyContexts
+      // 段階ごとの応答のときは、終わり方(本人が終わりの合図を出したとき)も段階で変える(嶋先生 10/7。仮):
+      // 危機のあと = 決まった締めの文面を足す(下)/ 段階1 = 労い+「またここに来てね」+窓口の場所
+      const planContexts: string[] = plan ? [...plan.safetyContexts] : [];
+      if (plan) {
+        if (planContexts.includes("afterCrisis")) planContexts.push("crisisEnding");
+        else if (planContexts.includes("tierB")) planContexts.push("stage1Ending");
+      }
+      const safetyContext = plan ? planContexts
         : defaultSafetyContexts({ risk: safety.risk, subject: safety.subject, afterCrisis });
       const rows = await loadKnowledge(db);
       // recommended_modeは手順6でretrieve()に渡し、フェーズ2ではモード一致のナレッジも
@@ -549,9 +597,15 @@ export async function POST(req: Request) {
       );
       const priorCrisisFallbacks = hist.filter((h) => Array.isArray(h.flags)
         && (h.flags as string[]).some((f) => f.startsWith(CRISIS_FALLBACK_FLAG))).length;
-      const { out, flags } = crisisGenerated
+      const finalized = crisisGenerated
         ? finalizeCrisisGeneration(generated, priorCrisisFallbacks)
         : { out: generated.out, flags: generated.flags };
+      const out = finalized.out;
+      // 段階1以上で「大丈夫」の直後の返事に「よかった/安心した」があれば記録だけする(作り直さない。嶋先生 10/7。本番の既定でも)
+      const stageForNote = plan ? plan.stage
+        : Math.max(safety.risk === "crisis" ? 2 : safety.risk === "watch" ? 1 : 0, afterCrisis ? 1 : 0);
+      const note = daijoubuYokattaNote(text, out.reply, stageForNote);
+      const flags: string[] = note ? [...finalized.flags, note] : finalized.flags;
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);
@@ -571,6 +625,8 @@ export async function POST(req: Request) {
       // このターンでクロージングの要約に入った(closing_stateがclosedになった)かどうか。
       // 画面側で「話せる窓口」の案内カードを出すために使う(手順7。CLAUDE.md 5.15)。
       const justClosed = intakePatch.closing_state === "closed";
+      // 危機のあと(段階ごとの応答のとき)の区切りでは、決まった締めの文面を別の行で足し、区切りのカードはそちらに出す
+      const endingAppend = !!plan && justClosed && planContexts.includes("crisisEnding");
 
       const { data: aiMsg } = await db.from("messages").insert({
         session_id: sessionId, role: "ai", body: out.reply,
@@ -581,11 +637,28 @@ export async function POST(req: Request) {
         distress_level: mergedIntake.distress_level ?? null,
         mode: mergedIntake.recommended_mode ?? [],
         ambivalence_detected: mergedIntake.ambivalence_detected ?? null,
-        closing: justClosed,
+        closing: justClosed && !endingAppend,
         // 段階ごとの応答(第2段階)のときだけ: このターンの段階と、返事の下に出すカードと、
         // 危機の状態で生成した返事か(管理画面で見分けるため。db/schema.sql 12節)
         ...(plan ? { safety_stage: plan.stage, safety_card: plan.card, crisis_generated: crisisGenerated } : {}),
       }).select("seq").single();
+
+      // 危機のあと(段階ごとの応答のとき)に本人が終わりの合図を出したら、決まった締めの文面を1つ足す(3案を人ごとに順に。嶋先生 10/7。仮)。
+      // 「応援し続ける」は何度伝えてもよいが、言い回しは毎回変える
+      const after: { body: string; seq?: number; crisis_step: number }[] = [];
+      if (plan && endingAppend) {
+        const { data: lastEnding } = await db.from("messages")
+          .select("ending_variant, sessions!inner(client_id)")
+          .eq("sessions.client_id", clientId).not("ending_variant", "is", null)
+          .order("seq", { ascending: false }).limit(1).maybeSingle();
+        const variant = nextEndingVariant((lastEnding as { ending_variant?: number } | null)?.ending_variant ?? null);
+        const body = CRISIS_ENDINGS_PROVISIONAL[variant - 1];
+        const { data: endMsg } = await db.from("messages").insert({
+          session_id: sessionId, role: "ai", body, crisis: true, crisis_step: 14, ending_variant: variant,
+          safety_stage: plan.stage, closing: true,
+        }).select("seq").single();
+        after.push({ body, seq: endMsg?.seq, crisis_step: 14 });
+      }
 
       await db.from("sessions").update({
         weight, relation, turns_since_summary: since, notes,
@@ -610,7 +683,8 @@ export async function POST(req: Request) {
         safety: plan
           ? { risk: plan.risk, keywords: safety.keywords.length, model: safety.model.risk, stage: plan.stage }
           : { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
-        closing: justClosed,
+        closing: justClosed && !endingAppend,
+        after,
         card: plan?.card ?? null,
         care_line: plan?.card === "care" ? CARE_LINE_PROVISIONAL : null,
         user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,

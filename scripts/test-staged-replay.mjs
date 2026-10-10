@@ -101,10 +101,13 @@ for (let rep = 1; rep <= REPS; rep++) {
         votes: a.staged.votes.filter((v) => !v.skipped).map((v) => (v.ok ? `${v.risk}/${v.subject}` : "エラー")),
         reasons: a.staged.votes.filter((v) => !v.skipped).map((v) => v.reason ?? null),
         keywords: a.staged.keywords, patterns: a.staged.patterns, idiom_exempted: a.staged.idiomExempted,
-        // 引き下がりの判定(返事の種類。判定するターンだけ)と、引き下がりとして扱ったか(まとめの1通などに進んだか)
+        // 返事の種類の判定(判定するターンだけ)と、否定の種類・スケーリングを出したか・下げたか(2026年10月9日。嶋先生 10/7)。
+        // 記録の生徒の発言はチップを押していないので、スケーリングのあとは「選ばずに自由に書いた」(下げない)の道を通る
         reply_type: a.withdrawal ? (a.withdrawal.type ?? "エラー") : null,
-        reply_reason: a.withdrawal?.vote?.reason ?? null,
-        withdrawal: plan.event?.retraction === true,
+        reply_reason: a.withdrawal?.vote?.reason ?? null, figurative: a.withdrawal?.figurative === true,
+        negation_type: plan.event?.negation_type ?? null, scaling: plan.choices?.set === "scaling", choice_set: plan.choices?.set ?? null,
+        lowered: plan.event?.lowered === true,
+        bubble_steps: (plan.bubbles ?? []).map((b) => b.crisisStep),
         teacher_answer: a.teacher ? a.teacher.answer : null,
         stage: plan.stage, decided_by: plan.decidedBy, action: plan.action, crisis_step: plan.crisisStep,
         fixed_text: plan.action === "fixed" ? plan.text : null, card: plan.card, safety_contexts: plan.safetyContexts,
@@ -133,7 +136,7 @@ for (let rep = 1; rep <= REPS; rep++) {
     const fixed = recs.filter((r) => r.action === "fixed");
     const texts = fixed.map((r) => r.fixed_text);
     const dup = texts.filter((t, i) => texts.indexOf(t) !== i);
-    const step2 = recs.filter((r) => r.crisis_step === 2).map((r) => r.turn);
+    const step2 = recs.filter((r) => (r.bubble_steps ?? [r.crisis_step]).includes(2)).map((r) => r.turn);
     const step1 = recs.filter((r) => r.crisis_step === 1).map((r) => r.turn);
     // ふつうの返事 = 生徒役の自由な発言(固定文ではない)で、キーワード・受動パターンを含まないもの。
     // 段階が上がった = そのターンの判定(分類器まで含めた判定)が段階1以上。見守り中の再サインで上げるのも、
@@ -141,10 +144,8 @@ for (let rep = 1; rep <= REPS; rep++) {
     // (はっきりした打ち明けから始めた危機の応答は、返事の内容にかかわらず次の文面に進むので、上がったとは数えない)
     const ordinary = recs.filter((r) => !r.scripted && !(r.keywords ?? []).length && !(r.patterns ?? []).length);
     const raised = ordinary.filter((r) => r.detection_stage >= 1);
-    // 引き下がり(2026年10月5日): 引き下がったターンと、そのあとに問い(2通目・3通目)を出したターン
-    const withdrawn = recs.filter((r) => r.withdrawal);
-    const firstWithdrawal = withdrawn[0]?.turn ?? null;
-    const questionsAfter = firstWithdrawal == null ? [] : recs.filter((r) => r.turn > firstWithdrawal && [2, 3].includes(r.crisis_step)).map((r) => r.turn);
+    // 否定とスケーリング(2026年10月9日): 否定と判定したターン・スケーリングを出したターン・下げたターン
+    const negated = recs.filter((r) => r.negation_type);
     runs.push({
       persona: p.id, rep,
       flow: recs.map((r) => (r.action === "fixed" ? `T${r.turn}:${stepLabel(r.crisis_step)}` : r.crisis_generated ? `T${r.turn}:危機の状態の生成` : null)).filter(Boolean),
@@ -152,8 +153,10 @@ for (let rep = 1; rep <= REPS; rep++) {
       duplicate_fixed: dup.length, fixed_count: fixed.length,
       ordinary_raised: raised.map((r) => ({ turn: r.turn, text: r.student, detection_stage: r.detection_stage, decided_by: r.decided_by, votes: r.votes, reasons: r.reasons })),
       notify_turns: recs.filter((r) => r.notify).map((r) => r.turn),
-      withdrawal_turns: withdrawn.map((r) => ({ turn: r.turn, text: r.student, reply_type: r.reply_type, crisis_step: r.crisis_step })),
-      questions_after_withdrawal: questionsAfter,
+      negation_turns: negated.map((r) => ({ turn: r.turn, text: r.student, type: r.negation_type, scaling: r.scaling })),
+      scaling_turns: recs.filter((r) => r.scaling).map((r) => r.turn),
+      lowered_turns: recs.filter((r) => r.lowered).map((r) => r.turn),
+      chip_turns: recs.filter((r) => r.choice_set).map((r) => `T${r.turn}:${r.choice_set}`),
       crisis_generated_turns: recs.filter((r) => r.crisis_generated).map((r) => r.turn),
     });
   }
@@ -179,8 +182,8 @@ for (const r of runs) {
   L(`  生徒役の自由な発言(キーワード・受動パターンなし)で段階1以上になったターン: ${r.ordinary_raised.length ? `${r.ordinary_raised.length}回` : "なし"}`);
   for (const o of r.ordinary_raised) L(`    T${o.turn}「${o.text}」 判定の段階${o.detection_stage} 規則=${(o.decided_by ?? []).join(",")} 票=${JSON.stringify(o.votes)} 理由=${JSON.stringify(o.reasons)}`);
   L(`  同じ固定の文面が2回出ていないか: ${r.duplicate_fixed ? `出た(${r.duplicate_fixed}回)` : "出ていない"}(固定の文面 ${r.fixed_count}通)`);
-  L(`  引き下がりとして扱ったターン: ${r.withdrawal_turns.length ? r.withdrawal_turns.map((w) => `T${w.turn}「${w.text}」→${stepLabel(w.crisis_step)}`).join(" / ") : "なし"}`);
-  L(`  引き下がったあとに問い(2通目・3通目)を出したターン: ${r.questions_after_withdrawal.length ? r.questions_after_withdrawal.map((t) => `T${t}`).join(",") : "なし"}`);
+  L(`  否定と判定したターン: ${r.negation_turns.length ? r.negation_turns.map((w) => `T${w.turn}「${w.text}」→${w.type}${w.scaling ? "(スケーリング)" : ""}`).join(" / ") : "なし"}`);
+  L(`  チップを出したターン: ${r.chip_turns.length ? r.chip_turns.join(",") : "なし"}  下げたターン(記録の発言はチップを押さないので、ふつうは無い): ${r.lowered_turns.length ? r.lowered_turns.map((t) => `T${t}`).join(",") : "なし"}`);
   L(`  職員に通知するターン: ${r.notify_turns.length ? r.notify_turns.map((t) => `T${t}`).join(",") : "なし"}`);
   L("");
 }

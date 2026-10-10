@@ -18,12 +18,19 @@ type UsedKnowledge = { id: string; src: string; cat: string; body: string };
 //   care     = 気づかいの一言(careLine。文面はサーバから届く)+ 折りたたみの窓口
 //   hotlines = 折りたたみの窓口だけ
 //   crisis   = 危機カード(今までの crisis-card と同じ)
-// crisisStep: 危機の応答を分けて出した文面の何通目か(1〜4、5 = 2回目以降の短い1通、6 = 再受け止め、
-//   7 = 引き下がりへのまとめの1通、8 = 短いまとめの1通、9 = 終わりを受け入れる1通)
+// crisisStep: 危機の応答を分けて出した文面の何通目か(src/crisis-response.mjs の CRISIS_STEP_LABELS と同じ番号)
+// choices: AIの返事の下に出すチップ(危機の流れの見直し・仮。2026年10月9日)。押すとラベルを相談者の発言として表示し、
+//   choice_id をサーバに送る。選ばずに自由に書いてもよい(入力欄はいつでも使える)。最後のメッセージのときだけ出す
 type SafetyCard = "care" | "hotlines" | "crisis";
+type Choice = { id: string; label: string };
 const CRISIS_STEP_LABELS: Record<number, string> = {
-  5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通", 8: "短いまとめの1通", 9: "終わりを受け入れる1通",
+  1: "1通目", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "3通目への答えへの一言",
+  5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通(以前)", 8: "短いまとめの1通(以前)", 9: "終わりを受け入れる1通(以前)",
+  10: "スケーリングの問い", 11: "スケーリングの受け止め", 12: "組Cの前置き", 13: "組Cへの受け止め", 14: "危機のあとの終わり方",
 };
+// 分けた吹き出しを1つずつ出す間(1〜2秒。嶋先生 10/7「部分ずつ受け止められる」)
+const BUBBLE_INTERVAL_MS = 1500;
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Msg = {
   role: "user" | "ai";
   body: string;
@@ -36,6 +43,8 @@ type Msg = {
   card?: SafetyCard | null;
   careLine?: string | null;
   crisisStep?: number | null;
+  choices?: Choice[] | null;
+  choiceNote?: string | null;
 };
 
 type ChoiceInfo = {
@@ -142,6 +151,7 @@ export default function Page() {
           r.messages.map((m: {
             role: string; body: string; seq: number; crisis?: boolean; closing?: boolean; rating?: number;
             safety_card?: SafetyCard | null; care_line?: string | null; crisis_step?: number | null;
+            choices?: Choice[] | null; choice_note?: string | null;
           }) => ({
             role: m.role === "user" ? "user" : "ai",
             body: m.body,
@@ -152,6 +162,8 @@ export default function Page() {
             card: m.safety_card ?? null,
             careLine: m.care_line ?? null,
             crisisStep: m.crisis_step ?? null,
+            choices: m.choices ?? null,
+            choiceNote: m.choice_note ?? null,
           })),
         );
       } else {
@@ -184,17 +196,32 @@ export default function Page() {
     if (mainRef.current) mainRef.current.scrollTop = mainRef.current.scrollHeight;
   }, [messages, thinking]);
 
-  async function turn(text: string) {
+  async function turn(text: string, choiceId?: string) {
     setMessages((m) => [...m, { role: "user", body: text }]);
     setThinking(true);
     try {
-      const r = await api("chat", { text });
+      const r = await api("chat", choiceId ? { text, choice_id: choiceId } : { text });
       setThinking(false);
       if (r.crisis) {
-        setMessages((m) => [...m, {
-          role: "ai", body: r.reply, crisis: true, seq: r.ai_seq,
-          card: r.card ?? null, careLine: r.care_line ?? null, crisisStep: r.crisis_step ?? null,
-        }]);
+        // 吹き出しが複数(2通目の「心配」+3通目など)のときは、間をおいて1つずつ出す。チップは最後の吹き出しの下
+        const replies: { body: string; card: SafetyCard | null; crisis_step: number | null; seq?: number }[] =
+          Array.isArray(r.replies) && r.replies.length
+            ? r.replies
+            : [{ body: r.reply, card: r.card ?? null, crisis_step: r.crisis_step ?? null, seq: r.ai_seq }];
+        for (const [i, b] of replies.entries()) {
+          if (i > 0) {
+            setThinking(true);
+            await wait(BUBBLE_INTERVAL_MS);
+            setThinking(false);
+          }
+          const last = i === replies.length - 1;
+          setMessages((m) => [...m, {
+            role: "ai", body: b.body, crisis: true, seq: b.seq,
+            card: b.card ?? null, careLine: null, crisisStep: b.crisis_step ?? null,
+            choices: last ? r.choices ?? null : null,
+            choiceNote: last ? r.choice_note ?? null : null,
+          }]);
+        }
         setSafety(r.safety);
         setFlags([r.crisis_step
           ? `危機の応答 ${CRISIS_STEP_LABELS[r.crisis_step] ?? `${r.crisis_step}通目`}(仮の文面)／生成をスキップ`
@@ -211,6 +238,13 @@ export default function Page() {
         role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
         card: r.card ?? null, careLine: r.care_line ?? null,
       }]);
+      // 危機のあとの区切りでは、決まった締めの文面が続く(区切りのカードはそちらに出す)
+      for (const a of (Array.isArray(r.after) ? r.after : []) as { body: string; seq?: number; crisis_step?: number }[]) {
+        setThinking(true);
+        await wait(BUBBLE_INTERVAL_MS);
+        setThinking(false);
+        setMessages((m) => [...m, { role: "ai", body: a.body, seq: a.seq, crisisStep: a.crisis_step ?? null, closing: true }]);
+      }
       setNotes(r.notes || {});
       setChoice({
         relation: r.relation,
@@ -234,7 +268,7 @@ export default function Page() {
     }
   }
 
-  async function submit(overrideText?: string) {
+  async function submit(overrideText?: string, choiceId?: string) {
     const v = (overrideText ?? inputValue).trim();
     if (!v || busy) return;
     if (!sessionIdRef.current) {
@@ -244,7 +278,7 @@ export default function Page() {
     setInputValue("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setBusy(true);
-    await turn(v);
+    await turn(v, choiceId);
     setBusy(false);
     textareaRef.current?.focus();
   }
@@ -335,7 +369,8 @@ export default function Page() {
             </div>
           )}
           {messages.map((m, i) => (
-            <MessageBubble key={i} msg={m} onRate={rate} />
+            <MessageBubble key={i} msg={m} onRate={rate}
+              onChoose={i === messages.length - 1 && !busy ? (c) => submit(c.label, c.id) : undefined} />
           ))}
           {thinking && (
             <div className="msg ai"><div className="thinking"><i /><i /><i /></div></div>
@@ -483,7 +518,9 @@ function HotlineDetails() {
   );
 }
 
-function MessageBubble({ msg, onRate }: { msg: Msg; onRate: (seq: number, n: number) => void }) {
+function MessageBubble({ msg, onRate, onChoose }: {
+  msg: Msg; onRate: (seq: number, n: number) => void; onChoose?: (c: Choice) => void;
+}) {
   // 段階ごとの応答(第2段階)の文面は card で出し分ける。それ以前の危機の固定応答
   // (crisis はあるが crisisStep が無いもの)は、今まで通り危機カードを出す。
   const card: SafetyCard | null = msg.card ?? (msg.crisis && msg.crisisStep == null ? "crisis" : null);
@@ -508,6 +545,14 @@ function MessageBubble({ msg, onRate }: { msg: Msg; onRate: (seq: number, n: num
         <div className="care-card">
           {card === "care" && msg.careLine && <p className="care-line">{msg.careLine}</p>}
           <HotlineDetails />
+        </div>
+      )}
+      {msg.choices && msg.choices.length > 0 && onChoose && (
+        <div className="choice-chips" role="group" aria-label="選ぶだけでも大丈夫です">
+          {msg.choices.map((c) => (
+            <button key={c.id} type="button" className="choice-chip" onClick={() => onChoose(c)}>{c.label}</button>
+          ))}
+          {msg.choiceNote && <p className="choice-note">{msg.choiceNote}</p>}
         </div>
       )}
       {msg.closing && (

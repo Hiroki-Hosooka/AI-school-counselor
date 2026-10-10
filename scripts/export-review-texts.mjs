@@ -22,11 +22,15 @@ import { CRISIS_REPLY } from "../src/classify.mjs";
 import { buildSystem, GENERATION_FAILURE_REPLIES } from "../src/generate.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
 import {
-  CRISIS_STEP1_PROVISIONAL, CRISIS_STEP2_PROVISIONAL, CRISIS_STEP3_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
-  CRISIS_WRAPUP_PROVISIONAL, CRISIS_WRAPUP_SHORT_PROVISIONAL, CRISIS_WITHDRAW_END_PROVISIONAL,
+  CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
+  CHOICES_B_PROVISIONAL, CHOICES_C_PROVISIONAL, CHOICE_C_INTRO_PROVISIONAL, CHOICE_C_ACK_PROVISIONAL,
+  SCALING_PROMPT_PROVISIONAL, SCALING_PROMPT_A_PROVISIONAL, CHOICES_SCALING_PROVISIONAL, SCALING_ACK_PROVISIONAL,
+  CRISIS_ENDINGS_PROVISIONAL, CONCERN_TEXT_PROVISIONAL, buildConcernBubbles, buildCrisisReply,
   CARE_LINE_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_GENERATION_FALLBACK_PROVISIONAL,
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
 } from "../src/crisis-response.mjs";
+const CATEGORY_JA = { suicidal: "希死念慮", selfharm: "自傷・過量服薬", violence: "暴力・虐待", sexual: "性被害", bullying: "重大ないじめ", unknown: "種類がわからないとき" };
+const chipList = (items) => items.map((c) => `- ${c.label}`).join("\n");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -109,7 +113,7 @@ const md = `# 心理士さんに確認していただきたい文面
 - **D は、まだ文面が無いもの**です。方針をご相談したいところです。
 - **E は参考**です。最初の受付で聞く質問です(本番で使っています)。
 
-文面を変えたら作り直す文書です(手で直していません)。2026年10月7日時点の文面です。
+文面を変えたら作り直す文書です(手で直していません)。2026年10月9日時点の文面です(嶋先生 10/7 のお話を反映しました)。
 
 ## 前提:このAIが危機のサインにどう応えるか
 
@@ -132,8 +136,14 @@ ${quote(footNote)}
 ### A1. 危機の固定の文面
 
 **出るとき:** 本人の危機のサイン(「死にたい」など)があったとき。AI は返事を作らず、この文面を出します。
+2026年10月9日に、嶋先生のご指摘(「私だけで受け止めるには重い」は意外と傷つく)から「重い」を消し、「〜が、とても心配です」の形にしました。
+「〜」は、見つけた言葉の種類で決めます(AI に言葉を選ばせない)。下は種類がわからないときの文面です。
 
 ${quote(CRISIS_REPLY)}
+
+**「〜が、とても心配です」の「〜」(種類ごと)**
+
+${Object.keys(CONCERN_TEXT_PROVISIONAL).map((c) => `- ${CATEGORY_JA[c]}: ${CONCERN_TEXT_PROVISIONAL[c]}`).join("\n")}
 
 **一緒に出るカード「話せる窓口」**
 
@@ -142,7 +152,8 @@ ${list(hotlines)}
 ${quote(crisisCardNote)}
 
 ${asks([
-  "打ち明けた直後の中高生が読んで、重すぎる・長すぎるところはありますか。",
+  "「〜が、とても心配です」の種類ごとの言い方は、それぞれの打ち明けに合っていますか(暴力・性被害・いじめは「その気持ち」ではなく「そのこと」と受けています)。",
+  "打ち明けた直後の中高生が読んで、長すぎるところはありますか。",
   "「どうしてここでなら言えると思ったのか、あとで聞かせてもらえたら嬉しい」は、AI が守れない約束(あとで聞く)に聞こえませんか。",
   "嶋先生の「一気に情報量が多いから分割できないか」というご指摘から、分けて出す版(C)を作りました。本番をそちらに置き換えてよいでしょうか。",
 ])}
@@ -223,10 +234,11 @@ ${asks([
 
 ## C. 分けて出す版(試作。本番ではまだ使っていません)
 
-嶋先生の「一気に情報量が多いから分割できないか」というご指摘から、A1 を4通に分け、相談者の返事を待ちながら1通ずつ出す形にしました。
-流れの例と、それぞれの文面をいつ出すかの詳しい説明は \`docs/crisis-stage2-provisional-texts.md\` にあります。
+嶋先生のご指摘(10/7 を含む)から、A1 を分けて出す形にしました。1通目だけ出して返事を待ち、2通目(心配)と3通目(相談先や大人に話したいか)は
+短い吹き出しに分けて、1.5秒ずつ間をおいて出します。そのあとは AI が会話を続け、**AI から会話を終わらせません。**
+流れの詳しい説明は \`docs/crisis-stage2-provisional-texts.md\` にあります。
 
-### C1. 1通目(受け止めだけ)
+### C1. 1通目(受け止めだけ。返事を待つ)
 
 ${quote(CRISIS_STEP1_PROVISIONAL)}
 
@@ -241,63 +253,102 @@ ${asks([
   "暴力や性被害の打ち明けにも合う言い方でしょうか。",
 ])}
 
-### C2. 2通目(重い内容だという正直な表明・窓口・人に話しにくい理由の問い)
+### C2. 2通目(「〜が、とても心配です」。短い吹き出しに分けて出す)
 
-${quote(CRISIS_STEP2_PROVISIONAL)}
+例(希死念慮のとき):
 
-**添えるもの:** 「話せる窓口」のカード(A1 と同じ)
+${buildConcernBubbles("suicidal").map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
-${asks([
-  "「わたしだけで受け止めるには重い」は、突き放された感じ(見捨てられ感)を与えませんか。",
-  "「身近な人に話すとしたら、どんなところが話しにくい？」という問いはよいでしょうか(深掘りしてよいのは「生身の人に言うことの方にどんな障壁があるか」という一点だけ、という嶋先生のご指摘に沿っています)。",
-])}
-
-### C3. 3通目(学校の先生に話すことをどう思うか)
-
-${quote(CRISIS_STEP3_PROVISIONAL)}
+**添えるもの:** 最後の吹き出しの下に「話せる窓口」のカード(A1 と同じ)。「〜」は A1 と同じく種類ごと。
 
 ${asks([
-  "今の仕組みは匿名で、AI から先生に伝える手段がありません。そのため同意は取らず、本人が先生に話すことをどう思うかだけをたずねています。この聞き方でよいでしょうか。",
+  "「あなたのために、…あなたの声が届く人とも一緒に考えてほしい」は、AI が困っているのではなく、あなたのためにやっている、と伝わるでしょうか。",
+  "1.5秒ずつ間をおいて1つずつ出す形は、部分ずつ受け止めやすいでしょうか。",
 ])}
 
-### C4. 4通目(3通目への答えに合わせた一言)
+### C3. 3通目(相談先や大人に話したいか。候補が3つあります)
 
-前向きな答えのとき
+${Object.entries(CRISIS_STEP3_VARIANTS_PROVISIONAL).map(([k, t]) => `**候補${k}**\n\n${quote(t)}`).join("\n\n")}
+
+${asks([
+  "どの候補がよいでしょうか(今は A にしています)。前置きは付けていません。",
+  "今の仕組みは匿名で、AI から先生に伝える手段がありません。そのため同意は取らず、本人が話してみたいかだけをたずねています。",
+])}
+
+### C4. 3通目への答え
+
+話したい(前向き)
 
 ${quote(CRISIS_STEP4_PROVISIONAL.yes)}
 
-後ろ向きな答えのとき
-
-${quote(CRISIS_STEP4_PROVISIONAL.no)}
-
-どちらでもない・わからないとき
+どちらでもない
 
 ${quote(CRISIS_STEP4_PROVISIONAL.unclear)}
 
+話したくない(後ろ向き)。このあと、理由を書かせずに、選択肢(チップ)を出します
+
+${quote(CRISIS_STEP4_PROVISIONAL.no)}
+
+**選択肢1(2択)**
+
+${chipList(CHOICES_B_PROVISIONAL)}
+
+1つ目を選んだら、深追いせず、理由も聞かずに、本人の話したいことに合わせます。2つ目を選んだら、次の前置きと選択肢2を出します。
+
+${quote(CHOICE_C_INTRO_PROVISIONAL)}
+
+**選択肢2(「話せない」の背景。生徒から出た例を、先生が「人間あるある」として使ってよいとおっしゃったもの+先生が挙げたもの)**
+
+${chipList(CHOICES_C_PROVISIONAL)}
+
+**選んだものを、そのまま受け止める一言**
+
+${CHOICES_C_PROVISIONAL.map((c) => `- ${c.label} → ${CHOICE_C_ACK_PROVISIONAL[c.id]}`).join("\n")}
+
+そのあとの返し方は、最初の受付で「ただ聞いてほしい」寄りだった人には気持ちに寄り添うことを優先し、解決を求める人には
+「どんな人なら話せそうか」など人につながる小さな一歩を一緒に考えるようにしています。
+
 ${asks([
-  "後ろ向きな答えのとき、このように一度引いたあと、どこまでその話に触れずにいてよいでしょうか。",
+  "選択肢の言葉は、言い当てられたと感じられる言い方になっていますか。足りない背景はありますか。",
+  "「自分も悪いかもと思っている」への一言は、同調(「あなたは悪くない」)にならないようにしましたが、冷たく聞こえませんか。",
+  "受け止めの一言のあとは、理由を掘り下げないようにしています。これでよいでしょうか。",
 ])}
 
-### C5. 打ち明けのあとに「なんでもない」「忘れて」「冗談だよ」と引き下がったとき
+### C5. 打ち明けのあとに「冗談だよ」「なんでもない」「死にたくない」のような反対の言葉が出たとき
 
-考え方は「引き下がりは問いを止める理由にはなるが、窓口を伝えない理由にはならない」です。危機の扱いは下げず、通知も取り消しません。
+**言葉だけでは危機の扱いを下げません**(嶋先生「両方の気持ちがあるのが前提」)。今の気持ちを数字で選んでもらい、その答えと合わせて決めます。
 
-1通目のあとに引き下がったとき(折りたたみの窓口を添えます)
+「死にたくない」「生きたい」のような、生きたい気持ちの言葉のとき
 
-${quote(CRISIS_WRAPUP_PROVISIONAL)}
+${quote(SCALING_PROMPT_A_PROVISIONAL)}
 
-2通目・3通目のあとに引き下がったとき(窓口はすでに届いているので、添えません)
+「冗談だよ」「なんでもない」「大丈夫」などのとき(嶋先生のお言葉に基づく)
 
-${quote(CRISIS_WRAPUP_SHORT_PROVISIONAL)}
+${quote(SCALING_PROMPT_PROVISIONAL)}
 
-2回目に引き下がったとき
+**選択肢**(最初の受付のつらさの質問と同じ向き。1がいちばん軽い)
 
-${quote(CRISIS_WITHDRAW_END_PROVISIONAL)}
+${chipList(CHOICES_SCALING_PROVISIONAL)}
+
+- 下げるのは、「冗談」「死にたくない」のようなはっきりした言葉で1か2を選んだとき、「大丈夫」「なんでもない」のような言葉で1を選んだときだけです。
+  下げるのは一段(危機 → 気がかり)だけで、職員への通知と記録は取り消しません。選ばずに書き続けたときは下げません。
+- 下げないときは、次の一言を返してから、止まっていた次の文面に進みます。
+
+${quote(SCALING_ACK_PROVISIONAL)}
 
 ${asks([
-  "打ち明けのあとに引っ込められたとき、先生方は実際にどうしていらっしゃいますか。",
-  "この考え方(問いはやめるが、窓口は伝える)でよいでしょうか。",
-  "2回目の「この話は、今はここまでにしようね」は、早く閉じすぎていないでしょうか。",
+  "この下げ方(言葉の種類 × 数字)でよいでしょうか。",
+  "「大丈夫」を文字どおりに受け取らない(「よかった」「安心した」で受けない・掘り下げない)ようにしました。これでよいでしょうか。",
+])}
+
+### C5-2. 打ち明けのあとの会話を、本人が終えるとき
+
+決まった文面を出したあとの会話で、本人が「今日はここまで」と言ったら、AI のまとめのあとに次の3案から1つを添えます(同じ人に同じ文が続かないよう、順に使います)。
+
+${CRISIS_ENDINGS_PROVISIONAL.map((t, i) => `${i + 1}案目\n\n${quote(t)}`).join("\n\n")}
+
+${asks([
+  "「AIにできるのは、…応援し続けること」は、来るたびに伝えてもよいでしょうか(言い回しは毎回変えています)。",
 ])}
 
 ### C6. 「もう無理」「限界」のような、気がかりな言葉への一言
@@ -314,7 +365,7 @@ ${asks(["重すぎる、または軽すぎることはありませんか。"])}
 
 ${quote(CRISIS_AGAIN_PROVISIONAL)}
 
-**4通目まで出したあと、同じ会話で新しい打ち明けがあったとき(1回の会話で1回まで。窓口のカードを添えます)**
+**決まった文面を出し終えたあと、同じ会話で新しい打ち明けがあったとき(1回の会話で1回まで。窓口のカードを添えます)**
 
 ${quote(CRISIS_REPEAT_PROVISIONAL)}
 

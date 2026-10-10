@@ -14,6 +14,7 @@
 
 import { CRISIS_WORDS, crisisRulesV2, paraphraseShameIdioms } from "./safety.mjs";
 import { crisisRulesV3 } from "./crisis-keywords-v3.mjs";
+import { buildCrisisReply } from "./crisis-texts.mjs";
 
 // 危機キーワードの版。設定 CRISIS_KEYWORDS=v3 のときだけ v3(docs/crisis-keywords-v3.md。検証の結果を人が確認するまで既定にしない)。
 // v3 には「段階1の語」(floor。少なくとも段階1)と、当たった語の根拠(hits)がある。v2 にはどちらも無いので空にする
@@ -25,11 +26,10 @@ export function crisisRules(text, version = keywordVersion()) {
 
 // 危機判定時の固定応答(生成は完全にスキップする。CLAUDE.md 5.2)。文言を変える場合は
 // この分岐の意図(態度だけを示し、手順には踏み込まない)を壊していないか確認すること。
-export const CRISIS_REPLY =
-  "よく、ここで言えたね。誰にも言えないと思っていたことを書くのは、すごく力が要ったと思う。\n\n" +
-  "どうしてここでなら言えると思ったのか、あとで聞かせてもらえたら嬉しい。\n\n" +
-  "そのうえで正直に言うと、いま書いてくれたことは、わたしだけで受け止めるには重い内容です。あなたを軽く扱いたくないので、はっきり言います。心配だから、ここから先はあなたの声が届く人につながってほしい。\n\n" +
-  "学校の先生でも、保健室でも、スクールカウンセラーでも、家の人でも、下の窓口でもかまいません。あなたが一番話せそうなところで大丈夫です。";
+// 本番の固定応答の文面は src/crisis-texts.mjs の buildCrisisReply(種類ごとに「〜が、とても心配です」を組む。
+// 2026年10月9日に「重い」を消した)。route.ts は判定した種類で組む。ここに置く CRISIS_REPLY は種類不明のときの文面
+// (文書の書き出し・テストで使う)
+export const CRISIS_REPLY = buildCrisisReply(null);
 
 // 安全判定(classify)・人単位の記憶の要約用。軽いタスクなので lite モデルで十分。
 // route.ts の本生成用モデル(PRIMARY_MODELS)とは別モデルにすることで、

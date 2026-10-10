@@ -603,3 +603,81 @@ alter table messages drop constraint if exists messages_crisis_step_check;
 alter table messages add constraint messages_crisis_step_check check (crisis_step is null or crisis_step between 1 and 9);
 alter table safety_events drop constraint if exists safety_events_crisis_step_check;
 alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 9);
+
+-- ============================================================================
+-- 14. 危機の流れの見直し(嶋先生 10/7。2026年10月9日・仮の文面。心理士の確認待ち)
+--
+--  設計は docs/design-crisis-flow-shima3.md、指示書は docs/prompts/crisis-flow-shima3.md。
+--  11節〜13節と同じく、設定 CRISIS_RESPONSE=staged のときだけ route.ts が書き込む列・値
+--  有効にする前に、11節〜13節のあとでこの節を Supabase の SQL エディタで実行すること。何度実行してもよい。
+--
+--  これまでの「引き下がり」(13節。まとめの1通など)を、気持ちのスケーリングのチップに置き換えた。言葉だけでは段階を下げず、
+--  否定の種類(A 生きたい気持ち・B 冗談/取り消し = 明示的、C 最小化 = キーワードによらない)とスケーリングの答えで決める。
+--
+--  sessions.crisis_state に足す値:
+--    choice_b  3通目に「話したくない」と答え、組B(このやり取りがうっとうしい / 人とつながるのはおっくう)を出した
+--    choice_c  組Cの「話せない」の背景を出した
+--    scaling   スケーリングのチップを出した(戻る先は crisis_resume)
+--    lowered   スケーリングの結果で段階1に下げた(下げても通知と記録は取り消さない)
+--  sessions.crisis_resume       スケーリング・下げたあとに戻る状態(step1 / step3 / done)
+--  sessions.crisis_negation     スケーリングを出したときの否定の種類(A / B / C)
+--  sessions.pending_choice_set  直前のAIの返事に付けたチップの組(scaling / B / C)。次の発言の choice_id はこの組のものだけ受け付ける
+--  sessions.scaling_count       このセッションでスケーリングを出した回数(2回まで)
+--  sessions.choice_sets_shown   このセッションで出したチップの組(同じ組は1回まで)
+--  sessions.crisis_category     危機の種類(suicidal / selfharm / violence / sexual / bullying。不明なら null)
+--  sessions.crisis_choice_c     組Cで選んだもの(C1〜C7。そのあとの生成の指示に使う)
+--  messages.choice_set / choice_id / choice_input  相談者がチップを押した(button)・数字を書いた(typed)ときの記録
+--  messages.choices             AIの返事に付けたチップ([{id, label}])
+--  (出力チェックで「記録だけ」すること(「大丈夫」の直後の「よかった」)は、本番の既定でも書くので、この節の列ではなく、
+--   以前からある messages.flags に「記録のみ:」で始まる文字列として残す)
+--  messages.ending_variant      危機のあとの終わり方の文面の何案目か(1〜3。同じ文を続けて出さないため)
+--  messages.crisis_step に 10〜14 を足す(10 = スケーリングの問い、11 = スケーリングの受け止め、
+--    12 = 組Cの前置き、13 = 組Cへの受け止め、14 = 危機のあとの終わり方)。2 = 2通目(心配)、3 = 3通目(相談先や大人に話したいか)、
+--    4 = 3通目への答えへの一言。7〜9 は以前の引き下がりの記録のために残す
+--  safety_events.negation_type / negation_words  否定の種類と当たった語
+--  safety_events.scale          選んだスケーリング(1〜5)
+--  safety_events.lowered        このターンで段階を下げたか
+--  safety_events.figurative     「死にたいとか冗談だよ」のような発言の「死にたい」を、比喩・強調と判定したか(通知しない)
+--  safety_events.crisis_category  危機の種類
+-- ============================================================================
+alter table sessions add column if not exists crisis_resume text;
+alter table sessions add column if not exists crisis_negation text;
+alter table sessions add column if not exists pending_choice_set text;
+alter table sessions add column if not exists scaling_count int not null default 0;
+alter table sessions add column if not exists choice_sets_shown text[] not null default '{}';
+alter table sessions add column if not exists crisis_category text;
+alter table sessions add column if not exists crisis_choice_c text;
+alter table sessions drop constraint if exists sessions_crisis_state_check;
+alter table sessions add constraint sessions_crisis_state_check
+  check (crisis_state in ('none','step1','step2','step3','done','paused1','paused2','paused3','again1','again2','again3',
+                          'wrap1','wrap2','wrap3','choice_b','choice_c','scaling','lowered'));
+alter table sessions drop constraint if exists sessions_crisis_resume_check;
+alter table sessions add constraint sessions_crisis_resume_check check (crisis_resume is null or crisis_resume in ('step1','step3','done'));
+alter table sessions drop constraint if exists sessions_crisis_negation_check;
+alter table sessions add constraint sessions_crisis_negation_check check (crisis_negation is null or crisis_negation in ('A','B','C'));
+alter table sessions drop constraint if exists sessions_pending_choice_set_check;
+alter table sessions add constraint sessions_pending_choice_set_check check (pending_choice_set is null or pending_choice_set in ('scaling','B','C'));
+alter table sessions drop constraint if exists sessions_crisis_category_check;
+alter table sessions add constraint sessions_crisis_category_check
+  check (crisis_category is null or crisis_category in ('suicidal','selfharm','violence','sexual','bullying'));
+
+alter table messages add column if not exists choice_set text;
+alter table messages add column if not exists choice_id text;
+alter table messages add column if not exists choice_input text;
+alter table messages add column if not exists choices jsonb;
+alter table messages add column if not exists ending_variant int;
+alter table messages drop constraint if exists messages_choice_input_check;
+alter table messages add constraint messages_choice_input_check check (choice_input is null or choice_input in ('button','typed'));
+alter table messages drop constraint if exists messages_crisis_step_check;
+alter table messages add constraint messages_crisis_step_check check (crisis_step is null or crisis_step between 1 and 14);
+
+alter table safety_events add column if not exists negation_type text;
+alter table safety_events add column if not exists negation_words text[];
+alter table safety_events add column if not exists scale int;
+alter table safety_events add column if not exists lowered boolean not null default false;
+alter table safety_events add column if not exists figurative boolean not null default false;
+alter table safety_events add column if not exists crisis_category text;
+alter table safety_events drop constraint if exists safety_events_crisis_step_check;
+alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 14);
+alter table safety_events drop constraint if exists safety_events_scale_check;
+alter table safety_events add constraint safety_events_scale_check check (scale is null or scale between 1 and 5);
