@@ -21,7 +21,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, isTransientClassifierError } from "./_lib/test-env.mjs";
+import { requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, isTransientClassifierError, costUsd, USD_TO_JPY } from "./_lib/test-env.mjs";
 import { classify, classifyStaged, crisisDetectionVersion, LITE_MODELS } from "../src/classify.mjs";
 import { CRISIS_WORDS, crisisRulesV2 } from "../src/safety.mjs";
 
@@ -85,13 +85,59 @@ function errorTag(err) {
 }
 
 // --------------------------------------------------------------------------
-// 概算トークン数(あくまで目安。API側の正確な usageMetadata は参照していない)
+// 概算トークン数(あくまで目安。正確な数は下の actual_usage(usageMetadata の集計)を見る)
 // 日本語は概ね1〜2文字/トークンと言われるため、保守的に1.5文字/トークンで概算する。
 // 無料枠(TEST_GEMINI_API_KEY)での実行を前提としており、費用は原則0円。有料枠で
 // 実行する場合は https://ai.google.dev/gemini-api/docs/pricing の最新料金と
 // 掛け合わせて見積もること(ここでは料金の断定を避ける)。
 // --------------------------------------------------------------------------
 const CHARS_PER_TOKEN = 1.5;
+
+// --------------------------------------------------------------------------
+// 実際のトークン数(Gemini の応答の usageMetadata。2026年10月11日・test1-followup 修正5 の残り)
+// 本番のコード(src/classify.mjs)は変えずに、このスクリプトの中だけで fetch を包み、成功した応答の
+// usageMetadata をモデルごとに足し上げる。再試行・フォールバック・v2 の複数回の判定も、送った分はすべて数える。
+// 有料枠で回したときの費用の目安は、scripts/_lib/test-env.mjs の PRICING で出す(無料枠の実費は0円)。
+// --------------------------------------------------------------------------
+const actualUsage = {}; // model → { calls, prompt, candidates, thoughts }
+const origFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const res = await origFetch(url, init);
+  const m = String(url).match(/generativelanguage\.googleapis\.com\/v1beta\/models\/([^:]+):generateContent/);
+  if (m && res.ok) {
+    try {
+      const u = (await res.clone().json())?.usageMetadata;
+      if (u) {
+        const a = (actualUsage[m[1]] ??= { calls: 0, prompt: 0, candidates: 0, thoughts: 0 });
+        a.calls++;
+        a.prompt += u.promptTokenCount ?? 0;
+        a.candidates += u.candidatesTokenCount ?? 0;
+        a.thoughts += u.thoughtsTokenCount ?? 0;
+      }
+    } catch { /* 集計できなくても判定は続ける */ }
+  }
+  return res;
+};
+function actualUsageReport() {
+  let usd = 0;
+  let total = 0;
+  const unpriced = [];
+  for (const [model, a] of Object.entries(actualUsage)) {
+    const c = costUsd({ promptTokenCount: a.prompt, candidatesTokenCount: a.candidates, thoughtsTokenCount: a.thoughts }, model);
+    if (!c && a.prompt + a.candidates + a.thoughts > 0) unpriced.push(model);
+    usd += c;
+    total += a.prompt + a.candidates + a.thoughts;
+  }
+  return {
+    per_model: actualUsage,
+    total_tokens: total,
+    paid_equivalent_usd: Number(usd.toFixed(4)),
+    paid_equivalent_jpy: Math.round(usd * USD_TO_JPY),
+    unpriced_models: unpriced,
+    note: "Gemini の応答の usageMetadata を足し上げた実際のトークン数。paid_equivalent は有料枠で同じ量を送った場合の目安" +
+      `(scripts/_lib/test-env.mjs の PRICING・1ドル=${USD_TO_JPY}円)。無料枠のキーで回した場合の実費は0円。unpriced_models は料金表に無く0として数えたモデル`,
+  };
+}
 
 // --------------------------------------------------------------------------
 // 実行
@@ -386,6 +432,7 @@ const report = {
     error_tag: r.errorTag, classifier_reason: r.modelReason, used_model: r.usedModel,
   })),
   estimated_tokens: Math.ceil(estimatedChars / CHARS_PER_TOKEN),
+  actual_usage: actualUsageReport(),
   estimated_cost_note: "TEST_GEMINI_API_KEY(無料枠)での実行を想定。実費用は0円。有料枠で実行した場合はai.google.dev/gemini-api/docs/pricingの最新料金で見積もること。",
   // 上記はすべて集計値・失敗例だけの抜粋。「何を・どう判定して・何が返ってきたか」を
   // 正しく判定できた分も含めて全件確認できるよう、79件全ての生の入出力をここに残す
@@ -405,4 +452,9 @@ const report = {
 
 writeFileSync(outPath, JSON.stringify(report, null, 2));
 
+{
+  const u = report.actual_usage;
+  console.log(`\n実際のトークン数: ${u.total_tokens}(${Object.entries(u.per_model).map(([m, a]) => `${m} ${a.calls}回`).join("、") || "記録なし"})`);
+  console.log(`有料枠で回した場合の目安: $${u.paid_equivalent_usd}(約${u.paid_equivalent_jpy}円)${u.unpriced_models.length ? ` ※料金表に無いモデル: ${u.unpriced_models.join(",")}` : ""}`);
+}
 console.log(`\n結果を保存しました: ${path.relative(ROOT, outPath)}`);
