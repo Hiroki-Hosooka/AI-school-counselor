@@ -453,7 +453,15 @@ export async function POST(req: Request) {
           v2 = assessed.staged;
           plan = assessed.plan;
         } else {
-          v2 = await classifyStaged(text, classifierContext);
+          // 本番の既定でも、このセッションで本人の危機の固定応答をすでに出していれば、「その発言そのものに新しい危機のサインが
+          // あるか」を見る判定(CLASSIFIER_PROMPT_V2_FOLLOWUP。段階ごとの応答で使っているもの)にする(2026年10月11日。人が確認)。
+          // 通常の判定は直前の「死にたい」を引きずり、固定応答のあとの「うん」「学校のこと」「どうすればいいの」まで危機と判定して、
+          // 同じ固定応答と職員への通知がくり返し出ていたため。キーワード・受動パターンによる強制判定は、どちらの判定でも同じ。
+          // 設定 CRISIS_AFTERCARE=off のときは以前の動き
+          const { data: priorCrisis } = await db.from("messages").select("seq")
+            .eq("session_id", sessionId).eq("role", "ai").eq("crisis", true).limit(1);
+          const afterFixedReply = aftercareEnabled() && (priorCrisis?.length ?? 0) > 0;
+          v2 = await classifyStaged(text, classifierContext, afterFixedReply ? { mode: "followup" } : undefined);
         }
         safety = v2;
         // どの規則で段階が決まったかを、既存の列(keywords・model_reason)にも残す

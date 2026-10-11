@@ -346,8 +346,8 @@ npm run test:crisis
   「全判定」を参照する数式になっている。記録ファイルから作り直すときは
   `python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
 - **段階ごとの応答(危機検知の作り直し 第2段階。仮の文面・心理士の確認待ち。CLAUDE.md 5.16)** は、
-  設定 `CRISIS_RESPONSE=staged` のときだけ動く(**本番では設定しない**。Vercel ではプレビュー環境にだけ設定して試す)。
-  有効にする前に `db/schema.sql` の11節〜13節を Supabase の SQL エディタで実行する。
+  設定 `CRISIS_RESPONSE=staged` のときだけ動く(2026年10月11日に、本番でも有効にすると人が決めた。Vercel の環境変数に設定する)。
+  有効にする前に `db/schema.sql` の11節〜14節を Supabase の SQL エディタで実行する。
   - 状態の移り変わり(見守り・分けて出す危機の応答・引き下がりへのまとめの1通・危機の状態の生成・本番の既定の
     「危機のあと」など)のオフラインのテスト: `npm run test:staged-response`(API・DB は使わない。
     ペルソナテストの記録の B1・B2・B5 の判定の並びを、新しい規則に通す再生も含む)
