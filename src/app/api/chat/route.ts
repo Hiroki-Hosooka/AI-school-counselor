@@ -65,8 +65,12 @@ import {
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
   aftercareEnabled, hadCrisisReply, defaultSafetyContexts, SAFETY_STATE_COLUMNS,
   buildCrisisReply, CRISIS_ENDINGS_PROVISIONAL, nextEndingVariant, daijoubuYokattaNote, CHOICE_NOTE_PROVISIONAL,
-  contextFailureReply, CONTEXT_FAILURE_FLAG,
+  contextFailureReply, CONTEXT_FAILURE_FLAG, assessFlowChoiceTurn,
 } from "@/crisis-response.mjs";
+import {
+  flowStats, flowChoiceOf, flowCheck, flowFixHint, finalizeFlow, LOST_MEANING_RE,
+  CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET,
+} from "@/flow.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
 // ナレッジ検索・システムプロンプト構築・本生成ロジックは src/generate.mjs にある
@@ -460,6 +464,30 @@ export async function POST(req: Request) {
       const { data: userMsg } = await db.from("messages")
         .insert({ session_id: sessionId, role: "user", body: text }).select("seq").single();
 
+      // これまでの会話(今回の発言を含む)。会話の流れ(src/flow.mjs)を数えるため、判定より前に読む(2026年10月11日)。
+      // 14節の列(choices・choice_set・choice_id)が無い DB では、無いまま読む
+      type HistRow = {
+        role: string; body: string; crisis?: boolean; flags?: unknown; crisis_step?: number | null;
+        question_level?: string | null; summarized?: boolean | null; mode?: string[] | null;
+        choices?: unknown; choice_set?: string | null; choice_id?: string | null;
+      };
+      const hist = (await selectRowsWithFallback(
+        () => db.from("messages").select("role,body,crisis,flags,crisis_step,question_level,summarized,mode,choices,choice_set,choice_id").eq("session_id", sessionId).order("seq"),
+        () => db.from("messages").select("role,body,crisis,flags,crisis_step,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
+        () => db.from("messages").select("role,body,crisis,flags,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
+      )) as unknown as HistRow[];
+      // 会話の流れのチップ(組G)を押したか。直前の AI の返事に組G を付けたときだけ受け付ける。押したターンは分類器にかけない
+      // (ラベルは本人の言葉ではないため。危機の流れのチップと同じ扱い)
+      const flowChoice = flowChoiceOf(hist.slice(0, -1), choiceId);
+      if (flowChoice) {
+        const cur = hist[hist.length - 1];
+        if (cur) { cur.choice_set = flowChoice.set; cur.choice_id = flowChoice.id; }
+        if (userMsg?.seq != null) {
+          await db.from("messages").update({ choice_set: flowChoice.set, choice_id: flowChoice.id, choice_input: flowChoice.input })
+            .eq("seq", userMsg.seq);
+        }
+      }
+
       // ---- 入力フィルタ ----
       // 構造化面接AI統合 手順4より、危機分岐は risk に加えて subject(self/other)でも振り分ける。
       // 「本人の危機(self)」だけが生成スキップ+固定応答(CLAUDE.md 5.2)の対象。
@@ -489,7 +517,13 @@ export async function POST(req: Request) {
         const classifierContext = (recent ?? []).reverse()
           .map((m: { role: string; body: string }) => ({ role: m.role === "ai" ? "ai" : "user", text: m.body }));
         let v2: Awaited<ReturnType<typeof classifyStaged>>;
-        if (stagedOn) {
+        if (flowChoice && stagedOn) {
+          const assessed = assessFlowChoiceTurn(sess);
+          v2 = assessed.staged as Awaited<ReturnType<typeof classifyStaged>>;
+          plan = assessed.plan;
+        } else if (flowChoice) {
+          v2 = assessFlowChoiceTurn(sess).staged as Awaited<ReturnType<typeof classifyStaged>>;
+        } else if (stagedOn) {
           const assessed = await assessSafetyTurn(text, classifierContext, sess, choiceId);
           v2 = assessed.staged;
           plan = assessed.plan;
@@ -511,6 +545,10 @@ export async function POST(req: Request) {
         const stageForLog = plan ? plan.stage : v2.stage;
         const rulesForLog: string[] = plan ? plan.decidedBy : v2.decidedBy;
         eventReason = `${v2.model.reason}(段階${stageForLog}: ${rulesForLog.join(",") || "なし"})`;
+      } else if (flowChoice) {
+        safety = assessFlowChoiceTurn(sess).staged as Awaited<ReturnType<typeof classify>>;
+        eventKeywords = [];
+        eventReason = safety.model.reason;
       } else {
         safety = await classify(text);
         eventKeywords = safety.keywords;
@@ -594,10 +632,6 @@ export async function POST(req: Request) {
       // その場合も技術的なエラーを生徒にそのまま見せず、受け止めだけの返答で会話を続ける
       // (generateReply内で処理)。見逃さないよう flags に記録し、心理士のレビュー画面で
       // 頻度を確認できるようにしておく。
-      const hist = await selectRowsWithFallback(
-        () => db.from("messages").select("role,body,crisis,flags,crisis_step").eq("session_id", sessionId).order("seq"),
-        () => db.from("messages").select("role,body,crisis,flags").eq("session_id", sessionId).order("seq"),
-      );
       // 段階ごとの応答が無効(本番の既定)のときも、このセッションで本人の危機の固定応答を出していれば、
       // 以後の生成に危機のあとの指示を付ける(2026年10月5日。CLAUDE.md 5.17)。固定応答の次のターンで
       // 「なんでもない」と書くと、ふつうの会話に戻ってしまっていたため。判定と固定応答の分岐は変えていない
@@ -611,11 +645,20 @@ export async function POST(req: Request) {
       }
       const safetyContext = plan ? planContexts
         : defaultSafetyContexts({ risk: safety.risk, subject: safety.subject, afterCrisis });
+      // 会話の流れ(フェーズ2のときだけ使う。src/flow.mjs)。このターンの段階は、見立て・気になったことを出してよいかの判定に使う
+      const flowPhase = flowPhaseFor(sess, safetyContext);
+      const turnStage = plan ? plan.stage
+        : Math.max(safety.risk === "crisis" ? 2 : safety.risk === "watch" ? 1 : 0, afterCrisis ? 1 : 0);
+      const stats = flowStats(hist, sess, { choiceId: flowChoice?.id ?? null, stage: turnStage, contexts: safetyContext });
+      // まとめが要るとき(区切り・意味を見失った言葉・整理を選んだ・前のターンでまとめた)は、IS8・T16 を必ず参照させる
+      const summaryKnowledge = flowPhase === "phase2" && !stats.crisis
+        && ((sess.turns_since_summary ?? 0) >= 6 || LOST_MEANING_RE.test(text) || flowChoice?.id === "G2" || stats.lastWasSummary)
+        ? ["IS8", "T16"] : undefined;
       const rows = await loadKnowledge(db);
       // recommended_modeは手順6でretrieve()に渡し、フェーズ2ではモード一致のナレッジも
       // 引き出しやすくする(intake中は空配列なので、これまで通り影響しない)。
       const chunks = retrieve(
-        rows, text, sess.weight, sess.relation, undefined, safetyContext, sess.recommended_mode,
+        rows, text, sess.weight, sess.relation, undefined, safetyContext, sess.recommended_mode, summaryKnowledge,
       );
 
       const messages = hist
@@ -639,16 +682,20 @@ export async function POST(req: Request) {
       // buildSystem/applyIntakeUpdateが期待する形と一致するように選択している)。
       const system = buildSystem(
         rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
-        safetyContext, sess,
+        safetyContext, sess, { stats, text },
       );
 
       // 危機の状態で、固定の文面を出さずに生成で受けるターン(段階ごとの応答・仮。CLAUDE.md 5.2)は、出力チェックを
       // 強め(「いつでも」・数字・秘密の約束・このAIだけを頼らせる言い方も通さない)、再生成しても通らなければ、
       // 固定の返事(仮)に置き換える。職員への通知は上で出している
       const crisisGenerated = plan?.crisisGenerated === true;
+      // 会話の流れのチェック(受け止めのみの3回目・汎用の言葉の2回目など。作り直し1回)は、フェーズ2の生成だけ。
+      // 危機の状態で生成するターンでは使わない(そちらの出力チェックと固定の返事を優先する)
+      const useFlow = flowPhase === "phase2" && !crisisGenerated;
       const generated = await generateReply(
         system, messages, undefined, undefined, undefined, priorFailureCount,
-        crisisGenerated ? { extraNg: CRISIS_GENERATION_EXTRA_NG, fixHint: CRISIS_GENERATION_FIX_HINT } : undefined,
+        crisisGenerated ? { extraNg: CRISIS_GENERATION_EXTRA_NG, fixHint: CRISIS_GENERATION_FIX_HINT }
+          : useFlow ? { flowCheck: (o: Record<string, unknown>) => flowCheck(o, stats), flowFixHint } : undefined,
       );
       const priorCrisisFallbacks = hist.filter((h) => Array.isArray(h.flags)
         && (h.flags as string[]).some((f) => f.startsWith(CRISIS_FALLBACK_FLAG))).length;
@@ -679,13 +726,18 @@ export async function POST(req: Request) {
         });
       }
       const fallbackCard: string | null = fallback ? fallback.card : null;
-      const out = finalized.out;
+      // 会話の流れ: まとめの形の確かめ(満たさなければ区切りとして数えない)・返し方と強い言葉の記録・組G のチップ
+      const flowDone = useFlow && !generated.generationFailed ? finalizeFlow(finalized.out, stats) : null;
+      const out = flowDone ? flowDone.out : finalized.out;
+      const flowChoices = flowDone?.offerChoices ? CHOICES_G_PROVISIONAL : null;
       // 段階1以上で「大丈夫」の直後の返事に「よかった/安心した」があれば記録だけする(作り直さない。嶋先生 10/7。本番の既定でも)
       const stageForNote = plan ? plan.stage
         : Math.max(safety.risk === "crisis" ? 2 : safety.risk === "watch" ? 1 : 0, afterCrisis ? 1 : 0);
       const note = daijoubuYokattaNote(text, out.reply, stageForNote);
       const declinedNote = distressDeclinedNote(sess, out);
-      const flags: string[] = [...finalized.flags, ...(note ? [note] : []), ...(declinedNote ? [declinedNote] : [])];
+      const flags: string[] = [
+        ...finalized.flags, ...(note ? [note] : []), ...(declinedNote ? [declinedNote] : []), ...(flowDone?.notes ?? []),
+      ];
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);
@@ -723,12 +775,14 @@ export async function POST(req: Request) {
         ...(plan ? { safety_stage: plan.stage, safety_card: plan.card, crisis_generated: crisisGenerated } : {}),
         // 生成失敗の場面の一言に添えるカード(本番の既定でも。safety_card は db/schema.sql 11節の列)
         ...(fallbackCard ? { safety_card: fallbackCard } : {}),
+        // 整理・作業の提案のチップ(組G。仮。14節の列)
+        ...(flowChoices ? { choices: flowChoices, choice_set: FLOW_CHOICE_SET } : {}),
       };
       let { data: aiMsg, error: aiErr } = await db.from("messages").insert(aiRow).select("seq").single();
-      // 11節が未実行の DB で safety_card が無いときも、返事そのものは必ず保存する(カードは画面にだけ出す)
-      if (aiErr && fallbackCard && !plan) {
-        const { safety_card: _omit, ...rest } = aiRow as Record<string, unknown>;
-        void _omit;
+      // 11節・14節が未実行の DB で safety_card・choices が無いときも、返事そのものは必ず保存する(カード・チップは画面にだけ出す)
+      if (aiErr && (fallbackCard || flowChoices) && !plan) {
+        const { safety_card: _a, choices: _b, choice_set: _c, ...rest } = aiRow as Record<string, unknown>;
+        void _a; void _b; void _c;
         ({ data: aiMsg, error: aiErr } = await db.from("messages").insert(rest).select("seq").single());
       }
 
@@ -776,6 +830,8 @@ export async function POST(req: Request) {
         after,
         card: fallbackCard ?? plan?.card ?? null,
         care_line: plan?.card === "care" ? CARE_LINE_PROVISIONAL : null,
+        choices: flowChoices, choice_set: flowChoices ? FLOW_CHOICE_SET : null,
+        choice_note: flowChoices ? CHOICE_NOTE_PROVISIONAL : null,
         user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
       });
     }

@@ -237,6 +237,8 @@ export default function Page() {
       setMessages((m) => [...m, {
         role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
         card: r.card ?? null, careLine: r.care_line ?? null,
+        // 整理・作業の提案のチップ(組G。会話の流れ。選ばずに書いてもよい)
+        choices: r.choices ?? null, choiceNote: r.choice_note ?? null,
       }]);
       // 危機のあとの区切りでは、決まった締めの文面が続く(区切りのカードはそちらに出す)
       for (const a of (Array.isArray(r.after) ? r.after : []) as { body: string; seq?: number; crisis_step?: number }[]) {

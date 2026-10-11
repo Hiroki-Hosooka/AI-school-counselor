@@ -14,6 +14,8 @@ import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
+// 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
+import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock } from "./flow.mjs";
 import {
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
   DAIJOUBU_RULE_PROVISIONAL, CHOICE_B1_BLOCK_PROVISIONAL, choiceCBlock, intakeStyleOf, STAGE1_CLOSING_LINE_PROVISIONAL,
@@ -135,10 +137,14 @@ function toSafetyContexts(safetyContext) {
 // 対象外(.mjs)であるため、デフォルト値付きの分割代入オプション引数だと、呼び出し元(.ts)から
 // 見た推論結果が過度に狭く/欠けた型になり、route.tsのビルドがコケることがあるため
 // (n未使用ならundefinedを渡す。既存の呼び出し元はどれもnもsafetyContextも指定していない)。
-export function retrieve(rows, text, weight, relation, n, safetyContext, modes) {
+// extraIds: そのターンだけ必ず参照させたい知識の ID(まとめが要るときの IS8・T16。2026年10月11日・会話の流れ)
+export function retrieve(rows, text, weight, relation, n, safetyContext, modes, extraIds) {
   const limit = n ?? 9;
   const pool = rows.filter((k) => k.cat !== "principle" && k.cat !== "ng");
-  const forceIds = toSafetyContexts(safetyContext).flatMap((c) => SAFETY_KNOWLEDGE_IDS[c] ?? []);
+  const forceIds = [
+    ...toSafetyContexts(safetyContext).flatMap((c) => SAFETY_KNOWLEDGE_IDS[c] ?? []),
+    ...(Array.isArray(extraIds) ? extraIds : []),
+  ];
   const modeList = Array.isArray(modes) ? modes : [];
   return pool
     .map((k) => {
@@ -154,6 +160,9 @@ export function retrieve(rows, text, weight, relation, n, safetyContext, modes) 
       if (k.mode && modeList.includes(k.mode)) s += 2;
       if (relation === "visitor" && k.id === "S1") s += 4;
       if (relation === "complainant" && k.id === "S2") s += 4;
+      // コンプレイナントのときは、石田先生の問い(V4「そう感じるエピソードがあったの?」・V5「その時、どうしてほしかったの?」)も
+      // 候補に入れる。タグ(せいで・あの子 など)に当たらない相談(相談ログ 16f362dd)でも引けるように(2026年10月11日・会話の流れ)
+      if (relation === "complainant" && (k.id === "V4" || k.id === "V5")) s += 4;
       if (relation === "customer" && k.id === "S3") s += 4;
       if (forceIds.includes(k.id)) s += 10;
       return { k, s };
@@ -477,9 +486,13 @@ const PHASE2_FLOW_BLOCK = `# 進め方
 1. 関わりの型(relation)
    visitor: 問題を表明しない/解決を期待していない。→ 解決へ急がず、来てくれたこと自体をねぎらう。行動を求めない。雑談に逃げてもよい。
    complainant: 不満はあるが、自分は変えられない・相手が悪いと感じている。→ 不満に共感するが同調はしない。本人に行動を求めない。
+     ただし、行動を求めないことと、問わないことは別。出来事(「そう感じるエピソードがあったの?」)や本人の望み
+     (「その時、どうしてほしかったの?」)を聞く問いは使う。本人の見方が狭まっている言葉(「自分しかできないし誰もやってくれない」など)を、
+     こちらが強める形で返さない。出来事を聞くか、本人の望みに角度を変える。
    customer: 自分の問題として動く用意がある。→ ここで初めて具体的な行動の話が生きる。
 2. 問いの層(question_level)— none / data / diagnostic / confrontational。
-   層が上がるほど関係のできぐあいが要ります。迷ったら下の層に留めるか、問わずに受け止めだけにする。
+   層が上がるほど関係のできぐあいが要ります。迷ったら、問いの層を下げる(事実や本人の感じ方を聞く問いにする)。
+   問わないことを選ぶのは、相談者がそれを望んだとき、または直前に問いを重ねすぎたときだけ。
 3. 役割(role)— listen / assess / inform。inform は慎重に。
 4. 重心(weight)— rapport / main / goal / plan。
    plan(作戦会議)は、本人が実際に動く気になったときだけ。
@@ -540,7 +553,9 @@ export function flowPhaseFor(intake, safetyContext) {
 //
 // ナレッジが増えて対象範囲(principle/ng)が4000トークン規模に近づいたら再検討する
 // (第7節のRAG導入基準「1000件を超えたら」と同じく、規模に応じて見直す性質のもの)。
-export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake) {
+// flow(省略可。2026年10月11日・会話の流れ): { stats(src/flow.mjs の flowStats), text(相談者の今回の発言)}。
+//   フェーズ2のときだけ、決まり(FLOW_RULES_BLOCK)といまの状態(buildFlowBlock)を進め方のあとに足す
+export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake, flow) {
   const principles = rows.filter((k) => k.cat === "principle")
     .map((k) => `・${k.body}(${k.src})`).join("\n");
   const ngAt = (lv) =>
@@ -567,8 +582,10 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   const flowBlock = phase === "intake"
     ? buildIntakeBlock(intake)
     : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode)
-      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"), endingStyleOf(contexts));
-  const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA;
+      + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"), endingStyleOf(contexts))
+      + "\n\n" + FLOW_RULES_BLOCK
+      + (flow?.stats ? "\n\n" + buildFlowBlock(flow.stats, intake, flow.text) : "");
+  const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA + FLOW_OUTPUT_SCHEMA;
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
 拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、
@@ -604,7 +621,7 @@ ${ngAt(1)}
 ・複数の質問を一度に投げない。問いは多くても1つ。
 ・相手が話していないことを事実として決めつけない。
 ・技法や理論の名前を出さない。
-・一言だけで終わらせない。受けたら、次につながる一言を必ず添える。
+・一言だけで終わらせない。受けたら、次につながる一言を必ず添える(短い返事でもよいが、相談者の言葉に触れて、次につながる形にする)。
 ${safetyBlock}
 ${flowBlock}
 
@@ -650,8 +667,8 @@ ${know}
 ・相手の言葉をそのまま使って返す。言い換えすぎない。
 ・言葉にしづらそうなときは、選択肢をいくつか並べて選んでもらう形にする。
 ・文字だけでは表情も声色もわからない。決めつけずに確かめる言い方をする。
-・2〜4文程度。中高生が読みやすい、やわらかい話し言葉。敬語は堅くしすぎない。
-　会話が盛り上がってきても、この分量は変えない。
+・1〜4文程度。毎回同じ長さ・同じ型にしない。相手の発言が短く、受け止めるだけで十分なときは短くてよい。
+　中高生が読みやすい、やわらかい話し言葉。敬語は堅くしすぎない。会話が盛り上がってきても、長くしない。
 ・絵文字を使わない。箇条書きにしない。太字の見出しや、説明を複数の段落に分けない。
 
 # 出力形式(JSONのみ。前後に説明や記号を付けない)
@@ -734,6 +751,9 @@ export async function generateReply(
 ) {
   const extraNg = Array.isArray(opts?.extraNg) ? opts.extraNg : [];
   const fixHint = typeof opts?.fixHint === "string" ? opts.fixHint : "";
+  // 会話の流れの出力チェック(src/flow.mjs の flowCheck。2026年10月11日)。理由の配列を返す関数と、書き直しの指示を作る関数
+  const flowCheckFn = typeof opts?.flowCheck === "function" ? opts.flowCheck : null;
+  const flowFixFn = typeof opts?.flowFixHint === "function" ? opts.flowFixHint : null;
   const checkAll = (t) => [
     ...checkOutput(t),
     ...extraNg.filter((re) => re.test(t)).map((re) => String(re).slice(0, 42)),
@@ -818,7 +838,37 @@ export async function generateReply(
 
   // 再生成しても出力チェックに当たったまま(採用した返事に禁止表現等が残っている)か
   const checkFailed = !generationFailed && flags.length > 0 && !flags.includes("1回目に検知→再生成で解消");
-  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed };
+
+  // ---- 会話の流れのチェック(禁止表現が無いときだけ。作り直しは1回)----
+  // 受け止めのみの3回目・汎用の言葉の2回目など(src/flow.mjs)。作り直しても当たれば、少ないほうを採り、記録する。
+  // 作り直しの返事が禁止表現に当たったら採らない(安全層を優先する)
+  let flowRegens = 0;
+  if (flowCheckFn && !generationFailed && !checkFailed) {
+    const reasons = flowCheckFn(out);
+    if (reasons.length) {
+      flowRegens = 1;
+      const fix = system + "\n\n" + (flowFixFn ? flowFixFn(reasons) : "# 修正指示\n" + reasons.join("\n"));
+      let note = `会話の流れで作り直し(${reasons.join("・")})→作り直しても残った`;
+      try {
+        const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
+        const retry = parseJSON(retryResult.text);
+        usage = addUsage(usage, retryResult.usage);
+        if (checkAll(retry.reply ?? "").length === 0) {
+          const left = flowCheckFn(retry);
+          if (left.length < reasons.length) {
+            out = retry; usedModel = retryResult.model;
+            note = left.length ? `会話の流れで作り直し(${reasons.join("・")})→一部残った(${left.join("・")})` : `会話の流れで作り直し(${reasons.join("・")})→解消`;
+          }
+        } else {
+          note = `会話の流れで作り直し(${reasons.join("・")})→作り直しが禁止表現に当たったので1回目を採用`;
+        }
+      } catch {
+        note = `会話の流れで作り直し(${reasons.join("・")})→作り直しに失敗したので1回目を採用`;
+      }
+      flags = [...flags, note];
+    }
+  }
+  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens };
 }
 
 // ============================================================================

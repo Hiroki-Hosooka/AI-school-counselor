@@ -1027,6 +1027,19 @@ export async function judgeTeacherAnswer(text, recentMessages = []) {
 // choiceId: 相談者が押したチップ(画面から送られた choice_id)。直前の返事に付けた組のものだけ受け付ける。
 // チップを押したターンは分類器にかけない(ラベルは固定の文で、本人の言葉ではないため。段階はそのまま。2026年10月9日に人が確認)
 // ----------------------------------------------------------------------------
+// 会話の流れのチップ(組G「もう少しこのまま話したい」「一緒に整理してみたい」。src/flow.mjs)を押したターン。
+// ラベルは本人の言葉ではないので分類器にかけず、段階0の発言として状態だけ進める(見守りの残りなど。2026年10月11日)
+export function assessFlowChoiceTurn(state) {
+  const s = normalizeSafetyState(state);
+  const staged = {
+    risk: "none", subject: "self", stage: 0, decidedBy: ["flow_choice"], keywords: [], patterns: [], idiomExempted: [], floor: [], hits: [],
+    keywordVersion: null, model: { risk: "チップ", subject: "self", reason: "会話の流れのチップを押したターンは分類器にかけない" },
+    classifierError: null, usedModel: null, votes: [], classifierMode: "choice",
+  };
+  const plan = planSafetyTurn({ staged, state: s, text: "" });
+  return { staged, withdrawal: null, teacher: null, plan, choice: null };
+}
+
 /** @param {string|null} [choiceId] */
 export async function assessSafetyTurn(text, recentMessages, state, choiceId = null) {
   const s = normalizeSafetyState(state);
