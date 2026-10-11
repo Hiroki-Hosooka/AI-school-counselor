@@ -212,6 +212,7 @@ function buildIntakeBlock(intake) {
   if (intake?.chief_complaint_category) filled.push(`主訴カテゴリ=${intake.chief_complaint_category}`);
   if (intake?.onset_context) filled.push(`背景・きっかけ=${intake.onset_context}`);
   if (intake?.distress_level) filled.push(`つらさスケール=${intake.distress_level}`);
+  else if (intake?.distress_declined) filled.push("つらさスケール=数字では答えない(もう聞かない)");
   if (intake?.physical_mental_symptoms) filled.push(`心身症状=${intake.physical_mental_symptoms}`);
   if (intake?.user_goal) filled.push(`期待するゴール=${intake.user_goal}`);
   const filledText = filled.length ? filled.join(" / ") : "(まだ無し)";
@@ -252,6 +253,15 @@ ${filledText}
    聞いてよい。**4か5と答えた場合は、次に進む前に必ず、曖昧な危機サインへの配慮
    (受け止めを優先し、二択で程度を確認する質問はしない)を優先してください。**
 4. 期待するゴール:「今日こうやって話していく中で、どうなれたら少し心が楽になれそうかな?」
+
+## 答えたくない・わからないとき(特に重要)
+- どの項目も、答えたくない・わからない・別の話をしたという様子なら、同じ質問をくり返さない。
+  答えなくても大丈夫だと短く受け止めて、次の項目か、本人が話したいことに進む。
+- つらさスケールの数字を答えたくない・わからない・数字にできないという様子なら、それ以上数字を求めない。
+  出力の"intake"の"distress_declined"をtrueにし、"distress_level"はnullのままにする。
+  言葉で様子を話してくれたら、それを"physical_mental_symptoms"に短く要約してよい。
+- 背景・きっかけやゴールを話したくない様子なら、無理に聞き出さず、"onset_context"・"user_goal"に
+  「本人は今は話したくない」のように短く書いて、先に進めてよい。
 
 ## インテーク完了時の内部判定(ユーザーには見せない)
 主訴カテゴリ・背景・つらさスケール・ゴールの4つが埋まったら、出力の"intake"に
@@ -478,6 +488,7 @@ const INTAKE_OUTPUT_SCHEMA = `,
     "chief_complaint_category": 1から5の数値。まだ聞けていなければnull,
     "onset_context": "時期・きっかけの要約。まだなら空文字",
     "distress_level": 1から5の数値。まだ聞けていなければnull,
+    "distress_declined": つらさの数字を答えたくない・わからないと本人が示したらtrue。それ以外はfalse,
     "physical_mental_symptoms": "心身の症状の要約。無ければ空文字",
     "user_goal": "期待するゴールの要約。まだなら空文字",
     "ambivalence_detected": true または false,
@@ -854,13 +865,32 @@ export function applyIntakeUpdate(sess, out) {
   }
 
   const merged = { ...sess, ...patch };
+  // つらさスケールは、数字で答えたくない・わからないと本人が示した場合(distress_declined)も、埋まったものとして扱う
+  // (2026年10月11日・やり残しの一覧 2-7。人の確認ずみ。以前は数字を答えない生徒がインテークから抜けられず、
+  // 同じ質問がくり返されえた)。ほかの3項目と recommended_mode がそろっていることの確認は変えない(CLAUDE.md 5.13)。
+  // distress_declined は sessions の列ではない(DB を変えないため)。このターンのモデルの申告か、
+  // 前のターンで申告したこと(呼び出し側が messages.flags の DISTRESS_DECLINED_FLAG から sess.distress_declined に入れる)で判断する
+  const distressDone = merged.distress_level != null
+    || sess.distress_declined === true || i.distress_declined === true;
   const coreFilled = merged.chief_complaint_category != null && merged.onset_context
-    && merged.distress_level != null && merged.user_goal;
+    && distressDone && merged.user_goal;
   if (coreFilled && merged.recommended_mode?.length) {
     patch.phase = "phase2";
     patch.intake_completed_at = new Date().toISOString();
   }
   return patch;
+}
+
+// つらさスケールを数字で答えないと本人が示したことの記録(messages.flags。sessions に列を足さないため)。
+// 次のターンからは、呼び出し側がこの印の有無を sess.distress_declined に入れて、
+// buildIntakeBlock(もう聞かない)と applyIntakeUpdate(埋まったものとして扱う)に渡す
+export const DISTRESS_DECLINED_FLAG = "記録のみ:つらさスケールは数字で答えない";
+export function distressDeclinedNote(sess, out) {
+  if (sess.phase !== "intake" || sess.distress_declined === true || sess.distress_level != null) return null;
+  const i = out?.intake ?? {};
+  if (i.distress_declined !== true) return null;
+  if (Number.isInteger(i.distress_level) && i.distress_level >= 1 && i.distress_level <= 5) return null;
+  return DISTRESS_DECLINED_FLAG;
 }
 
 // ============================================================================

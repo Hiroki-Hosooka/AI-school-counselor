@@ -32,7 +32,7 @@ import {
   CONCERN_TEXT_PROVISIONAL, buildCrisisReply, buildConcernBubbles,
 } from "../src/crisis-response.mjs";
 import { classifyStaged, CRISIS_REPLY } from "../src/classify.mjs";
-import { checkOutput, buildSystem, retrieve, generateReply, applyClosingUpdate, flowPhaseFor } from "../src/generate.mjs";
+import { checkOutput, buildSystem, retrieve, generateReply, applyClosingUpdate, flowPhaseFor, applyIntakeUpdate, distressDeclinedNote, DISTRESS_DECLINED_FLAG } from "../src/generate.mjs";
 
 let failed = 0;
 let passed = 0;
@@ -657,6 +657,25 @@ console.log("6. 危機の流れの見直し(嶋先生 10/7)の指示・本番の
   check("本番の固定応答: 種類ごとに「〜が、とても心配です」を組む(暴力・性被害・いじめは「そのこと」)",
     buildCrisisReply("suicidal").includes(`${CONCERN_TEXT_PROVISIONAL.suicidal}が、とても心配です。あなたのために、その気持ちを`)
       && buildCrisisReply("sexual").includes("あなたのために、そのことを") && CRISIS_REPLY.includes("書いてくれたつらさが、とても心配です"));
+}
+
+{
+  // インテークで、つらさの数字を答えたくない・わからないとき(2026年10月11日・やり残しの一覧 2-7)
+  const rows = [{ id: "P1", src: "嶋石", cat: "principle", body: "原則", tags: [], weight: "any" }];
+  const base = { phase: "intake", chief_complaint_category: 2, onset_context: "春から", distress_level: null, user_goal: null, recommended_mode: null };
+  const declineOut = { intake: { distress_declined: true, distress_level: null } };
+  check("インテーク: 数字を答えないと示したターンは印(記録のみ)を残す", distressDeclinedNote(base, declineOut) === DISTRESS_DECLINED_FLAG);
+  check("インテーク: 数字を答えたターンは印を残さない", distressDeclinedNote(base, { intake: { distress_declined: true, distress_level: 3 } }) === null);
+  check("インテーク: すでに印があれば二度残さない", distressDeclinedNote({ ...base, distress_declined: true }, declineOut) === null);
+  check("インテーク: 数字を答えないだけでは、まだ phase2 に進まない(ゴール・モードが無い)", applyIntakeUpdate(base, declineOut).phase === undefined);
+  const goalOut = { intake: { user_goal: "少し楽になりたい", recommended_mode: ["LISTEN_ONLY"] } };
+  check("インテーク: 前のターンで数字を答えないと示していれば、ゴールとモードがそろって phase2 に進む",
+    applyIntakeUpdate({ ...base, distress_declined: true }, goalOut).phase === "phase2");
+  check("インテーク: 数字も答えない印も無ければ、今どおり phase2 に進まない", applyIntakeUpdate(base, goalOut).phase === undefined);
+  check("インテーク: distress_declined は sessions に書かない(列が無い)", !("distress_declined" in applyIntakeUpdate(base, declineOut)));
+  const sys = buildSystem(rows, [], "rapport", {}, 0, null, [], { ...base, distress_declined: true });
+  check("インテーク: 印があれば、プロンプトに「数字では答えない(もう聞かない)」と書く", sys.includes("数字では答えない(もう聞かない)"));
+  check("インテーク: 答えたくないときは同じ質問をくり返さない指示がある", buildSystem(rows, [], "rapport", {}, 0, null, [], base).includes("同じ質問をくり返さない"));
 }
 
 console.log(`\n${failed === 0 ? "全件通過" : `失敗 ${failed}件`}(${passed + failed}件中)`);

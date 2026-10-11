@@ -57,6 +57,7 @@ import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.m
 import {
   loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
+  DISTRESS_DECLINED_FLAG, distressDeclinedNote,
 } from "@/generate.mjs";
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
@@ -579,6 +580,10 @@ export async function POST(req: Request) {
       const priorFailureCount = hist.filter((h) => Array.isArray(h.flags)
         && (h.flags as string[]).some((f) => f.startsWith("生成失敗→固定応答で継続"))).length;
 
+      // つらさスケールを数字で答えないと、前のターンで本人が示したか(2026年10月11日・やり残し 2-7。sessions の列ではなく印で持つ)
+      (sess as Record<string, unknown>).distress_declined = hist.some((h) => Array.isArray(h.flags)
+        && (h.flags as string[]).includes(DISTRESS_DECLINED_FLAG));
+
       const { data: memory } = await db.from("person_memory")
         .select("summary").eq("client_id", clientId).maybeSingle();
       // sessをそのままintake引数として渡す(phase/chief_complaint_category等の列名が
@@ -630,7 +635,8 @@ export async function POST(req: Request) {
       const stageForNote = plan ? plan.stage
         : Math.max(safety.risk === "crisis" ? 2 : safety.risk === "watch" ? 1 : 0, afterCrisis ? 1 : 0);
       const note = daijoubuYokattaNote(text, out.reply, stageForNote);
-      const flags: string[] = note ? [...finalized.flags, note] : finalized.flags;
+      const declinedNote = distressDeclinedNote(sess, out);
+      const flags: string[] = [...finalized.flags, ...(note ? [note] : []), ...(declinedNote ? [declinedNote] : [])];
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);

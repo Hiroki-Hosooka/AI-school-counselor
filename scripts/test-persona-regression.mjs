@@ -76,7 +76,7 @@ import {
 } from "../src/crisis-response.mjs";
 import {
   getDb, loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, PRIMARY_MODELS,
-  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor, updatePersonMemory,
+  applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor, updatePersonMemory, distressDeclinedNote,
 } from "../src/generate.mjs";
 import { requireKnowledgeMatchesSeeds } from "./_lib/knowledge-check.mjs";
 
@@ -432,7 +432,10 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
     const finalized = crisisGenerated
       ? finalizeCrisisGeneration(generated, turnLog.filter((t) => t.crisis_fallback).length)
       : { out: generated.out, flags: generated.flags, fallback: false };
-    const { out, flags } = finalized;
+    const { out } = finalized;
+    // つらさスケールを数字で答えない(route.ts と同じ。2026年10月11日・やり残し 2-7)
+    const declinedNote = distressDeclinedNote(sessState, out);
+    const flags = declinedNote ? [...finalized.flags, declinedNote] : finalized.flags;
     recordCall(budget, usage, counselorModel);
 
     const updated = applyTurnUpdate(sessState, out);
@@ -464,7 +467,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
       ...(plan && HAS_STAGED_COLUMNS ? plan.nextState : {}),
     }).eq("id", sessionId);
 
-    sessState = { ...sessState, ...updated, ...intakePatch };
+    sessState = { ...sessState, ...updated, ...intakePatch, ...(declinedNote ? { distress_declined: true } : {}) };
     history.push({ speaker: "counselor", text: out.reply });
     turnLog.push({
       turn, student: studentText, student_model: studentModel,
