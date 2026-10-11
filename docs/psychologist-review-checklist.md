@@ -17,6 +17,7 @@
 | 4 | 生成に失敗したときの固定の返事(2つを順に使う) | `src/generate.mjs` の `GENERATION_FAILURE_REPLIES` | コードのコメントに「文面はまだ案」とある |
 | 4c | 生成に失敗したとき、危機のあと・気がかり・第三者の場面で出す一言(4つ) | `src/crisis-response.mjs` の `CONTEXT_FAILURE_REPLIES_PROVISIONAL` | 2026年10月11日に実装(安全フィルターの測定のあと)。本番の既定でも出る |
 | 4b | 送れなかったとき・上限(字数・回数)のときの文面 | `src/notices.mjs` | 2026年10月7日に、英語のエラーなどを見せないよう差し替えた。上限を超えても危機のサインがあれば固定応答(1)を出す |
+| 4d | ふだんの会話の受け止め方・問い方の決まりと、整理・作業の提案のチップ(「もう少しこのまま話したい」「一緒に整理してみたい」) | `src/flow.mjs` の `FLOW_RULES_BLOCK`・`CHOICES_G_PROVISIONAL`(`docs/psychologist-review-texts.md` の B2) | 2026年10月11日に実装(会話が展開しない・他人事感の修正。CLAUDE.md 5.19)。本番の既定で効く。チップの文は仮 |
 
 ## B. 段階ごとの応答(本番ではまだ使っていない。CLAUDE.md 5.16)
 

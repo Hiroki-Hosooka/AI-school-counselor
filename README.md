@@ -345,6 +345,13 @@ npm run test:crisis
   シートは「概要」(採用の条件など)・「発話ごと」・「全判定」(1判定=1行)・「説明」で、集計は
   「全判定」を参照する数式になっている。記録ファイルから作り直すときは
   `python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
+- **会話の流れ・他人事感の修正(2026年10月11日。CLAUDE.md 5.19)**:
+  - オフラインのテスト: `npm run test:flow`(相談ログ 16f362dd で、作り直しが 8・11・12 ターンだけになることなど)
+  - 検証(無料枠・合成データ): `npm run test:conversation-flow -- --variant=after --mode=replay --reps=3 --knowledge=<ナレッジの JSON> --out=<記録.jsonl>`
+    (修正前は `--variant=before --before-root=<修正前のコミットを置いた作業ツリー>`。`--mode=persona` でペルソナ P1。
+    `--rate` で返事を軽いモデルで採点、`--summary` で集計とエクセル。`--knowledge` を省くと Supabase から読む)。
+    採点の妥当性は、エクセルの「採点の較正(人が記入)」を人が埋めて `python3 scripts/export-conversation-flow-xlsx.py --agreement <ファイル>` で確かめる
+  - 管理画面の「違和感があった」の印を使うには、`db/schema.sql` の15節を Supabase の SQL エディタで実行する(未実行でも会話は止まらない)
 - **段階ごとの応答(危機検知の作り直し 第2段階。仮の文面・心理士の確認待ち。CLAUDE.md 5.16)** は、
   設定 `CRISIS_RESPONSE=staged` のときだけ動く(2026年10月11日に、本番でも有効にすると人が決めた。Vercel の環境変数に設定する)。
   有効にする前に `db/schema.sql` の11節〜14節を Supabase の SQL エディタで実行する。

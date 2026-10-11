@@ -91,6 +91,13 @@ export const LOST_MEANING_RE = /(わから|わかん|分から|分かん)(ない
 // 傾聴に切り替えてよい、相談者のはっきりした言葉
 export const LISTEN_ONLY_SAID_RE = /(聞いて(ほしい|欲しい|くれる)だけ|聞いてもらう?だけ|アドバイス(は|とか)?(いらない|要らない|いらん|なしで)|解決(は|とか)?(しなくて|いらない|求めて)|ただ聞いて|吐き出したいだけ|愚痴を?聞いて(ほしい|欲しい))/;
 
+// まとめてよいかをたずねて終えている(最後の問いの、最後の読点のあとが まとめ・整理 について)
+export function asksSummaryPermission(reply) {
+  const lastQ = sentencesOf(reply).filter((x) => /[？?]$/.test(x)).at(-1) ?? "";
+  const lastClause = lastQ.split(/[、,]/).at(-1) ?? "";
+  return /(まとめ|整理|並べ)/.test(lastClause);
+}
+
 // まとめの形を満たしているか(相談者の言葉で2〜4個並べる + 確かめ)
 export function isValidSummary(reply) {
   const t = String(reply ?? "");
@@ -199,6 +206,12 @@ export function flowStats(hist, sess, opts = {}) {
     if (ventTurns > 0 && ventTurns === modeRows) ventTurns--;
   }
   const lastWasSummary = lastAi?.summarized === true;
+  // 前回のまとめのあとに、まとめてよいかをもうたずねたか(たずねるのは1回まで。2回目からは、たずねずにまとめる)
+  let askedSummaryPermission = false;
+  for (let i = ais.length - 1; i >= 0; i--) {
+    if (ais[i].summarized) break;
+    if (!isValidSummary(ais[i].body) && asksSummaryPermission(ais[i].body)) { askedSummaryPermission = true; break; }
+  }
   // 傾聴に切り替えてよいか(この3つのときだけ。モデルの推測では切り替えない)
   const userTexts = msgs.filter((m) => m.role === "user" && !m.choice_set).map((m) => String(m.body ?? ""));
   const goal = String(sess?.user_goal ?? "");
@@ -218,7 +231,7 @@ export function flowStats(hist, sess, opts = {}) {
   return {
     receiveOnlyStreak, lastEndings, lastSentenceCounts, usedGeneric, generalizationUsed,
     phase2Index, firstMoveUsed, sinceLink, sinceHypothesis, sinceNoticed,
-    offers, lastOfferedG, chosen, lastChoice, ventTurns, lastWasSummary,
+    offers, lastOfferedG, chosen, lastChoice, ventTurns, lastWasSummary, askedSummaryPermission,
     goal, goalOrganize, workMode, listenOnly, listenOnlyReason, userTexts, modes, stage, crisis,
     hypothesisAllowed, noticedAllowed, linkDue,
   };
@@ -300,7 +313,7 @@ export const FLOW_RULES_BLOCK = `# この人の、この話にしか言えない
 
 # まとめの形
 「整理してみたい」「まとめてみたい」と言ったら、そのターンでまとめる(言っただけで別の問いに移らない)。まとめは次の形にする(IS8・T16)。
-1. 「一回まとめてみるね」と断る(または、まとめてよいかを一言たずねる。そのときは、まとめは次のターン)
+1. 「一回まとめてみるね」と断る(たずねる形にするのは1回まで。たずねたら、次のターンでは、たずね直さずにまとめる)
 2. 相談者の言葉を使って、出てきたことを2〜4個並べる(言い換えすぎない。重くしない)
 3. 「合ってるかな?」と確かめて終える(問いはこれ1つ。結論を言い切らない)
 気づきの問い(「ここまで話してみて、何か感じたことってある?」)は、まとめが合っていると本人が答えた次のターンで聞く。
@@ -329,8 +342,10 @@ export function buildFlowBlock(stats, intake, text) {
   if (stats.lastWasSummary) {
     lines.push("・前のターンでまとめを返した。本人の返事がまとめを認めるもの(合ってる・うん・そう 等)なら、この返事で「ここまで話してみて、何か感じたことってある?」と聞く。"
       + "本人がまとめを直した(そうじゃなくて・ちょっと違う 等)なら、気づきの問いは出さず、直された内容を受け止めるのを先にする。気づきの問いは、まとめが本人の感覚と合ってから。");
+  } else if (stats.askedSummaryPermission && !stats.crisis) {
+    lines.push("・★ 前の返事で、まとめてよいかをもうたずねている。もうたずねない。本人が嫌がっていなければ、この返事で「一回まとめてみるね」と断って、まとめの形でまとめる。");
   } else if (LOST_MEANING_RE.test(String(text ?? "")) && !stats.crisis) {
-    lines.push("・★ 相談者が、意味を見失ったような言葉を出している(「わからない」「なんで〜してるのか」など)。受け止めを重ねるより、この返事でまとめを提案するか、まとめる(「まとめの形」)。");
+    lines.push("・★ 相談者が、意味を見失ったような言葉を出している(「わからない」「なんで〜してるのか」など)。受け止めを重ねるより、この返事で「一回まとめてみるね」と断って、まとめる(「まとめの形」)。");
   }
   // 整理・作業の提案(組G)
   if (stats.chosen?.id === "G2") {
@@ -376,12 +391,12 @@ export function flowCheck(out, stats) {
   const dupGeneric = genericGroupsIn(reply).filter((k) => stats.usedGeneric.includes(k));
   if (dupGeneric.length) reasons.push(`B汎用の言葉の2回目(${dupGeneric.join("・")})`);
   if (ORGANIZE_SAID_RE.test(reply) && !isValidSummary(reply)) {
-    // まとめてよいかをたずねて終えている(最後の問いが まとめ・整理 について)なら当てない
+    // まとめてよいかをたずねて終えている(最後の問いが まとめ・整理 について)なら、1回目は当てない
     // (「一回整理してみたいんだけど、どんな場面が多い?」のように、同じ文の中で別の問いに移ったものは当てる)
-    const lastQ = sentencesOf(reply).filter((s) => /[？?]$/.test(s)).at(-1) ?? "";
-    const lastClause = lastQ.split(/[、,]/).at(-1) ?? "";
-    if (!/(まとめ|整理)/.test(lastClause)) reasons.push("D整理すると言ってまとめていない");
+    if (!asksSummaryPermission(reply)) reasons.push("D整理すると言ってまとめていない");
   }
+  // まとめてよいかを、2回続けてたずねない(相談ログの再生で、たずねるだけが5回続いた。2026年10月11日)
+  if (stats.askedSummaryPermission && asksSummaryPermission(reply) && !isValidSummary(reply)) reasons.push("Dまとめてよいかを2回たずねた");
   if (GENERALIZATION_RE.test(reply) && stats.generalizationUsed && !stats.modes.includes("PSYCHOEDUCATION")) reasons.push("E一般化の2回目");
   if (HUMAN_PRETENSE_RE.test(reply)) reasons.push("F人間のふり・感情的");
   const move = out?.move;
@@ -393,7 +408,7 @@ export function flowCheck(out, stats) {
 const FIX_HINTS = {
   A: "受け止めだけの返事が続いています。今回は、相談者の直前の言葉を使った問いを1つ置くか、ここまでの話をまとめの形でまとめてください(危険度を確かめる問いはしない)。",
   B: "どの話にも言える受け止めの言葉(しんどいよね・頑張ってきたんだね・無理もないよ など)と同じ意味のものを、この会話ですでに言っています。今回は言わず、相談者が今回書いた具体的な場面や言葉に触れてください。",
-  D: "「整理してみたい」と言ったのに、まとめていません。このターンでまとめの形(相談者の言葉で2〜4個並べて「合ってるかな?」)にしてください。",
+  D: "まとめると言った(または、まとめてよいかをもうたずねた)のに、まとめていません。たずねずに「一回まとめてみるね」と断って、このターンでまとめの形(相談者の言葉で2〜4個並べて「合ってるかな?」)にしてください。",
   E: "誰にでもあることとして広げる言い方を、この会話ですでに使っています。今回は使わないでください。",
   F: "人間のふりをする言い方、または相談者以上に感情的な言い方が入っています。こちらの経験や感情を語らず、相談者の言葉に戻ってください。",
   G: "このターンは、仮の見立て(「もしかして〜?」)・気になったこと(「気になった」)は出さないでください。",
@@ -502,3 +517,32 @@ export function annotateForAdmin(msgs, events) {
 
 // 「違和感があった」の理由(管理画面のチップ)
 export const DISCOMFORT_REASONS = ["同じ返し", "他人事", "重すぎる", "その他"];
+
+// ---- 検証・ペルソナテストの自動判定で使う指標(本文と記録から)----
+// 合格の目安(2026年10月11日に人が仮に採用。最初の1回を回したあとに見直す。最終の判断は人がログを読んで行う)
+export const FLOW_PASS_TARGETS = { maxReceiveOnly: 2, summaryMinTurns: 10, firstMoveWithin: 3, concreteRate: 0.7, genericRepeats: 0, maxSameEnding: 2 };
+export function conversationMetrics(hist) {
+  const msgs = hist ?? [];
+  const ais = msgs.filter(isGeneratedAi);
+  const base = flowSummaryOfSession(msgs);
+  const flagsOf = (m) => (Array.isArray(m.flags) ? m.flags.map(String) : []);
+  const regenFlags = ais.flatMap((m) => flagsOf(m).filter((f) => f.startsWith(FLOW_REGEN_PREFIX)));
+  // フェーズ2の何ターン目に最初の一手が出たか(mode が入った最初の行はインテークを終えたターン)
+  let p2 = 0, firstMoveAt = null, phase2Turns = 0;
+  const summaryAt = [];
+  ais.forEach((m, i) => {
+    if (hasMode(m)) { p2++; if (p2 >= 2) phase2Turns++; }
+    const idx = p2 >= 2 ? p2 - 1 : 0;
+    if (firstMoveAt == null && flagsOf(m).includes(FIRST_MOVE_FLAG)) firstMoveAt = idx;
+    if (m.summarized) summaryAt.push(i + 1);
+  });
+  const strong = ais.flatMap((m) => flagsOf(m).filter((f) => f.startsWith(STRONG_FLAG)));
+  const heavy = ais.flatMap((m) => flagsOf(m).filter((f) => f.startsWith(HEAVY_FLAG)));
+  const moves = {};
+  for (const m of ais) { const mv = moveOfFlags(m.flags); if (mv) moves[mv] = (moves[mv] ?? 0) + 1; }
+  return {
+    aiTurns: ais.length, ...base, regenCount: regenFlags.length, regenFlags,
+    summaries: summaryAt.length, summaryAt, firstMoveAt, phase2Turns,
+    strongCount: strong.length, heavyCount: heavy.length, strongFlags: strong, heavyFlags: heavy, moves,
+  };
+}

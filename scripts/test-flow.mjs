@@ -92,6 +92,9 @@ check("「整理してみたい」と言っただけでは満たさない", !isV
   const f = finalizeFlow({ reply: "一回整理してみたいな。どんな場面?", did_summarize: true, move: "summary" }, stats);
   check("形を満たさない did_summarize は false にして記録", f.out.did_summarize === false && f.notes.some((n) => n.includes("まとめの形")));
   check("まとめてよいかをたずねて終えるのは作り直さない", !flowCheck({ reply: "ここまでの話、一回まとめてみてもいい?" }, stats).some((r) => r.startsWith("D")));
+  const asked = flowStats([{ role: "user", body: "x" }, { role: "ai", body: "ここまでの話、一回まとめてみてもいい?", question_level: "data" }, { role: "user", body: "y" }], { phase: "phase2" }, {});
+  check("まとめてよいかを2回続けてたずねたら作り直す", asked.askedSummaryPermission && flowCheck({ reply: "そっか。一回整理してみてもいいかな?" }, asked).some((r) => r.startsWith("D")));
+  check("たずねたあとは、たずねずにまとめる指示", buildFlowBlock(asked, {}, "y").includes("もうたずねない"));
 }
 
 console.log("傾聴に切り替えてよいとき(この3つだけ)");

@@ -21,6 +21,7 @@ import path from "node:path";
 import { CRISIS_REPLY } from "../src/classify.mjs";
 import { buildSystem, GENERATION_FAILURE_REPLIES } from "../src/generate.mjs";
 import { CONTEXT_FAILURE_REPLIES_PROVISIONAL } from "../src/crisis-response.mjs";
+import { FLOW_RULES_BLOCK, CHOICES_G_PROVISIONAL, GENERIC_GROUPS, STRONG_WORDS, HEAVY_WORDS } from "../src/flow.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE } from "../src/notices.mjs";
 import {
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
@@ -241,6 +242,31 @@ ${fence(instruction(AFTER_CRISIS_BLOCK_PROVISIONAL))}
 ${asks([
   "打ち明けのあとの会話で AI が守るべきことは、これで足りていますか。",
   "逆に、縛りすぎて冷たくなるところはありますか(たとえば「窓口の案内をくり返さない」「受付の質問を続けない」)。",
+])}
+
+### B2. ふだんの会話の受け止め方・問い方の決まり(2026年10月11日から)
+
+**付けるとき:** 受付の4つの質問(E)が終わったあとの、ふだんの会話のすべての返事。開発メンバーが試した相談で、
+「同じような返され方しかされないと、まともに相手にされていない気がする」「すごく他人事感がある」「質問してくれず、ずっと受け止められると、
+何を話せばいいかわからない」という感想が出たため。受け止めだけの返事は続けて2回まで、どの話にも言える受け止めの言葉は同じ意味のものを1回の会話で1回まで、
+などをサーバでも数えて、守れていなければ1回だけ作り直しています。
+
+${fence(FLOW_RULES_BLOCK)}
+
+どの話にも言える受け止めの言葉として数えている組:${GENERIC_GROUPS.map((g) => `「${g.key}」`).join("・")}
+
+相談者が使っていないのに足したら記録している言葉(作り直しはしない):強い言葉 ${STRONG_WORDS.map((w) => w.key).join("・")} / 重さを足す言葉 ${HEAVY_WORDS.map((w) => w.key).join("・")}
+
+**整理・作業の提案のチップ(仮):** 吐き出す話が3ターン続いて、本人のゴールに「整理」が入っている(または進め方が整理に向いている)とき、
+何をするかがわかる一言のあとに、次の2つを出します(選ばずに書いてもよい)。「一緒に整理してみたい」が選ばれたら、そのまま一緒に作業を始めます。
+
+${chipList(CHOICES_G_PROVISIONAL)}
+
+${asks([
+  "受け止めだけの返事を「続けて2回まで」にしたのは、文字の相談として合っていますか(嶋先生の「思いでいっぱいの人には、まず聞かせてもらう」とのバランス)。",
+  "「仮の見立て」(「もしかして〜?」)や「気になった」と正直に言うことを、ときどき(見立ては4ターンに1回まで・気になったことは5ターンに1回まで)入れてよいでしょうか。",
+  "チップの文(「もう少しこのまま話したい」「一緒に整理してみたい」)は、押しやすい言い方でしょうか。",
+  "強い言葉・重さを足す言葉の一覧に、足すべきもの・外すべきものはありますか。",
 ])}
 
 ---
