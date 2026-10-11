@@ -24,7 +24,7 @@ type UsedKnowledge = { id: string; src: string; cat: string; body: string };
 type SafetyCard = "care" | "hotlines" | "crisis";
 type Choice = { id: string; label: string };
 const CRISIS_STEP_LABELS: Record<number, string> = {
-  1: "1通目", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "3通目への答えへの一言",
+  1: "1通目(受け止め・ここで話せた理由の問い)", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "答えへの一言",
   5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通(以前)", 8: "短いまとめの1通(以前)", 9: "終わりを受け入れる1通(以前)",
   10: "スケーリングの問い", 11: "スケーリングの受け止め", 12: "組Cの前置き", 13: "組Cへの受け止め", 14: "危機のあとの終わり方",
 };

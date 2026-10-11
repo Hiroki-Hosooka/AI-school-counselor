@@ -21,9 +21,10 @@
 //                     「気づかいの一言+折りたたみの窓口」のカードを添える(一言は1セッション1回まで)。以後3ターンは見守り。
 //                     見守り中に本人の言葉によるサイン(分類器の watch・誇張の除外)がもう一度出たら段階2に上げる。
 //   段階2(危機)  … 生成せず、固定の文面を出す(CLAUDE.md 5.2)。
-//                     1通目 受け止めだけ(+折りたたみの窓口)。相手の返事を待つ →
-//                     2通目「〜が、とても心配です」(危機の種類ごとの文面。短い吹き出しに分け、1〜2秒おいて1つずつ出す。危機カード)と
-//                     3通目「相談先や大人に話したいか」を同じターンに →
+//                     (2026年10月11日に人が決めた)最初のターンで、受け止め → 「〜が、とても心配です」(危機カード)→
+//                     「どうしてここでなら話そうと思えたのか」の問い(組Wのチップ)の3つを、間をおいて1つずつ出す →
+//                     答えを受け止める一言 + 3通目「相談先や大人に話したいか」→
+//                     (積み重なりで始めたときは、今までどおり受け止めだけの1通目 → 2通目と3通目)
 //                     答えで分ける: 話したい・どちらでもない → 一言を返して、そのあとは生成 /
 //                     話したくない → 受け止め+組B(2択)のチップ → B1(このやり取りがうっとうしい)なら深追いせず生成 /
 //                     B2(人とつながるのはおっくう。でも聞いてほしい)なら組C(「話せない」の背景)のチップ → 選んだものを受け止める一言。
@@ -69,8 +70,31 @@ export const SCALING_MAX = 2;
 export const CARE_LINE_PROVISIONAL =
   "少し気になったので、ひとことだけ。しんどさが続くときは、ひとりで抱えこまなくていいからね。";
 
-// 1通目: 受け止めだけ。相手の返事を待つ(どの打ち明けにも合う言い方)
+// 1通目: 受け止め(どの打ち明けにも合う言い方)
 export const CRISIS_STEP1_PROVISIONAL = "よく、ここで言えたね。話してくれてありがとう。";
+
+// はっきりした打ち明けへの最初のターン(2026年10月11日に人が決めた): 受け止め → 心配(危機カード)→ ここで話せた理由の問い、の
+// 3つを、間をおいて1つずつ出し、問いへの答えはチップ(組W)で選べるようにする。以前は受け止めだけで返事を待っていたが、
+// 何と返せばよいかわからなかったため。AI の番の最後は質問で終える。
+// 問いは、方法・時期・場所・本気の度合いではなく、ここを選んだ理由(リスクアセスメントにしない。CLAUDE.md 5.2)
+export const CRISIS_WHY_HERE_PROVISIONAL = "どうしてここでなら話そうと思えたのか、よかったら教えてくれる？";
+export const CHOICES_W_PROVISIONAL = [
+  { id: "W1", label: "人には言いにくいことだから" },
+  { id: "W2", label: "否定されない気がしたから" },
+  { id: "W3", label: "まわりに話せる人がいないから" },
+  { id: "W4", label: "ちょっと書いてみたかった" },
+  { id: "W5", label: "なんとなく・よくわからない" },
+];
+// 組Wで選んだものを受け止める一言(このあとに3通目の問いを続ける)。AI だけを頼る方向に寄せない・秘密を約束しない(D7)
+export const CHOICE_W_ACK_PROVISIONAL = {
+  W1: "人には言いにくいことなんだね。それでも、ここで言葉にしてくれたんだね。",
+  W2: "否定されないかどうかが、すごく大事なんだね。",
+  W3: "まわりに話せる人がいないって感じているんだね。それだと、ひとりで抱えるしかなかったよね。",
+  W4: "書いてみようと思えたんだね。その一歩は、大事なことだと思う。",
+  W5: "うん、うまく言葉にならなくても、そのままでいいよ。",
+};
+// 問いに、チップを選ばずに自由に書いて答えたとき(このあとに3通目の問いを続ける)
+export const WHY_HERE_FREE_ACK_PROVISIONAL = "教えてくれてありがとう。";
 
 // 2通目は src/crisis-texts.mjs の buildConcernBubbles(種類ごとの「〜が、とても心配です」。「重い」は使わない)
 
@@ -394,11 +418,15 @@ export function typedScale(text) {
 }
 
 // チップの組と、その選択肢
-export const CHOICE_SETS = { scaling: CHOICES_SCALING_PROVISIONAL, B: CHOICES_B_PROVISIONAL, C: CHOICES_C_PROVISIONAL };
+export const CHOICE_SETS = { scaling: CHOICES_SCALING_PROVISIONAL, B: CHOICES_B_PROVISIONAL, C: CHOICES_C_PROVISIONAL, W: CHOICES_W_PROVISIONAL };
+// 組W(ここで話せた理由)を出して答えを待っている状態か。DB の列を足さないため、pending_choice_set には入れず、
+// 「はっきりした打ち明けから始めた step1 で、組Wを出したことがある」で見分ける(2026年10月11日)
+const awaitingWhyHere = (s) => s.crisis_state === "step1" && s.crisis_trigger !== "accumulation"
+  && s.pending_choice_set == null && s.choice_sets_shown.includes("W");
 // 相談者が押したチップを確かめる。直前のAIの返事に付けた組のものだけ受け付ける(それ以外は自由に書いた発言として扱う)
 export function validateChoice(state, choiceId) {
   const s = normalizeSafetyState(state);
-  const set = s.pending_choice_set;
+  const set = s.pending_choice_set ?? (awaitingWhyHere(s) ? "W" : null);
   if (!set || !choiceId) return null;
   const item = CHOICE_SETS[set].find((c) => c.id === choiceId);
   return item ? { set, id: item.id, label: item.label, input: "button" } : null;
@@ -428,7 +456,7 @@ const mergeCategory = (a, b) => {
 
 // 記録・テストの表示用の読み方(画面側の page.tsx・admin.html は別に持つ)
 export const CRISIS_STEP_LABELS = {
-  1: "1通目", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "3通目への答えへの一言",
+  1: "1通目(受け止め・ここで話せた理由の問い)", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "答えへの一言",
   5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通(以前)", 8: "短いまとめの1通(以前)", 9: "終わりを受け入れる1通(以前)",
   10: "スケーリングの問い", 11: "スケーリングの受け止め", 12: "組Cの前置き", 13: "組Cへの受け止め", 14: "危機のあとの終わり方",
 };
@@ -555,6 +583,16 @@ export function planSafetyTurn({
       bubble(crisisStep3Text(), 3),
     ];
   };
+  // はっきりした打ち明けへの最初のターン: 受け止め → 心配(危機カード)→ ここで話せた理由の問い(組Wのチップ)
+  const firstTurnBubbles = (category) => [
+    bubble(CRISIS_STEP1_PROVISIONAL, 1),
+    bubble(buildConcernBubbles(category).join("\n"), 2, "crisis"),
+    bubble(CRISIS_WHY_HERE_PROVISIONAL, 1),
+  ];
+  // step1 のあとに出す残り。最初のターンで心配まで出した(組Wを出した)なら3通目だけ。積み重なりで始めた step1 と、
+  // 以前の流れ(受け止めだけの1通目)の途中のセッションは、心配をまだ出していないので2通目・3通目
+  const afterStep1 = (trigger, category) => (trigger !== "accumulation" && s.choice_sets_shown.includes("W")
+    ? [bubble(crisisStep3Text(), 3)] : concernAndQuestion(category));
   const crisisGeneration = (extraNext = {}, baseRules = rules) => ({
     crisisGenerated: true, safetyContexts: ["crisisGeneration", "afterCrisis"],
     decidedBy: [...baseRules, "crisis_generation"],
@@ -568,7 +606,8 @@ export function planSafetyTurn({
     : crisisGeneration(extraNext, baseRules));
   // 止めていた流れの続き。step1(1通目のあと)なら2通目・3通目、それ以外(3通目のあと・出し終えた)なら afterAllSteps
   const continueFrom = (resume, extraNext = {}, baseRules = rules) => (resume === "step1"
-    ? { bubbles: concernAndQuestion(next.crisis_category), nextState: { ...next, ...extraNext, crisis_state: "step3", watch_turns_left: 0 } }
+    ? { bubbles: afterStep1(extraNext.crisis_trigger ?? next.crisis_trigger, extraNext.crisis_category ?? next.crisis_category),
+      nextState: { ...next, ...extraNext, crisis_state: "step3", watch_turns_left: 0 } }
     : afterAllSteps(extraNext, baseRules));
   // 危機のあとの生成の文脈(組Cで選んだものがあれば、それに合わせた指示も)
   const afterCtx = (extra = []) => [...extra, "afterCrisis", ...(s.crisis_choice_c ? ["choiceC"] : [])];
@@ -612,7 +651,7 @@ export function planSafetyTurn({
     }
     // 下げない: 選んだ数字を受け止める一言 → 止まっていた次の文面(1通目のあとなら2通目・3通目。3通目のあとは答えを待つ状態に戻る)
     const ack = bubble(SCALING_ACK_PROVISIONAL, 11);
-    const tail = resume === "step1" ? concernAndQuestion(next.crisis_category) : [];
+    const tail = resume === "step1" ? afterStep1(s.crisis_trigger, next.crisis_category) : [];
     return build({
       stage: 2, subject: "self", decidedBy: [...rules, "scaling_kept"], userChoice, bubbles: [ack, ...tail],
       nextState: { ...next, crisis_state: resume === "step1" ? "step3" : resume, crisis_resume: null, crisis_negation: null, watch_turns_left: 0 },
@@ -658,10 +697,24 @@ export function planSafetyTurn({
 
   // ==== 1通目のあと(はっきりした打ち明けから始めた応答)====
   if (s.crisis_state === "step1" && s.crisis_trigger !== "accumulation") {
+    // 組W(ここで話せた理由)のチップを押した → 選んだものを受け止める一言 + 3通目
+    if (choice?.set === "W") {
+      return build({
+        stage: 2, subject: "self", decidedBy: [...rules, "choice_w"], userChoice: choice,
+        bubbles: [bubble(CHOICE_W_ACK_PROVISIONAL[choice.id], 4), bubble(crisisStep3Text(), 3)],
+        nextState: { ...next, crisis_state: "step3" },
+        event: { stage: 2, risk: eventRisk },
+      });
+    }
     if (canScale) return scalingTurn("step1");
     const category = mergeCategory(s.crisis_category, stage === 2 ? categoryOfSafety(staged) : null);
+    // 最初のターンで心配まで出している(組Wを出した)なら、自由に書いた答えを短く受け止めて3通目。
+    // 以前の流れ(受け止めだけの1通目)の途中のセッションなら、今までどおり2通目・3通目
+    const tail = s.choice_sets_shown.includes("W")
+      ? [bubble(WHY_HERE_FREE_ACK_PROVISIONAL, 4), bubble(crisisStep3Text(), 3)]
+      : concernAndQuestion(category);
     return build({
-      stage: 2, subject: "self", decidedBy: [...rules, "crisis_flow"], bubbles: concernAndQuestion(category),
+      stage: 2, subject: "self", decidedBy: [...rules, "crisis_flow"], bubbles: tail,
       notify: notifyThisTurn, notifySubject: subject,
       nextState: { ...next, crisis_state: "step3", crisis_category: category },
       event: { stage: 2, risk: eventRisk, ...negEvent, figurative: referenceOnly && figurative, crisis_category: category },
@@ -782,9 +835,19 @@ export function planSafetyTurn({
       event: { stage: 2, watch_event: watchEvent, crisis_category: category },
     };
     if (s.crisis_state === "none") {
+      // 積み重なり(見守り中の再サイン)は今までどおり、受け止めだけの1通目(折りたたみの窓口)
+      if (trigger === "accumulation") {
+        return build({
+          ...common, bubbles: [bubble(CRISIS_STEP1_PROVISIONAL, 1, "hotlines")],
+          nextState: { ...next, crisis_state: "step1", crisis_trigger: trigger, watch_turns_left: 0, crisis_category: category },
+        });
+      }
       return build({
-        ...common, bubbles: [bubble(CRISIS_STEP1_PROVISIONAL, 1, "hotlines")],
-        nextState: { ...next, crisis_state: "step1", crisis_trigger: trigger, watch_turns_left: 0, crisis_category: category },
+        ...common, bubbles: firstTurnBubbles(category), choices: { set: "W", items: CHOICES_W_PROVISIONAL },
+        nextState: {
+          ...next, crisis_state: "step1", crisis_trigger: trigger, watch_turns_left: 0, crisis_category: category,
+          choice_sets_shown: [...new Set([...s.choice_sets_shown, "W"])],
+        },
       });
     }
     // 積み重なりで止めたあと(paused1)。見守り中の再サイン(watch 相当)なら再受け止め(1回まで)、はっきりしたサインなら続きへ

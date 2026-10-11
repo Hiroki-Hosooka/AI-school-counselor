@@ -24,6 +24,7 @@ import { CONTEXT_FAILURE_REPLIES_PROVISIONAL } from "../src/crisis-response.mjs"
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE } from "../src/notices.mjs";
 import {
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
+  CRISIS_WHY_HERE_PROVISIONAL, CHOICES_W_PROVISIONAL, CHOICE_W_ACK_PROVISIONAL, WHY_HERE_FREE_ACK_PROVISIONAL,
   CHOICES_B_PROVISIONAL, CHOICES_C_PROVISIONAL, CHOICE_C_INTRO_PROVISIONAL, CHOICE_C_ACK_PROVISIONAL,
   SCALING_PROMPT_PROVISIONAL, SCALING_PROMPT_A_PROVISIONAL, CHOICES_SCALING_PROVISIONAL, SCALING_ACK_PROVISIONAL,
   CRISIS_ENDINGS_PROVISIONAL, CONCERN_TEXT_PROVISIONAL, buildConcernBubbles, buildCrisisReply,
@@ -246,15 +247,26 @@ ${asks([
 
 ## C. 分けて出す版(試作。本番ではまだ使っていません)
 
-嶋先生のご指摘(10/7 を含む)から、A1 を分けて出す形にしました。1通目だけ出して返事を待ち、2通目(心配)と3通目(相談先や大人に話したいか)は
-短い吹き出しに分けて、1.5秒ずつ間をおいて出します。そのあとは AI が会話を続け、**AI から会話を終わらせません。**
+嶋先生のご指摘(10/7 を含む)から、A1 を分けて出す形にしました。2026年10月11日から、はっきりした打ち明けへの最初のターンでは、
+受け止め → 「心配」(危機カード)→ 「どうしてここでなら話そうと思えたのか」の問い(チップでも答えられる)の3つを、1.5秒ずつ間をおいて出します。
+答えを受け止める一言のあとに、3通目(相談先や大人に話したいか)を出します。そのあとは AI が会話を続け、**AI から会話を終わらせません。**
 流れの詳しい説明は \`docs/crisis-stage2-provisional-texts.md\` にあります。
 
-### C1. 1通目(受け止めだけ。返事を待つ)
+### C1. 1通目(受け止め)
 
 ${quote(CRISIS_STEP1_PROVISIONAL)}
 
-**添えるもの:** 折りたたみの「${foldedTitle}」(押すと開きます。119番は画面下の常設の表示にあるので入れていません)
+**はっきりした打ち明けのとき(2026年10月11日から):** このあとに「心配」の吹き出し(危機カード)と、次の問いを続けます。
+
+${quote(CRISIS_WHY_HERE_PROVISIONAL)}
+
+チップ(組W): ${CHOICES_W_PROVISIONAL.map((c) => `「${c.label}」`).join("・")}
+
+選んだものへの受け止め(このあとに3通目): ${Object.entries(CHOICE_W_ACK_PROVISIONAL).map(([k, v]) => `${k}「${v}」`).join(" / ")}
+
+チップを選ばずに書いたとき: 「${WHY_HERE_FREE_ACK_PROVISIONAL}」
+
+**積み重なり(見守り中の再サイン)で始めたときの添えるもの:** 折りたたみの「${foldedTitle}」(押すと開きます。119番は画面下の常設の表示にあるので入れていません)
 
 ${list(consult)}
 

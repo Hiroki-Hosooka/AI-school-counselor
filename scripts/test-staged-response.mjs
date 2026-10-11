@@ -30,6 +30,7 @@ import {
   CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration, aftercareEnabled, hadCrisisReply, defaultSafetyContexts,
   lowersStage, typedScale, isDaijoubu, validateChoice, daijoubuYokattaNote,
   CONCERN_TEXT_PROVISIONAL, buildCrisisReply, buildConcernBubbles,
+  CRISIS_WHY_HERE_PROVISIONAL, CHOICES_W_PROVISIONAL, CHOICE_W_ACK_PROVISIONAL, WHY_HERE_FREE_ACK_PROVISIONAL,
 } from "../src/crisis-response.mjs";
 import { classifyStaged, CRISIS_REPLY } from "../src/classify.mjs";
 import { checkOutput, buildSystem, retrieve, generateReply, applyClosingUpdate, flowPhaseFor, applyIntakeUpdate, distressDeclinedNote, DISTRESS_DECLINED_FLAG } from "../src/generate.mjs";
@@ -90,11 +91,31 @@ console.log("1. planSafetyTurn の状態の移り変わり");
   check("見守り中の分類器エラーは本人のサインではない(上げない)", we.stage === 1 && we.action === "generate");
 }
 {
-  // 打ち明け → 1通目(受け止めだけ+折りたたみの窓口)。種類を覚えておく
+  // 打ち明け → 受け止め・心配(危機カード)・ここで話せた理由の問い(組Wのチップ)の3つ(2026年10月11日に人が決めた)。種類を覚えておく
   const p = planSafetyTurn({ staged: S2_KEYWORD, state: fresh });
-  check("段階2: 1通目だけを出して返事を待つ(折りたたみの窓口つき・通知)",
-    eq(steps(p), [1]) && p.bubbles[0].text === CRISIS_STEP1_PROVISIONAL && p.bubbles[0].card === "hotlines" && p.notify
-      && p.nextState.crisis_state === "step1" && p.nextState.crisis_category === "suicidal" && p.choices === null);
+  check("段階2: 受け止め → 心配(危機カード)→ ここで話せた理由の問い(組Wのチップ)を1つずつ・通知",
+    eq(steps(p), [1, 2, 1]) && p.bubbles[0].text === CRISIS_STEP1_PROVISIONAL && p.bubbles[0].card === null
+      && p.bubbles[1].card === "crisis" && p.bubbles[1].text.includes("とても心配です") && p.bubbles[2].text === CRISIS_WHY_HERE_PROVISIONAL
+      && p.choices?.set === "W" && p.notify
+      && p.nextState.crisis_state === "step1" && p.nextState.crisis_category === "suicidal" && p.nextState.choice_sets_shown.includes("W"));
+  check("AI の番の最後は質問で終わる", /？$/.test(p.bubbles[p.bubbles.length - 1].text));
+  const sw = { ...st({ crisis_state: "step1", crisis_category: "suicidal" }), choice_sets_shown: ["W"] };
+  const wChoice = validateChoice(sw, "W3");
+  check("組Wのチップは、最初のターンのあとだけ受け付ける", wChoice?.set === "W" && validateChoice(st({ crisis_state: "step1" }), "W3") === null
+    && validateChoice({ ...sw, crisis_state: "step3" }, "W3") === null);
+  const pw = planSafetyTurn({ staged: S0, state: sw, choice: wChoice });
+  check("組Wを押した → 選んだものを受け止める一言 + 3通目(心配はくり返さない)",
+    eq(steps(pw), [4, 3]) && pw.bubbles[0].text === CHOICE_W_ACK_PROVISIONAL.W3 && pw.nextState.crisis_state === "step3"
+      && pw.userChoice?.id === "W3" && !pw.notify);
+  const pf = planSafetyTurn({ staged: S0, state: sw, text: "なんとなく", withdrawal: "other" });
+  check("問いに自由に書いて答えた → 短い受け止め + 3通目", eq(steps(pf), [4, 3]) && pf.bubbles[0].text === WHY_HERE_FREE_ACK_PROVISIONAL
+    && pf.nextState.crisis_state === "step3");
+  const ps = planSafetyTurn({ staged: S0, state: sw, text: "冗談だよ", withdrawal: "withdrawal" });
+  const pk = planSafetyTurn({ staged: S0, state: { ...ps.nextState, closing_state: "none" }, choice: validateChoice(ps.nextState, "S4") });
+  check("問いへの答えが否定 → スケーリング → 下げないなら受け止め + 3通目だけ(心配はくり返さない)",
+    ps.choices?.set === "scaling" && eq(steps(pk), [11, 3]) && pk.nextState.crisis_state === "step3");
+  const acc = planSafetyTurn({ staged: S1_WATCH, state: { ...fresh, watch_turns_left: 2, care_shown: true } });
+  check("積み重なりの1通目は今までどおり受け止めだけ(折りたたみの窓口)", eq(steps(acc), [1]) && acc.bubbles[0].card === "hotlines" && acc.choices === null);
   // 1通目への返事 → 2通目(心配。短い吹き出し3つ)+3通目。危機カードは2通目の最後の吹き出し
   const r = planSafetyTurn({ staged: S0, state: st({ crisis_state: "step1", crisis_category: "suicidal" }), text: "うん", withdrawal: "other" });
   check("1通目への返事 → 2通目(心配)の吹き出し3つ+3通目を同じターンに",
@@ -250,7 +271,7 @@ console.log("1. planSafetyTurn の状態の移り変わり");
   const cls = planSafetyTurn({ staged: S2_KW_CLASSIFIER, state: s1, text: "死にたいとか冗談だよ", withdrawal: "withdrawal" });
   check("分類器が新しい危機と判定 → スケーリングを出さず(下げない)流れを続け、通知", cls.choices === null && eq(steps(cls), [2, 2, 2, 3]) && cls.notify);
   const first = planSafetyTurn({ staged: S2_KEYWORD, state: fresh, text: "死にたいとか冗談だよ", withdrawal: null });
-  check("まだ危機の応答を始めていないときの「死にたいとか冗談だよ」→ 今どおり打ち明けとして1通目", eq(steps(first), [1]) && first.notify);
+  check("まだ危機の応答を始めていないときの「死にたいとか冗談だよ」→ 今どおり打ち明けとして最初のターン", eq(steps(first), [1, 2, 1]) && first.notify);
   const done = planSafetyTurn({ staged: S2_KEYWORD, state: { ...st({ crisis_state: "done" }), scaling_count: SCALING_MAX }, text: "死にたいとか冗談だよ", withdrawal: "withdrawal" });
   check("スケーリングを出せないときの「死にたいとか冗談だよ」→ 危機のあとの指示で生成・通知(2回目以降の短い1通は出さない)",
     done.action === "generate" && !done.crisisGenerated && done.notify && done.safetyContexts.includes("afterCrisis") && !done.nextState.repeat_used);
@@ -321,7 +342,10 @@ console.log("1. planSafetyTurn の状態の移り変わり");
 console.log("2. 仮の文面が出力チェック(OUTPUT_NG)に引っかからない");
 // ============================================================================
 const ALL_TEXTS = [
-  ["気づかいの一言", CARE_LINE_PROVISIONAL], ["1通目", CRISIS_STEP1_PROVISIONAL],
+  ["気づかいの一言", CARE_LINE_PROVISIONAL], ["1通目", CRISIS_STEP1_PROVISIONAL], ["ここで話せた理由の問い", CRISIS_WHY_HERE_PROVISIONAL],
+  ["自由に書いた答えへの受け止め", WHY_HERE_FREE_ACK_PROVISIONAL],
+  ...Object.entries(CHOICE_W_ACK_PROVISIONAL).map(([k, v]) => [`組Wへの受け止め ${k}`, v]),
+  ...CHOICES_W_PROVISIONAL.map((c) => [`組W ${c.id}`, c.label]),
   ...Object.keys(CONCERN_TEXT_PROVISIONAL).flatMap((c) => buildConcernBubbles(c === "unknown" ? null : c).map((t, i) => [`2通目(${c})${i + 1}`, t])),
   ...Object.entries(CRISIS_STEP3_VARIANTS_PROVISIONAL).map(([k, t]) => [`3通目(候補${k})`, t]),
   ["3通目への答え(前向き)", CRISIS_STEP4_PROVISIONAL.yes], ["3通目への答え(後ろ向き)", CRISIS_STEP4_PROVISIONAL.no],

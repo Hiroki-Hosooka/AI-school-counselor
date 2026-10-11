@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
   CARE_LINE_PROVISIONAL, CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL,
+  CRISIS_WHY_HERE_PROVISIONAL, CHOICES_W_PROVISIONAL, CHOICE_W_ACK_PROVISIONAL, WHY_HERE_FREE_ACK_PROVISIONAL,
   CRISIS_STEP4_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL,
   CHOICES_B_PROVISIONAL, CHOICES_C_PROVISIONAL, CHOICE_C_INTRO_PROVISIONAL, CHOICE_C_ACK_PROVISIONAL, CHOICE_NOTE_PROVISIONAL,
   SCALING_PROMPT_PROVISIONAL, SCALING_PROMPT_A_PROVISIONAL, CHOICES_SCALING_PROVISIONAL, SCALING_ACK_PROVISIONAL,
@@ -72,12 +73,28 @@ const md = `# 危機の応答(段階2)の仮の文面(嶋先生 10/7 を反映�
   見守りは${WATCH_TURNS}ターンです。
 - 画面下の常設の表示(119番・24時間子供SOSダイヤル)は、どの場面でも変えていません。
 
-## 1通目 受け止めだけ
+## 1通目 受け止め
 
-**添えるもの:** 折りたたみの窓口
+**添えるもの:** はっきりした打ち明けのときは、このあとに「心配」(危機カード)と下の問いを続ける。積み重なりで始めたときは、これだけで折りたたみの窓口を添える
 ${list(consult)}
 
 ${quote(CRISIS_STEP1_PROVISIONAL)}
+
+## 最初のターンの3つ目 ここで話せた理由の問い(2026年10月11日)
+
+**出すとき:** はっきりした打ち明けへの最初のターン。受け止め → 「心配」(危機カード)→ この問い、の3つを間をおいて1つずつ出す
+(積み重なりで始めたときは出さず、上の「受け止めだけ」の1通目)。答えはチップでも選べる。
+
+${quote(CRISIS_WHY_HERE_PROVISIONAL)}
+
+**チップ(組W):**
+${CHOICES_W_PROVISIONAL.map((c) => `- ${c.id} ${c.label}`).join("\n")}
+
+**選んだものへの受け止め(このあとに3通目):**
+${Object.entries(CHOICE_W_ACK_PROVISIONAL).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
+
+**チップを選ばずに書いたとき(このあとに3通目):** ${WHY_HERE_FREE_ACK_PROVISIONAL}
+
 
 ## 2通目 「〜が、とても心配です」(危機の種類ごと)
 

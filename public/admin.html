@@ -433,20 +433,20 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     negation_reference: "危機のキーワードと否定が同じ発言(新しいサインとして数えず、通知した)",
     negation_reference_figurative: "危機のキーワードと否定が同じ発言で、比喩・強調と判定(通知しない)",
     choice: "チップを押したターン(分類器にかけない)",
-    choice_b1: "組B: このやり取りがうっとうしい", choice_b2: "組B: おっくう。でも聞いてほしい→組C", choice_c: "組Cを選んだ",
+    choice_w: "組W(ここで話せた理由)を選んだ", choice_b1: "組B: このやり取りがうっとうしい", choice_b2: "組B: おっくう。でも聞いてほしい→組C", choice_c: "組Cを選んだ",
     keyword_floor: "段階1の語(キーワード v3)",
     too_long: "字数の上限を超えた発言(分類器は使わず、キーワード・受動パターンだけで照合)",
     rate_limited: "回数の上限を超えた発言(分類器は使わず、キーワード・受動パターンだけで照合)"
   };
   // 危機の応答の何通目か(crisis_step)の読み方
   var STEP_JA = {
-    1: "1通目", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "3通目への答えへの一言",
+    1: "1通目(受け止め・ここで話せた理由の問い)", 2: "2通目(心配)", 3: "3通目(相談先や大人)", 4: "答えへの一言",
     5: "2回目以降の短い1通", 6: "再受け止め", 7: "まとめの1通(以前)", 8: "短いまとめの1通(以前)", 9: "終わりを受け入れる1通(以前)",
     10: "スケーリングの問い", 11: "スケーリングの受け止め", 12: "組Cの前置き", 13: "組Cへの受け止め", 14: "危機のあとの終わり方"
   };
   var NEG_JA = { A: "A 生きたい気持ち", B: "B 冗談・取り消し", C: "C 最小化・引き下がり" };
   var CATEGORY_JA = { suicidal: "希死念慮", selfharm: "自傷・過量服薬", violence: "暴力・虐待", sexual: "性被害", bullying: "重大ないじめ" };
-  var CHOICE_SET_JA = { scaling: "気持ちのスケーリング", B: "組B(話したくない)", C: "組C(話せない背景)" };
+  var CHOICE_SET_JA = { scaling: "気持ちのスケーリング", B: "組B(話したくない)", C: "組C(話せない背景)", W: "組W(ここで話せた理由)" };
   function stepJa(n) { return STEP_JA[n] || (n + "通目"); }
   function renderSafetyEvents(events) {
     if (!events || !events.length) { safetyBlockEl.hidden = true; safetyBlockEl.innerHTML = ""; return; }
