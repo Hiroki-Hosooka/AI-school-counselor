@@ -10,7 +10,8 @@ import { CRISIS_WORDS, OUTPUT_NG, crisisRulesV2 } from "../src/safety.mjs";
 import { crisisRulesV3, matchNegation, crisisCategoryOf } from "../src/crisis-keywords-v3.mjs";
 import { classifyLocal } from "../src/classify.mjs";
 import { CONTEXT_FAILURE_REPLIES_PROVISIONAL, contextFailureReply, CRISIS_GENERATION_EXTRA_NG } from "../src/crisis-response.mjs";
-import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
+import { GENERATION_FAILURE_REPLIES, pickFailureReply } from "../src/generate.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE } from "../src/notices.mjs";
 
 // index.ts の checkOutput() と同じロジック
 const checkOutput = (text) => OUTPUT_NG.filter((re) => re.test(text));
@@ -23,6 +24,11 @@ const checkCrisis = (text) => CRISIS_WORDS.filter((w) => text.includes(w));
 const ALLOWED = [
   "あ、別に相談じゃなくてもいいですよ",
   "また何かあったら、いつでもどうぞ",
+  // 2026年10月11日(2-5)。クロージングの窓口の一言・生徒の言葉の反射は通す
+  "しんどくなったら、いつでもこういうところに頼っていいよ",
+  "しんどくなったら、窓口をいつでも頼っていいよ",
+  "いつでも誰かに見張られてる感じがするんだね",
+  "いつでも元気でいなきゃって思ってたんだね",
   "そっか、わかんないかー",
   "そう感じるエピソードがあったの？",
   // 2026年9月・2-1で追加。V14(先生に相談していいか尋ねる型)や、
@@ -46,6 +52,14 @@ const MUST_DETECT = [
   "あの子ほんとにひどいね",
   "あなたは悪くないよ",
   "いつでも電話してね",
+  // 2026年10月11日(2-5)。AI自身がいつでも居る・聞くと約束する言い方
+  "いつでもここにいるよ",
+  "いつでも聞くよ",
+  "いつでも話を聞くからね",
+  "いつでも、そばにいるからね",
+  "わたしはいつでも味方だよ",
+  "いつでも付き合うよ",
+  "いつでも待ってるね",
   "認知行動療法という方法があります",
   "一人でもいいじゃん",
   // 2026年9月・2-1で追加。ペルソナ回帰テストB4で実際に確認された不具合。
@@ -259,7 +273,7 @@ check(`字数の上限の文が、本当に上限(${MAX_TEXT_LENGTH}字)を超�
   && !crisisRulesV2(filler.slice(0, MAX_TEXT_LENGTH)).keywords.length);
 
 console.log("\n[上限・エラーの文面] 生徒に見せる文面が出力チェック(OUTPUT_NG)に当たらないこと");
-for (const [name, text] of Object.entries({ TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE })) {
+for (const [name, text] of Object.entries({ TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE })) {
   const hit = checkOutput(text);
   check(name, hit.length === 0 && !/[A-Za-z]{3,}/.test(text), hit.length ? `一致: ${hit.join(", ")}` : "英字が入っている");
 }
@@ -284,6 +298,14 @@ console.log("\n[生成失敗の場面の一言] 場面・回数ごとの出し�
     ["第三者 3回目: 一言なしなら窓口のカード", contextFailureReply(["thirdParty"], 2), { scene: "thirdParty", reply: "", card: "hotlines", review: true }],
   ];
   for (const [label, got, want] of cases) check(label, JSON.stringify(got) === JSON.stringify(want), `結果: ${JSON.stringify(got)}`);
+}
+
+console.log("\n[生成失敗の固定応答(ふつうの会話)] 同じ文をくり返さない(2026年10月11日。やり残しの一覧 2-2)");
+{
+  const seq = [0, 1, 2, 3, 5].map((n) => pickFailureReply(n));
+  check("1回目・2回目・3回目がすべて違う", new Set(seq.slice(0, 3)).size === 3, `結果: ${JSON.stringify(seq.slice(0, 3))}`);
+  check("1回目・2回目は GENERATION_FAILURE_REPLIES のとおり", seq[0] === GENERATION_FAILURE_REPLIES[0] && seq[1] === GENERATION_FAILURE_REPLIES[1]);
+  check("3回目以降は仕組みのお知らせ(GENERATION_STUCK_NOTICE)", seq.slice(2).every((t) => t === GENERATION_STUCK_NOTICE));
 }
 
 console.log(`\n${failures === 0 ? "全件通過" : `${failures} 件失敗`}`);

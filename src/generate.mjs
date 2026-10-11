@@ -12,6 +12,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
+import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
 import {
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
@@ -694,9 +695,13 @@ export const GENERATION_FAILURE_REPLIES = [
   "ごめん、いま自分の方でうまく受け取れなかったみたい。もう少しだけ聞かせてもらえる?",
   "またうまく受け取れなくてごめん。焦らなくていいから、ちょっとずつでも大丈夫だよ。",
 ];
-function pickFailureReply(priorFailureCount) {
-  const idx = Math.min(Math.max(priorFailureCount, 0), GENERATION_FAILURE_REPLIES.length - 1);
-  return GENERATION_FAILURE_REPLIES[idx];
+// 3回目以降(2026年10月11日・やり残しの一覧 2-2): 以前は2つ目の文で止まり、同じ文がくり返されていた。
+// 3回目からは、AIの言葉としてではなく、仕組みの不調を知らせる文(src/notices.mjs の GENERATION_STUCK_NOTICE。
+// 画面下の窓口への案内つき)に切り替える。同じ相手から同じ言葉が何度も来るのではなく、仕組みのお知らせとして読めるようにするため。
+// 文面は仮(心理士さんの確認待ち)。
+export function pickFailureReply(priorFailureCount) {
+  const n = Math.max(priorFailureCount, 0);
+  return n < GENERATION_FAILURE_REPLIES.length ? GENERATION_FAILURE_REPLIES[n] : GENERATION_STUCK_NOTICE;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -21,7 +21,7 @@ import path from "node:path";
 import { CRISIS_REPLY } from "../src/classify.mjs";
 import { buildSystem, GENERATION_FAILURE_REPLIES } from "../src/generate.mjs";
 import { CONTEXT_FAILURE_REPLIES_PROVISIONAL } from "../src/crisis-response.mjs";
-import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE } from "../src/notices.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE } from "../src/notices.mjs";
 import {
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
   CHOICES_B_PROVISIONAL, CHOICES_C_PROVISIONAL, CHOICE_C_INTRO_PROVISIONAL, CHOICE_C_ACK_PROVISIONAL,
@@ -182,9 +182,13 @@ ${asks([
 ### A3. 返事が作れなかったときの文面
 
 **出るとき:** システムの不具合や Google 側の安全フィルターなどで AI の返事が作れなかったとき。ふつうの会話では次の文面です。
-同じ文面を2回出さないよう、1回目と2回目以降で変えています。
+同じ文面を2回出さないよう、1回目・2回目で変え、3回目以降は AI の言葉ではなく仕組みのお知らせにしています(2026年10月11日)。
 
-${GENERATION_FAILURE_REPLIES.map((t, i) => `${i === 0 ? "1回目" : "2回目以降"}\n\n${quote(t)}`).join("\n\n")}
+${GENERATION_FAILURE_REPLIES.map((t, i) => `${i + 1}回目\n\n${quote(t)}`).join("\n\n")}
+
+3回目以降
+
+${quote(GENERATION_STUCK_NOTICE)}
 
 **危機のあと・気がかり・第三者の心配の会話では**、上の文面ではなく、場面ごとの一言を出します(2026年10月11日。打ち明けを言い直させないため)。
 危機のあとは窓口のカードも添えます。同じ会話で2回目は短い別の一言、3回目以降は一言を出さず窓口のカードだけにします。
@@ -193,6 +197,7 @@ ${[["危機のあと", CONTEXT_FAILURE_REPLIES_PROVISIONAL.afterCrisis], ["気�
 
 ${asks([
   "ふつうの会話の「もう少しだけ聞かせてもらえる?」は、つらい話をもう一度書かせる負担になりませんか。",
+  "3回目以降のお知らせ(仕組みの調子が悪い)は、同じ会話で何度出ても、くり返しとして傷つけないでしょうか。",
   "場面ごとの一言の「ちゃんと受け取っているよ」は、返事が作れなかった場面で言ってよい言葉でしょうか。",
 ])}
 
