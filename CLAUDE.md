@@ -59,6 +59,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── classify.mjs       危機の判定(v1・v2 の段階つき)と固定応答 CRISIS_REPLY
 │   ├── generate.mjs       ナレッジ検索・プロンプトの組み立て・生成・出力チェック・人単位の記憶
 │   ├── crisis-response.mjs 段階ごとの応答(仮)と「危機のあと」の指示(5.16・5.17)
+│   ├── knowledge-admin.mjs ナレッジ管理画面の入力の確かめ(削除させない・必須の列・原則と禁止を残す)
 │   ├── crisis-keywords-v3.mjs 危機キーワード v3(既定。設定 CRISIS_KEYWORDS=v2 で以前のリスト)と否定のキーワード(A・B)
 │   └── app/
 │       ├── layout.tsx     フォント・メタデータ
@@ -66,7 +67,8 @@ Postgres(Supabase。データベースとしてのみ使う)
 │       ├── globals.css
 │       └── api/chat/route.ts   判断ロジック・プロンプト・安全層・DB読み書き
 ├── public/
-│   └── admin.html         心理士用のログレビュー画面(合言葉で保護。5.9)
+│   ├── admin.html         心理士用のログレビュー画面(合言葉で保護。5.9)
+│   └── knowledge.html     心理士用のナレッジ管理画面(同じ合言葉。削除はできない。確かめは src/knowledge-admin.mjs)
 ├── db/
 │   ├── schema.sql                    テーブル定義・トリガ・ビュー
 │   ├── seed_knowledge.sql            ナレッジ初期データ 140件
@@ -353,6 +355,9 @@ AIが前回の詳細を精度高く再生できてしまうと、5.4で述べた
 **5.4「ログインを追加しない」は生徒側の話であり、この画面には適用しない。**
 生徒の相談内容が見える画面を無保護にしないこと。逆に、生徒側の `src/app/page.tsx` に
 この画面と同じ強度の認証を持ち込まないこと(敷居を上げてしまう)。
+
+**ナレッジ管理画面(`public/knowledge.html`。2026年10月11日)も同じ `ADMIN_TOKEN` で守る**(`admin_knowledge_list`・
+`admin_knowledge_save`・`admin_knowledge_history`)。ナレッジの書き換えができる画面なので、認証を外さないこと。
 
 **`page.tsx` の設定パネル最下部に、admin.htmlへの小さなリンク(「スタッフ用ページ」)がある
 (2026年9月・本人の依頼により追加)。** 合言葉(`ADMIN_TOKEN`)はリンクに埋め込んでいない。

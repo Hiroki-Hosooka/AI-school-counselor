@@ -10,6 +10,7 @@
     "test:safety": "node scripts/test-output-check.mjs",
     "test:staged-response": "node scripts/test-staged-response.mjs",
     "test:negation": "node scripts/test-crisis-negation.mjs",
+    "test:knowledge-admin": "node scripts/test-knowledge-admin.mjs",
     "test:followup": "node scripts/test-crisis-followup.mjs",
     "test:replay": "node scripts/test-staged-replay.mjs",
     "test:crisis": "node scripts/test-crisis-detection.mjs",

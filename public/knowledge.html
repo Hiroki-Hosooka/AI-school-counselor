@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>ナレッジ管理</title>
+<!--
+  ナレッジ管理画面(docs/backlog.md 1-1。2026年10月11日)
+  心理士さんが、Supabase の英語の画面を使わずにナレッジ(knowledge テーブル)を見て・直して・足せるようにする。
+  ・合言葉は会話ログの画面(admin.html)と同じ ADMIN_TOKEN。同じタブで admin.html に入っていれば、もう一度は聞かない
+  ・削除はできない。使わなくするときは「使う」を外す(履歴は knowledge_history に残る)
+  ・入力の確かめはサーバ側(src/knowledge-admin.mjs)。この画面は表示と入力だけ(CLAUDE.md 6節)
+  ・直した内容は、60秒以内に AI の応答に使われる(サーバのナレッジのキャッシュが60秒のため)
+-->
+<style>
+:root{
+  --paper:#FBFAF7; --ink:#232A2E; --ink-soft:#5C6A70; --ink-faint:#8B979C;
+  --indigo:#2F4858; --moss:#6E8B74; --amber:#A8794A;
+  --sand:#E4E0D6; --sand-deep:#D3CDBF;
+  --alert:#A8443A; --alert-bg:#FBF1EF;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;font-size:14.5px;line-height:1.75}
+header{border-bottom:1px solid var(--sand);padding:14px 20px;background:var(--paper);position:sticky;top:0;z-index:5}
+.head-row{display:flex;align-items:baseline;gap:12px;max-width:980px;margin:0 auto;width:100%;flex-wrap:wrap}
+.mark{font-size:17px;font-weight:600;color:var(--indigo)}
+.sub{font-size:11.5px;color:var(--ink-faint)}
+.spacer{flex:1}
+a{color:var(--indigo)}
+button{font-family:inherit;cursor:pointer}
+.icon-btn{background:none;border:1px solid var(--sand);border-radius:999px;color:var(--ink-soft);font-size:11.5px;padding:5px 13px}
+.icon-btn:hover{border-color:var(--ink-faint);color:var(--ink)}
+.primary{background:var(--indigo);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13.5px}
+.primary:disabled{opacity:.5;cursor:default}
+main{max-width:980px;margin:0 auto;padding:22px 20px 60px}
+.notice{border:1px solid var(--sand-deep);background:#fff;border-radius:9px;padding:14px 16px;font-size:13px;line-height:1.85;margin-bottom:16px;color:var(--ink-soft)}
+.notice.warn{border-color:#E8CFC9;background:var(--alert-bg);color:var(--alert)}
+.notice.ok{border-color:#CFDCD1;background:#F2F6F2;color:#3F5E46}
+input,select,textarea{font-family:inherit;font-size:13.5px;border:1px solid var(--sand-deep);border-radius:7px;padding:6px 9px;background:#fff;color:var(--ink);max-width:100%}
+textarea{width:100%;line-height:1.8}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.filters input[type=search]{flex:1;min-width:160px}
+.count{font-size:12px;color:var(--ink-faint)}
+table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--sand);border-radius:9px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--sand);vertical-align:top;font-size:13px}
+th{background:#F6F5F1;color:var(--ink-soft);font-weight:600;font-size:12px;white-space:nowrap}
+tr.row{cursor:pointer}
+tr.row:hover td{background:#FAF8F3}
+tr.off td{color:var(--ink-faint)}
+.body-cell{max-width:520px}
+.clip{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tag{display:inline-block;border:1px solid var(--sand-deep);border-radius:999px;padding:0 8px;font-size:11px;color:var(--ink-soft);margin:1px 3px 1px 0;white-space:nowrap}
+.tag.off{border-color:#E8CFC9;color:var(--alert)}
+.form-grid{display:grid;grid-template-columns:140px 1fr;gap:10px 14px;align-items:start}
+.form-grid label{font-size:12.5px;color:var(--ink-soft);padding-top:7px}
+.hint{font-size:11.5px;color:var(--ink-faint);margin-top:2px}
+.actions{display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap}
+.history-item{border:1px solid var(--sand);background:#fff;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12.5px}
+.history-item .when{color:var(--ink-faint);font-size:11.5px}
+.diff-old{color:var(--alert);text-decoration:line-through;white-space:pre-wrap}
+.diff-new{color:#3F5E46;white-space:pre-wrap}
+@media (max-width:640px){
+  .form-grid{grid-template-columns:1fr}
+  .form-grid label{padding-top:0}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-row">
+    <span class="mark">ナレッジ管理</span>
+    <span class="sub">心理士専用・このページのURLを共有しないでください</span>
+    <span class="spacer"></span>
+    <a class="icon-btn" href="/admin.html" style="text-decoration:none">相談ログ レビューへ</a>
+    <button id="newBtn" class="icon-btn" hidden>新しく足す</button>
+    <button id="refreshBtn" class="icon-btn" hidden>更新</button>
+  </div>
+</header>
+<main>
+  <form id="loginForm" class="notice" hidden>
+    <p style="margin:0 0 10px">このページを開くには、合言葉を入力してください(相談ログ レビュー画面と同じ合言葉です)。</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="password" id="tokenInput" autocomplete="current-password" placeholder="合言葉" style="flex:1;min-width:180px">
+      <button type="submit" class="primary">開く</button>
+    </div>
+    <p id="authError" class="hint" style="color:var(--alert)" hidden>合言葉が違うようです。もう一度入力してください。</p>
+  </form>
+
+  <div id="message" class="notice" hidden></div>
+
+  <section id="listView" hidden>
+    <div class="notice">
+      AI が応答を作るときに参照する知識です。<b>削除はできません。</b>使わなくするときは「使う」のチェックを外してください(変更の履歴は残ります)。
+      直した内容は、1分ほどで AI の応答に使われます。<b>逐語(カウンセラーの実際の発話)は、要約せず言い回しをそのまま保ってください。</b>
+    </div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="本文・ID・タグで探す">
+      <select id="fSrc"><option value="">出典: すべて</option></select>
+      <select id="fCat"><option value="">種別: すべて</option></select>
+      <select id="fWeight"><option value="">重心: すべて</option></select>
+      <select id="fActive">
+        <option value="on">使っているものだけ</option>
+        <option value="off">使っていないものだけ</option>
+        <option value="">すべて</option>
+      </select>
+      <span id="count" class="count"></span>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>出典</th><th>種別</th><th class="hide-sm">重心</th><th>本文</th><th class="hide-sm">タグ</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p style="margin-top:22px"><button id="allHistoryBtn" class="icon-btn">最近の変更の履歴を見る</button></p>
+    <div id="allHistory"></div>
+  </section>
+
+  <section id="editView" hidden>
+    <p><button id="backBtn" class="icon-btn">← 一覧へ戻る</button></p>
+    <h2 id="editTitle" style="font-size:16px;color:var(--indigo);margin:8px 0 14px"></h2>
+    <div id="verbatimWarn" class="notice warn" hidden>これは逐語です。要約したり言い回しを整えたりせず、実際の発話のまま保ってください。</div>
+    <form id="editForm" class="form-grid">
+      <label for="eId">ID</label>
+      <div><input id="eId" maxlength="20" required><div class="hint">半角の英数字・ハイフン・アンダースコア(例: V27)。あとから変えられません</div></div>
+      <label for="eSrc">出典</label>
+      <div><select id="eSrc" required></select><div class="hint">嶋 / 石 / 嶋石(二者が一致・最も強い根拠)/ 理(JILPT)/ 設(設計判断)/ 技(技法資料・取材で未検証)</div></div>
+      <label for="eSchool">流派</label>
+      <div><input id="eSchool" required style="width:100%"><div class="hint">例: 来談者中心寄り / 人間性心理学ベース・折衷 / 設計判断。流派の違う知識を混ぜないため必ず入れてください</div></div>
+      <label for="eCat">種別</label>
+      <div><select id="eCat" required></select></div>
+      <label for="eLv" id="eLvLabel">禁止の強さ</label>
+      <div id="eLvBox"><select id="eLv">
+        <option value="">選んでください</option><option value="3">3 絶対にしない</option><option value="2">2 避ける</option><option value="1">1 好ましくない</option>
+      </select></div>
+      <label for="eWeight">重心</label>
+      <div><select id="eWeight"></select><div class="hint">順序ではありません。行き来します</div></div>
+      <label for="eTags">タグ</label>
+      <div><input id="eTags" style="width:100%"><div class="hint">読点(、)かカンマで区切る。原則・禁止は毎回すべて使うので、タグは要りません</div></div>
+      <label for="eMode">モード</label>
+      <div><select id="eMode"></select><div class="hint">技法カタログ(出典 技)だけ。ふつうは空のまま</div></div>
+      <label for="eBody">本文</label>
+      <div><textarea id="eBody" rows="6" required></textarea></div>
+      <label for="eNote">補足</label>
+      <div><textarea id="eNote" rows="3"></textarea><div class="hint">採用の理由・出典など(AI には渡しません)</div></div>
+      <label for="eActive">使う</label>
+      <div><label style="padding:0"><input type="checkbox" id="eActive"> AI の応答に使う</label></div>
+      <label for="eBy">直した人</label>
+      <div><input id="eBy" maxlength="40" placeholder="例: 嶋"><div class="hint">履歴に残ります(この端末に覚えておきます)</div></div>
+    </form>
+    <div class="actions">
+      <button id="saveBtn" class="primary">保存する</button>
+      <span id="saveMsg" class="hint"></span>
+    </div>
+    <h3 style="font-size:14px;color:var(--ink-soft);margin:30px 0 10px">この知識の変更の履歴</h3>
+    <div id="history"></div>
+  </section>
+</main>
+<script>
+(function () {
+  "use strict";
+  var TOKEN_KEY = "sc_admin_token"; // admin.html と同じ
+  var BY_KEY = "sc_knowledge_editor";
+  var store = {
+    get: function (k) { try { return sessionStorage.getItem(k) || ""; } catch (e) { return ""; } },
+    set: function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* 保存できなくても続ける */ } },
+    clear: function (k) { try { sessionStorage.removeItem(k); } catch (e) { /* noop */ } },
+  };
+  var local = {
+    get: function (k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* noop */ } },
+  };
+  var token = store.get(TOKEN_KEY);
+  var $ = function (s) { return document.querySelector(s); };
+
+  var SRC = ["嶋", "石", "嶋石", "理", "設", "技"];
+  var CAT_JA = { principle: "原則", ng: "禁止", stance: "関わりの型", ask: "問い", resp: "応答技法", read: "見立て", role: "役割", verbatim: "逐語", limit: "限界", ctx: "文脈" };
+  var WEIGHT_JA = { rapport: "関係をつくる", main: "主訴を見極める", goal: "目標を立てる", plan: "作戦会議", any: "どれでも" };
+  var MODES = ["", "CBT", "SFBT", "NARRATIVE", "ASSERTION", "LISTEN_ONLY", "PROBLEM_SOLVING", "PSYCHOEDUCATION", "MI"];
+  var LV_JA = { 3: "絶対にしない", 2: "避ける", 1: "好ましくない" };
+  var FIELD_JA = { src: "出典", school: "流派", cat: "種別", lv: "禁止の強さ", weight: "重心", tags: "タグ", body: "本文", note: "補足", mode: "モード", active: "使う", updated_by: "直した人" };
+
+  var all = [];
+  var editing = null; // null = 新しく足す
+
+  function esc(v) {
+    return String(v === undefined || v === null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmt(iso) {
+    try { return new Date(iso).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); }
+    catch (e) { return iso || ""; }
+  }
+  function opts(sel, values, labels, keepFirst) {
+    var first = keepFirst ? sel.innerHTML : "";
+    sel.innerHTML = first + values.map(function (v) {
+      return '<option value="' + esc(v) + '">' + esc(labels ? (labels[v] || v || "(なし)") : (v || "(なし)")) + "</option>";
+    }).join("");
+  }
+  function showMessage(text, kind) {
+    var m = $("#message");
+    if (!text) { m.hidden = true; return; }
+    m.hidden = false; m.className = "notice " + (kind || ""); m.textContent = text;
+  }
+
+  function api(action, extra) {
+    return fetch("/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ action: action, admin_token: token }, extra || {})),
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (body) {
+        if (res.status === 401) {
+          store.clear(TOKEN_KEY); token = "";
+          $("#authError").hidden = false; showLogin();
+          throw new Error("unauthorized");
+        }
+        if (!res.ok) throw new Error((body && body.error) || ("HTTP " + res.status));
+        return body;
+      });
+    });
+  }
+
+  function showLogin() {
+    $("#loginForm").hidden = false; $("#listView").hidden = true; $("#editView").hidden = true;
+    $("#newBtn").hidden = true; $("#refreshBtn").hidden = true;
+    $("#tokenInput").focus();
+  }
+  function showList() {
+    $("#loginForm").hidden = true; $("#editView").hidden = true; $("#listView").hidden = false;
+    $("#newBtn").hidden = false; $("#refreshBtn").hidden = false;
+    renderRows();
+  }
+
+  function load() {
+    return api("admin_knowledge_list").then(function (r) {
+      all = r.knowledge || [];
+      showList();
+    }).catch(function (e) { if (e.message !== "unauthorized") showMessage("読み込みに失敗しました: " + e.message, "warn"); });
+  }
+
+  function renderRows() {
+    var q = $("#q").value.trim().toLowerCase();
+    var fs = $("#fSrc").value, fc = $("#fCat").value, fw = $("#fWeight").value, fa = $("#fActive").value;
+    var list = all.filter(function (k) {
+      if (fs && k.src !== fs) return false;
+      if (fc && k.cat !== fc) return false;
+      if (fw && k.weight !== fw) return false;
+      if (fa === "on" && k.active === false) return false;
+      if (fa === "off" && k.active !== false) return false;
+      if (q) {
+        var hay = (k.id + " " + k.body + " " + (k.tags || []).join(" ") + " " + (k.note || "")).toLowerCase();
+        if (hay.indexOf(q) < 0) return false;
+      }
+      return true;
+    });
+    $("#count").textContent = list.length + "件 / 全" + all.length + "件";
+    $("#rows").innerHTML = list.map(function (k) {
+      return '<tr class="row' + (k.active === false ? " off" : "") + '" data-id="' + esc(k.id) + '">' +
+        "<td>" + esc(k.id) + (k.active === false ? ' <span class="tag off">使っていない</span>' : "") + "</td>" +
+        "<td>" + esc(k.src) + "</td>" +
+        "<td>" + esc(CAT_JA[k.cat] || k.cat) + (k.cat === "ng" && k.lv ? "<br><span class=\"hint\">" + esc(LV_JA[k.lv]) + "</span>" : "") + "</td>" +
+        '<td class="hide-sm">' + esc(WEIGHT_JA[k.weight] || k.weight) + "</td>" +
+        '<td class="body-cell"><div class="clip">' + esc(k.body) + "</div></td>" +
+        '<td class="hide-sm">' + (k.tags || []).map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("") + "</td></tr>";
+    }).join("");
+  }
+
+  function openEdit(k) {
+    editing = k;
+    showMessage("");
+    $("#listView").hidden = true; $("#editView").hidden = false; $("#newBtn").hidden = true;
+    $("#editTitle").textContent = k ? "「" + k.id + "」を直す" : "新しく足す";
+    $("#eId").value = k ? k.id : ""; $("#eId").disabled = !!k;
+    $("#eSrc").value = k ? k.src : "嶋";
+    $("#eSchool").value = k ? (k.school || "") : "";
+    $("#eCat").value = k ? k.cat : "verbatim";
+    $("#eLv").value = k && k.lv ? String(k.lv) : "";
+    $("#eWeight").value = k ? k.weight : "any";
+    $("#eTags").value = k ? (k.tags || []).join("、") : "";
+    $("#eMode").value = k && k.mode ? k.mode : "";
+    $("#eBody").value = k ? k.body : "";
+    $("#eNote").value = k ? (k.note || "") : "";
+    $("#eActive").checked = k ? k.active !== false : true;
+    $("#eBy").value = local.get(BY_KEY);
+    $("#saveMsg").textContent = "";
+    syncCat();
+    $("#history").innerHTML = "";
+    if (k) loadHistory(k.id, $("#history"));
+    window.scrollTo(0, 0);
+  }
+  function syncCat() {
+    var ng = $("#eCat").value === "ng";
+    $("#eLvBox").hidden = !ng; $("#eLvLabel").hidden = !ng;
+    $("#verbatimWarn").hidden = $("#eCat").value !== "verbatim";
+  }
+
+  function save() {
+    var row = {
+      id: $("#eId").value.trim(), src: $("#eSrc").value, school: $("#eSchool").value, cat: $("#eCat").value,
+      lv: $("#eLv").value ? Number($("#eLv").value) : null, weight: $("#eWeight").value, tags: $("#eTags").value,
+      mode: $("#eMode").value || null, body: $("#eBody").value, note: $("#eNote").value,
+      active: $("#eActive").checked, updated_by: $("#eBy").value,
+    };
+    if (editing && editing.active !== false && !row.active &&
+      !window.confirm("「" + row.id + "」を AI の応答に使わないようにします。よろしいですか(あとで戻せます)")) return;
+    local.set(BY_KEY, row.updated_by);
+    $("#saveBtn").disabled = true; $("#saveMsg").textContent = "保存しています…";
+    api("admin_knowledge_save", { row: row, is_new: !editing }).then(function () {
+      return api("admin_knowledge_list");
+    }).then(function (r) {
+      all = r.knowledge || [];
+      showList();
+      showMessage("「" + row.id + "」を保存しました。1分ほどで AI の応答に使われます。", "ok");
+    }).catch(function (e) {
+      if (e.message !== "unauthorized") $("#saveMsg").textContent = e.message;
+    }).then(function () { $("#saveBtn").disabled = false; });
+  }
+
+  function diffHtml(h) {
+    if (h.op === "insert") return '<div class="diff-new">' + esc((h.after && h.after.body) || "") + "</div>";
+    var b = h.before || {}, a = h.after || {}, out = [];
+    Object.keys(FIELD_JA).forEach(function (f) {
+      var bv = JSON.stringify(b[f] === undefined ? null : b[f]), av = JSON.stringify(a[f] === undefined ? null : a[f]);
+      if (bv === av || f === "updated_by") return;
+      var show = function (v) { return Array.isArray(v) ? v.join("、") : v === true ? "使う" : v === false ? "使わない" : (v === null || v === undefined ? "(なし)" : String(v)); };
+      out.push("<div><b>" + esc(FIELD_JA[f]) + "</b>: <span class=\"diff-old\">" + esc(show(b[f])) + "</span> → <span class=\"diff-new\">" + esc(show(a[f])) + "</span></div>");
+    });
+    return out.join("") || '<div class="hint">(本文などの変更なし)</div>';
+  }
+  function loadHistory(id, el) {
+    el.innerHTML = '<p class="hint">読み込んでいます…</p>';
+    api("admin_knowledge_history", id ? { id: id } : {}).then(function (r) {
+      var list = r.history || [];
+      el.innerHTML = list.length ? list.map(function (h) {
+        var by = (h.after && h.after.updated_by) || "";
+        return '<div class="history-item"><div class="when">' + esc(fmt(h.changed_at)) + "・" + esc(h.id) + "・" +
+          esc({ insert: "追加", update: "変更", "delete": "削除" }[h.op] || h.op) + (by ? "・" + esc(by) : "") + "</div>" + diffHtml(h) + "</div>";
+      }).join("") : '<p class="hint">履歴はまだありません。</p>';
+    }).catch(function (e) { if (e.message !== "unauthorized") el.innerHTML = '<p class="hint">履歴を読めませんでした: ' + esc(e.message) + "</p>"; });
+  }
+
+  // 選択肢を作る
+  opts($("#fSrc"), SRC, null, true);
+  opts($("#fCat"), Object.keys(CAT_JA), CAT_JA, true);
+  opts($("#fWeight"), Object.keys(WEIGHT_JA), WEIGHT_JA, true);
+  opts($("#eSrc"), SRC);
+  opts($("#eCat"), Object.keys(CAT_JA), CAT_JA);
+  opts($("#eWeight"), Object.keys(WEIGHT_JA), WEIGHT_JA);
+  opts($("#eMode"), MODES);
+
+  $("#loginForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    token = $("#tokenInput").value.trim();
+    if (!token) return;
+    store.set(TOKEN_KEY, token);
+    $("#authError").hidden = true;
+    load();
+  });
+  ["#q", "#fSrc", "#fCat", "#fWeight", "#fActive"].forEach(function (s) { $(s).addEventListener("input", renderRows); });
+  $("#rows").addEventListener("click", function (ev) {
+    var tr = ev.target.closest("tr.row");
+    if (!tr) return;
+    var k = all.filter(function (x) { return x.id === tr.getAttribute("data-id"); })[0];
+    if (k) openEdit(k);
+  });
+  $("#eCat").addEventListener("change", syncCat);
+  $("#newBtn").addEventListener("click", function () { openEdit(null); });
+  $("#backBtn").addEventListener("click", function () { showMessage(""); showList(); });
+  $("#refreshBtn").addEventListener("click", load);
+  $("#saveBtn").addEventListener("click", save);
+  $("#allHistoryBtn").addEventListener("click", function () { loadHistory("", $("#allHistory")); });
+
+  if (token) load(); else showLogin();
+})();
+</script>
+</body>
+</html>

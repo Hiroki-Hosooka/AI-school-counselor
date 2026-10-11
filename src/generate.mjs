@@ -80,6 +80,12 @@ export async function loadKnowledge(db = getDb()) {
   return cache.rows;
 }
 
+// ナレッジ管理画面(public/knowledge.html)で直したとき、このインスタンスのキャッシュを捨てる
+// (ほかのインスタンスは60秒以内に読み直す。docs/backlog.md 1-1「1分後に応答へ反映」)
+export function clearKnowledgeCache() {
+  cache = null;
+}
+
 // ナレッジの世代。どの版で動いた会話かを記録するために使う
 export function knowledgeVersion(rows) {
   const latest = rows.reduce((a, k) => (k.updated_at > a ? k.updated_at : a), "");

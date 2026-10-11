@@ -55,10 +55,11 @@ import {
 import { categoryOfSafety } from "@/crisis-keywords-v3.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.mjs";
 import {
-  loadKnowledge, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
+  loadKnowledge, clearKnowledgeCache, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
   DISTRESS_DECLINED_FLAG, distressDeclinedNote,
 } from "@/generate.mjs";
+import { validateKnowledgeInput } from "@/knowledge-admin.mjs";
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
@@ -253,6 +254,46 @@ export async function POST(req: Request) {
         is_synthetic: s.is_synthetic, persona_id: s.persona_id, run_id: s.run_id,
       }));
       return json({ sessions });
+    }
+
+    // ------------------------------------------------------------------
+    // ナレッジ管理画面(public/knowledge.html。docs/backlog.md 1-1。2026年10月11日)
+    // 合言葉は会話ログの画面と同じ(ADMIN_TOKEN)。削除はさせない(active を外すだけ)。確かめは src/knowledge-admin.mjs
+    // ------------------------------------------------------------------
+    if (action === "admin_knowledge_list") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const { data, error } = await db.from("knowledge")
+        .select("id,src,school,cat,lv,weight,tags,body,note,mode,active,updated_by,updated_at,created_at")
+        .order("id");
+      if (error) throw new Error(error.message);
+      return json({ knowledge: data ?? [] });
+    }
+
+    if (action === "admin_knowledge_save") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const isNew = payload.is_new === true;
+      const { data: existing, error: listErr } = await db.from("knowledge").select("id,cat,active,tags");
+      if (listErr) throw new Error(listErr.message);
+      const checked = validateKnowledgeInput(payload.row, existing ?? [], isNew);
+      if (!checked.ok || !checked.row) return json({ error: checked.error ?? "入力を確かめられませんでした" }, 400);
+      const row = checked.row;
+      const { id, ...fields } = row;
+      const { error } = isNew
+        ? await db.from("knowledge").insert(row)
+        : await db.from("knowledge").update(fields).eq("id", id);
+      if (error) return json({ error: `保存できませんでした: ${error.message}` }, 400);
+      clearKnowledgeCache();
+      return json({ ok: true, id });
+    }
+
+    if (action === "admin_knowledge_history") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const id = String(payload.id ?? "").trim();
+      let q = db.from("knowledge_history").select("seq,id,op,before,after,changed_at").order("seq", { ascending: false }).limit(id ? 50 : 100);
+      if (id) q = q.eq("id", id);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      return json({ history: data ?? [] });
     }
 
     if (action === "admin_session_detail") {
