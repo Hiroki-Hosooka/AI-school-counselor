@@ -143,6 +143,7 @@ export function addedWordNotes(reply, userTexts) {
 export const FIRST_MOVE_FLAG = "記録のみ:モードの最初の一手";
 export const SUMMARY_FORM_FLAG = "記録のみ:まとめの形を満たしていない(区切りとして数えない)";
 export const SAME_ENDING_FLAG = "記録のみ:同じ終わり方が3回続いた";
+export const MULTI_QUESTION_FLAG = "記録のみ:問いが2つ以上";
 export const FLOW_REGEN_PREFIX = "会話の流れで作り直し";
 export const MOVES = { link: "つなぎ", hypothesis: "仮の見立て", noticed: "気になったこと", summary: "まとめ", work: "作業の提案" };
 export const MOVE_FLAG_PREFIX = "記録のみ:返し方";
@@ -314,7 +315,7 @@ export const FLOW_RULES_BLOCK = `# この人の、この話にしか言えない
 # まとめの形
 「整理してみたい」「まとめてみたい」と言ったら、そのターンでまとめる(言っただけで別の問いに移らない)。まとめは次の形にする(IS8・T16)。
 1. 「一回まとめてみるね」と断る(たずねる形にするのは1回まで。たずねたら、次のターンでは、たずね直さずにまとめる)
-2. 相談者の言葉を使って、出てきたことを2〜4個並べる(言い換えすぎない。重くしない)
+2. 相談者の言葉を使って、出てきたことを2〜4個並べる(言い換えすぎない。重くしない。箇条書きにせず、文の中で読点で並べる)
 3. 「合ってるかな?」と確かめて終える(問いはこれ1つ。結論を言い切らない)
 気づきの問い(「ここまで話してみて、何か感じたことってある?」)は、まとめが合っていると本人が答えた次のターンで聞く。
 "did_summarize" は、この形(2〜4個並べて確かめる)を満たしたときだけ true にする。「整理してみたい」と言っただけでは true にしない。`;
@@ -442,6 +443,10 @@ export function finalizeFlow(out, stats) {
     notes.push(`${SAME_ENDING_FLAG}(${endingLabel(ec)})`);
   }
   notes.push(...addedWordNotes(reply, stats.userTexts));
+  // 問いは1回の返事で1つまで(今までの決まり)。検証の再生で、まとめの前置きの「〜してもいいかな?」と「合ってるかな?」が
+  // 同じ返事に並ぶことがあったので、記録だけする(作り直しの理由にはしていない)
+  const questions = sentencesOf(reply).filter((x) => /[？?]/.test(x)).length;
+  if (questions >= 2) notes.push(`${MULTI_QUESTION_FLAG}(${questions}つ)`);
   return { out: fixed, notes, offerChoices };
 }
 
