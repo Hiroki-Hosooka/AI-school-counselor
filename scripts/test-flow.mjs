@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   flowStats, flowCheck, finalizeFlow, buildFlowBlock, genericGroupsIn, endingClass, isValidSummary, addedWords,
-  flowChoiceOf, canOfferOrganize, flowSummaryOfSession, FLOW_RULES_BLOCK, moveFlag, FIRST_MOVE_FLAG,
+  flowChoiceOf, canOfferOrganize, flowSummaryOfSession, FLOW_RULES_BLOCK, moveFlag, FIRST_MOVE_FLAG, annotateForAdmin,
 } from "../src/flow.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -147,6 +147,34 @@ console.log("整理・作業の提案(組G)");
 
 console.log("終わり方の形");
 check("「〜んだね」「〜よね」「問い」を分ける", endingClass("そうなんだね。") === "んだね" && endingClass("しんどいよね。") === "よね" && endingClass("どう?") === "Q");
+
+console.log("管理画面の表示(annotateForAdmin)");
+{
+  const t0 = Date.parse("2026-10-11T05:00:00Z");
+  const at = (i) => new Date(t0 + i * 1000).toISOString();
+  const msgs = [
+    { role: "user", body: "a", created_at: at(1) },
+    { role: "ai", body: "そうなんだね。", question_level: "none", created_at: at(3), flags: [] },
+    { role: "user", body: "なんで頑張ってるのかわからない", created_at: at(4) },
+    { role: "ai", body: "そうか、ずっと頑張ってきたんだね。", question_level: "none", created_at: at(6), flags: [moveFlag("noticed")] },
+    { role: "user", body: "死にたい", created_at: at(7) },
+    { role: "ai", body: "固定応答", crisis: true, created_at: at(9) },
+    { role: "user", body: "うん", created_at: at(10) },
+    { role: "ai", body: "うん。", question_level: "none", created_at: at(12) },
+  ];
+  const events = [
+    { risk: "watch", decided_by: ["classifier_watch"], created_at: at(5) },
+    { risk: "crisis", keywords: ["死にたい"], model_risk: "crisis", created_at: at(8) },
+  ];
+  const a = annotateForAdmin(msgs, events);
+  const v = a.messages.filter((m) => m.role === "ai").map((m) => m.flow_view);
+  check("段階と根拠をそのターンの記録から出す", v[0].stage === 0 && v[1].stage === 1 && v[1].basis.includes("classifier_watch") && v[2].stage === 2);
+  check("記録の段階の列が無くても risk から読み替える", v[2].basis.some((b) => b.startsWith("keywords:")));
+  check("受け止めのみの連続と前回のまとめから", v[1].receiveOnlyStreak === 2 && v[1].sinceSummary === 2);
+  check("固定応答のあとは「危機のあと」と出す", v[3].afterCrisis === true);
+  check("返し方を出す", v[1].move === "noticed");
+  check("セッションの文の数・終わり方の分布", a.flow_summary.sentenceDist[1] >= 1 && a.flow_summary.maxReceiveOnly === 3);
+}
 
 console.log(`\n${failed === 0 ? "全件通過" : `失敗 ${failed}件`}(${passed + failed}件中)`);
 process.exit(failed === 0 ? 0 : 1);

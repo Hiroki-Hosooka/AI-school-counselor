@@ -460,3 +460,45 @@ export function flowSummaryOfSession(hist) {
   const genericRepeats = Object.values(genericCounts).reduce((a, c) => a + Math.max(0, c - 1), 0);
   return { sentenceDist, endingDist, maxSameEnding, maxReceiveOnly, genericCounts, genericRepeats };
 }
+
+// ---- 管理画面(admin.html)に出す、返事ごとの会話の流れ(サーバで作る。画面は表示だけ)----
+// msgs: messages(古い順。created_at・safety_stage を含む)/ events: safety_events(古い順)
+// 返事ごとに: 安全の段階と根拠(このターンの safety_events から。段階の列が無い DB では risk から 0/1/2 に読み替える)・
+// 受け止めのみの連続・前回のまとめから何ターンか・文の数・終わり方・返し方
+const riskStage = (r) => (r === "crisis" ? 2 : r === "watch" ? 1 : 0);
+export function annotateForAdmin(msgs, events) {
+  const evs = events ?? [];
+  let lastUserAt = null, prevAiAt = null;
+  let streak = 0, sinceSummary = 0, crisisSeen = false;
+  const out = (msgs ?? []).map((m) => {
+    if (m.role === "user") { lastUserAt = m.created_at; return { ...m }; }
+    const from = lastUserAt ?? prevAiAt;
+    const turnEvents = evs.filter((e) => (!from || e.created_at >= from) && (!m.created_at || e.created_at <= m.created_at)
+      && (!prevAiAt || e.created_at > prevAiAt));
+    prevAiAt = m.created_at;
+    const evStage = turnEvents.length ? Math.max(...turnEvents.map((e) => (typeof e.stage === "number" ? e.stage : riskStage(e.risk)))) : null;
+    const stage = typeof m.safety_stage === "number" ? m.safety_stage : evStage ?? (m.crisis ? 2 : 0);
+    const basis = [...new Set(turnEvents.flatMap((e) => (Array.isArray(e.decided_by) && e.decided_by.length ? e.decided_by
+      : [...(Array.isArray(e.keywords) && e.keywords.length ? [`keywords:${e.keywords.join("・")}`] : []), ...(e.model_risk ? [`model:${e.model_risk}`] : [])])))];
+    const view = { stage, basis, afterCrisis: crisisSeen && !m.crisis };
+    if (m.crisis) crisisSeen = true;
+    if (!m.crisis) {
+      const receiveOnly = m.question_level === "none" && !hasQuestion(m.body) && !(Array.isArray(m.choices) && m.choices.length);
+      streak = receiveOnly ? streak + 1 : 0;
+      sinceSummary = m.summarized ? 0 : sinceSummary + 1;
+      Object.assign(view, {
+        receiveOnlyStreak: streak, sinceSummary, sentences: sentencesOf(m.body).length,
+        ending: endingLabel(endingClass(m.body)), move: moveOfFlags(m.flags), generic: genericGroupsIn(m.body),
+      });
+    }
+    return { ...m, flow_view: view };
+  });
+  const summary = flowSummaryOfSession(msgs);
+  return {
+    messages: out,
+    flow_summary: { ...summary, endingDist: Object.fromEntries(Object.entries(summary.endingDist).map(([k, v]) => [endingLabel(k), v])) },
+  };
+}
+
+// 「違和感があった」の理由(管理画面のチップ)
+export const DISCOMFORT_REASONS = ["同じ返し", "他人事", "重すぎる", "その他"];

@@ -62,6 +62,11 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   border:1px solid var(--sand-deep);color:var(--ink-faint)}
 .tag.warn{border-color:var(--alert);color:var(--alert)}
 .tag.amber{border-color:var(--amber);color:var(--amber)}
+.discomfort-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:12px}
+.discomfort-row button{font-size:11.5px;padding:2px 9px;border-radius:999px;border:1px solid var(--sand-deep);background:transparent;color:inherit;cursor:pointer}
+.discomfort-row button.on{border-color:var(--alert);color:var(--alert)}
+.discomfort-row .disc-note{flex:1 1 140px;min-width:0;font-size:12px;padding:3px 6px}
+.msg.ai.discomfort .bubble{outline:2px dashed var(--alert);outline-offset:2px}
 
 #detailView .s-header{margin:14px 0 6px}
 #detailView .s-header h3{margin:0 0 6px;font-size:16px;color:var(--indigo)}
@@ -158,6 +163,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     <div id="intakeBlock" class="notes-block" hidden></div>
     <div id="notesBlock" class="notes-block" hidden></div>
     <div id="safetyBlock" class="notes-block" hidden></div>
+    <div id="flowBlock" class="notes-block" hidden></div>
     <div id="thread" class="thread"></div>
   </section>
 
@@ -200,6 +206,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var notesBlockEl = $("#notesBlock");
   var safetyBlockEl = $("#safetyBlock");
   var threadEl = $("#thread");
+  var flowBlockEl = $("#flowBlock");
   var exportLogBtn = $("#exportLogBtn");
   var exportLogMsg = $("#exportLogMsg");
   var currentDetail = null; // ログ出力用に、開いているセッションのsession/messagesを保持する
@@ -447,7 +454,66 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   };
   var NEG_JA = { A: "A 生きたい気持ち", B: "B 冗談・取り消し", C: "C 最小化・引き下がり" };
   var CATEGORY_JA = { suicidal: "希死念慮", selfharm: "自傷・過量服薬", violence: "暴力・虐待", sexual: "性被害", bullying: "重大ないじめ" };
-  var CHOICE_SET_JA = { scaling: "気持ちのスケーリング", B: "組B(話したくない)", C: "組C(話せない背景)", W: "組W(ここで話せた理由)" };
+  var CHOICE_SET_JA = { scaling: "気持ちのスケーリング", B: "組B(話したくない)", C: "組C(話せない背景)", W: "組W(ここで話せた理由)", G: "組G(整理・作業の提案)" };
+  // 会話の流れ(2026年10月11日。会話が展開しない問題・他人事感の修正)。判定の根拠の読み方(段階0〜2)
+  var BASIS_JA = {
+    classifier: "分類器が危機", classifier_watch: "分類器が気がかり", keyword: "キーワード", pattern: "受動パターン", idiom: "慣用表現に包まれたキーワード",
+    exaggeration: "誇張", flow_choice: "会話の流れのチップ(分類器にかけない)"
+  };
+  function basisJa(b) {
+    if (String(b).indexOf("keywords:") === 0) return "キーワード「" + String(b).slice(9) + "」";
+    if (String(b).indexOf("model:") === 0) return "分類器 " + String(b).slice(6);
+    return BASIS_JA[b] || RULE_NOTE_JA[b] || b;
+  }
+  var MOVE_JA = { link: "つなぎ", hypothesis: "仮の見立て", noticed: "気になったこと", summary: "まとめ", work: "作業の提案" };
+  var DISCOMFORT_REASONS = ["同じ返し", "他人事", "重すぎる", "その他"];
+  function flowTagsHtml(m) {
+    var v = m.flow_view;
+    if (!v) return "";
+    var parts = [];
+    var basis = (v.basis || []).map(basisJa).join("・");
+    parts.push('<span class="tag' + (v.stage >= 2 ? " warn" : v.stage === 1 ? " amber" : "") + '">安全の段階' + esc(v.stage) +
+      (basis ? "(" + esc(basis) + ")" : "(記録なし=通常)") + (v.afterCrisis ? "・危機のあと" : "") + '</span>');
+    if (v.receiveOnlyStreak != null) {
+      parts.push('<span class="tag' + (v.receiveOnlyStreak >= 3 ? " warn" : "") + '">受け止めのみ ' + esc(v.receiveOnlyStreak) + '回続く</span>');
+      parts.push('<span class="tag">前回のまとめから ' + esc(v.sinceSummary) + '</span>');
+      parts.push('<span class="tag">' + esc(v.sentences) + '文・終わり ' + esc(v.ending) + '</span>');
+      if (v.move) parts.push('<span class="tag amber">返し方 ' + esc(MOVE_JA[v.move] || v.move) + '</span>');
+      if (v.generic && v.generic.length) parts.push('<span class="tag">汎用の言葉 ' + esc(v.generic.join("・")) + '</span>');
+    }
+    return parts.join("");
+  }
+  function renderFlowSummary(fs) {
+    if (!fs) { flowBlockEl.hidden = true; return; }
+    var dist = function (o, unit) {
+      return Object.keys(o || {}).map(function (k) { return k + unit + " " + o[k] + "件"; }).join(" / ") || "—";
+    };
+    flowBlockEl.innerHTML = "<h4>会話の流れ(このセッション)</h4><dl>" +
+      "<dt>文の数</dt><dd>" + esc(dist(fs.sentenceDist, "文")) + "</dd>" +
+      "<dt>終わり方</dt><dd>" + esc(dist(fs.endingDist, "")) + "</dd>" +
+      "<dt>同じ終わり方の最大連続</dt><dd>" + esc(fs.maxSameEnding) + "回</dd>" +
+      "<dt>受け止めのみの最大連続</dt><dd>" + esc(fs.maxReceiveOnly) + "回(続けて2回まで)</dd>" +
+      "<dt>汎用の言葉の2回目以降</dt><dd>" + esc(fs.genericRepeats) + "回" +
+      (Object.keys(fs.genericCounts || {}).length ? "(" + esc(Object.keys(fs.genericCounts).map(function (k) { return k + " " + fs.genericCounts[k]; }).join("・")) + ")" : "") + "</dd>" +
+      "</dl>";
+    flowBlockEl.hidden = false;
+  }
+  // 返事ごとの「違和感があった」の印(開発メンバー・心理士用。生徒の画面には出さない。db/schema.sql 15節)
+  function discomfortHtml(m) {
+    var on = !!m.discomfort;
+    var reason = m.discomfort_reason || "";
+    return (
+      '<div class="discomfort-row" data-seq="' + esc(m.seq) + '">' +
+        '<button type="button" class="disc-toggle' + (on ? " on" : "") + '">' + (on ? "違和感あり(外す)" : "違和感があった") + '</button>' +
+        DISCOMFORT_REASONS.map(function (r) {
+          return '<button type="button" class="disc-reason' + (reason.indexOf(r) >= 0 ? " on" : "") + '" data-r="' + esc(r) + '">' + esc(r) + '</button>';
+        }).join("") +
+        '<input type="text" class="disc-note" maxlength="120" placeholder="理由を短く(任意)" value="' + esc(reason.replace(/^\[[^\]]*\]\s*/, "")) + '">' +
+        '<button type="button" class="disc-save">保存</button>' +
+        '<span class="disc-saved" hidden>保存しました</span>' +
+      '</div>'
+    );
+  }
   function stepJa(n) { return STEP_JA[n] || (n + "通目"); }
   function renderSafetyEvents(events) {
     if (!events || !events.length) { safetyBlockEl.hidden = true; safetyBlockEl.innerHTML = ""; return; }
@@ -545,21 +611,48 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
         ? '<div class="flags">' + m.flags.map(function (f) { return '<span class="tag warn">' + esc(f) + '</span>'; }).join("") + '</div>'
         : "";
       return (
-        '<div class="msg ai' + (m.crisis ? " crisis" : "") + '">' +
+        '<div class="msg ai' + (m.crisis ? " crisis" : "") + (m.discomfort ? " discomfort" : "") + '">' +
           '<div class="bubble">' + esc(m.body) + '</div>' +
           (m.care_line ? '<div class="hint"><b>気づかいの一言(仮):</b> ' + esc(m.care_line) + '</div>' : "") +
           '<div class="meta">' + metaHtml(m) + '</div>' +
+          '<div class="meta">' + flowTagsHtml(m) + '</div>' +
           (m.hypothesis ? '<div class="hint"><b>仮説:</b> ' + esc(m.hypothesis) + '</div>' : "") +
           (m.why ? '<div class="hint"><b>理由:</b> ' + esc(m.why) + '</div>' : "") +
           flags +
           knowledgeHtml(m.used) +
           ratingHtml(m) +
+          discomfortHtml(m) +
         '</div>'
       );
     }).join("");
   }
 
   threadEl.addEventListener("click", function (e) {
+    var drow = e.target.closest(".discomfort-row");
+    if (drow) {
+      if (e.target.classList.contains("disc-toggle") || e.target.classList.contains("disc-reason")) {
+        e.target.classList.toggle("on");
+        if (e.target.classList.contains("disc-reason")) drow.querySelector(".disc-toggle").classList.add("on");
+        return;
+      }
+      if (e.target.classList.contains("disc-save")) {
+        var on = drow.querySelector(".disc-toggle").classList.contains("on");
+        var reasons = Array.prototype.map.call(drow.querySelectorAll(".disc-reason.on"), function (b) { return b.dataset.r; });
+        var note = drow.querySelector(".disc-note").value.trim();
+        var reasonText = (reasons.length ? "[" + reasons.join("・") + "] " : "") + note;
+        e.target.disabled = true;
+        api("admin_mark_discomfort", { seq: Number(drow.dataset.seq), on: on, reason: reasonText }).then(function () {
+          var saved = drow.querySelector(".disc-saved");
+          saved.hidden = false;
+          drow.querySelector(".disc-toggle").textContent = on ? "違和感あり(外す)" : "違和感があった";
+          drow.closest(".msg").classList.toggle("discomfort", on);
+          setTimeout(function () { saved.hidden = true; }, 1500);
+        }, function (err) {
+          if (err.message !== "unauthorized") alert("保存に失敗しました: " + err.message);
+        }).then(function () { e.target.disabled = false; });
+      }
+      return;
+    }
     var row = e.target.closest(".rate-row");
     if (!row) return;
     if (e.target.classList.contains("rate-btn")) {
@@ -608,6 +701,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       renderIntake(body.session);
       renderNotes(body.session.notes);
       renderSafetyEvents(body.safety_events || []);
+      renderFlowSummary(body.flow_summary);
       renderMessages(body.messages || []);
       listView.hidden = true;
       detailView.hidden = false;
@@ -664,8 +758,17 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
           if (m.role_kind) parts.push("役割:" + (RL_JA[m.role_kind] || m.role_kind));
           if (m.mode && m.mode.length) parts.push("モード:" + m.mode.map(function (mm) { return MODE_JA[mm] || mm; }).join("+"));
           if (m.closing) parts.push("クロージング要約");
+          // 会話の流れ(2026年10月11日)
+          var v = m.flow_view;
+          if (v) {
+            parts.push("段階" + v.stage + ((v.basis || []).length ? "(" + v.basis.map(basisJa).join("・") + ")" : ""));
+            if (v.receiveOnlyStreak != null) parts.push("受け止めのみ" + v.receiveOnlyStreak + "回続く / まとめから" + v.sinceSummary);
+            if (v.move) parts.push("返し方:" + (MOVE_JA[v.move] || v.move));
+          }
+          if (m.discomfort) parts.push("違和感あり" + (m.discomfort_reason ? ":" + m.discomfort_reason : ""));
           judgement = parts.join(" / ");
         }
+        if (m.crisis && m.flow_view) judgement += " / 段階" + m.flow_view.stage;
       }
       lines.push("| " + turn + " | " + speaker + " | " + mdEscape(m.body) + " | " + mdEscape(judgement) + " |");
     });

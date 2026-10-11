@@ -69,7 +69,7 @@ import {
 } from "@/crisis-response.mjs";
 import {
   flowStats, flowChoiceOf, flowCheck, flowFixHint, finalizeFlow, LOST_MEANING_RE,
-  CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET,
+  CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET, annotateForAdmin, DISCOMFORT_REASONS,
 } from "@/flow.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -309,6 +309,10 @@ export async function POST(req: Request) {
         .eq("id", sessionId).maybeSingle();
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        // 15節(違和感の印)の列
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason")
+          .eq("session_id", sessionId).order("seq"),
         // 14節(危機の流れの見直し)の列: 出したチップ・押したチップ・締めの文面の何案目か
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant")
@@ -332,7 +336,9 @@ export async function POST(req: Request) {
         const { data: kn } = await db.from("knowledge").select("id,src,cat,body").in("id", allUsedIds);
         for (const k of kn ?? []) knowledgeMap[k.id] = k;
       }
-      const messages = msgs.map((m) => ({
+      // 会話の流れ(段階と根拠・受け止めのみの連続・前回のまとめから・文の数・終わり方・返し方。src/flow.mjs。2026年10月11日)
+      const annotated = annotateForAdmin(msgs, events ?? []);
+      const messages = annotated.messages.map((m: Row) => ({
         ...withCareLine(m),
         used: usedOf(m).map((id) => knowledgeMap[id] ?? { id, src: "", cat: "", body: "(削除済み)" }),
       }));
@@ -349,7 +355,26 @@ export async function POST(req: Request) {
         },
         messages,
         safety_events: events ?? [],
+        flow_summary: annotated.flow_summary,
+        discomfort_reasons: DISCOMFORT_REASONS,
       });
+    }
+
+    // 返事ごとの「違和感があった」の印(2026年10月11日。「他人事感」の修正 10-3。db/schema.sql 15節)。
+    // 開発メンバー・心理士がログレビュー画面で付ける。生徒の画面には出さない。合言葉で守る(CLAUDE.md 5.9)
+    if (action === "admin_mark_discomfort") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const seq = Number(payload.seq);
+      if (!Number.isInteger(seq) || seq <= 0) return json({ error: "seq が不正です" }, 400);
+      const on = payload.on !== false;
+      const reason = on ? String(payload.reason ?? "").trim().slice(0, 200) : "";
+      const { data: target } = await db.from("messages").select("seq,role").eq("seq", seq).maybeSingle();
+      if (!target || target.role !== "ai") return json({ error: "AI の返事が見つかりません" }, 404);
+      const { error } = await db.from("messages").update({
+        discomfort: on, discomfort_reason: on ? reason || null : null, discomfort_at: on ? new Date().toISOString() : null,
+      }).eq("seq", seq);
+      if (error) return json({ error: "保存できませんでした(db/schema.sql 15節が未実行かもしれません)", detail: error.message }, 400);
+      return json({ ok: true });
     }
 
     // ------------------------------------------------------------------

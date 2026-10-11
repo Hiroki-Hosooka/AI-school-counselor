@@ -681,3 +681,16 @@ alter table safety_events drop constraint if exists safety_events_crisis_step_ch
 alter table safety_events add constraint safety_events_crisis_step_check check (crisis_step is null or crisis_step between 1 and 14);
 alter table safety_events drop constraint if exists safety_events_scale_check;
 alter table safety_events add constraint safety_events_scale_check check (scale is null or scale between 1 and 5);
+
+-- ============================================================================
+-- 15. 返事ごとの「違和感があった」の印(2026年10月11日。「他人事感」の修正 10-3)
+--   開発メンバー・心理士がログレビュー画面(admin.html)で付ける。生徒の画面には出さない。
+--   書き込みは ADMIN_TOKEN で守る action(admin_mark_discomfort)だけから行う(CLAUDE.md 5.9)。
+--   理由は チップ(同じ返し / 他人事 / 重すぎる / その他)+短い自由記述を、1つの文字列にして持つ。
+--   未実行でも会話は止まらない(印のボタンが「SQL が未実行です」と出るだけ)。
+-- ============================================================================
+alter table messages add column if not exists discomfort boolean not null default false;
+alter table messages add column if not exists discomfort_reason text;
+alter table messages add column if not exists discomfort_at timestamptz;
+alter table messages drop constraint if exists messages_discomfort_reason_len_check;
+alter table messages add constraint messages_discomfort_reason_len_check check (discomfort_reason is null or char_length(discomfort_reason) <= 200);
