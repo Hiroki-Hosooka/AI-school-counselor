@@ -199,6 +199,8 @@ async function rateAll() {
       const id = `${key}|${r.turn}`;
       if (!r.crisis && !rated.has(id)) {
         const res = await patient(() => rateReply(ctx, r.counselor, KEY_POOL, ROT_RATE), (x) => !x.ok && x.transient, ROT_RATE, "採点: ");
+        // 採点できなかったもの(上限など)は残さない(次に --rate を流したときに採点し直す)
+        if (!res.ok) { console.error(`  採点できませんでした ${id}: ${String(res.error ?? "").slice(0, 80)}`); ctx.push({ role: "ai", text: r.counselor }); continue; }
         appendFileSync(OUT, JSON.stringify({ rating_of: id, ...res }) + "\n");
         console.log(`  採点 ${id}: 具体=${res.concrete} つなぎ=${res.link} 見立て=${res.hypothesis} 気になった=${res.noticed} 他人事=${res.generic} CBT=${res.cbt_move}`);
         await sleep(300);
