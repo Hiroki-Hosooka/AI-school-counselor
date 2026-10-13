@@ -50,3 +50,33 @@ export async function rateReply(context, reply, keyPool, rotation) {
   }, (x) => !x.ok && x.transient, { state: rotation, label: "採点: " });
   return r;
 }
+
+// 1回の会話をまとめて採点する(無料枠の軽いモデルは1日の回数の上限が小さく、返事ごとに呼ぶと足りないため。2026年10月13日)。
+// turns: [{ turn, student, counselor }](古い順。危機の固定応答は除いて渡す)。戻り値: { ok, items: { [turn]: {...} } }
+export const RATER_BATCH_PROMPT = RATER_PROMPT.replace(
+  /出力は次のJSONのみ。[\s\S]*$/,
+  `会話の全文が渡されます。「AI(採点対象 T番号)」と書かれた返事を、それぞれ、その時点までのやりとりだけを見て採点してください。
+出力は次のJSONのみ。前後に説明を付けない。
+{"items": [{"turn": 番号, "concrete": "yes|no|na", "link": "yes|no", "hypothesis": "yes|no", "noticed": "yes|no", "generic": "yes|no", "cbt_move": "yes|no", "reason": "20字程度"}]}`,
+);
+export async function rateConversation(turns, keyPool, rotation) {
+  const text = turns.map((t) => `相談者(T${t.turn}): ${t.student}\n${t.counselor != null ? `AI(採点対象 T${t.turn}): ${t.counselor}` : ""}`).join("\n");
+  return withRateLimitRetry(keyPool, async () => {
+    try {
+      const res = await callGemini(LITE_MODELS, RATER_BATCH_PROMPT, [{ role: "user", parts: [{ text }] }], 6000, -1);
+      const j = parseJSON(res.text);
+      const items = {};
+      for (const it of Array.isArray(j.items) ? j.items : []) {
+        items[Number(it.turn)] = {
+          ok: true, model: res.model, batch: true,
+          concrete: yn(it.concrete, true), link: yn(it.link), hypothesis: yn(it.hypothesis), noticed: yn(it.noticed), generic: yn(it.generic), cbt_move: yn(it.cbt_move),
+          reason: String(it.reason ?? "").slice(0, 80),
+        };
+      }
+      return { ok: Object.keys(items).length > 0, items, transient: Object.keys(items).length === 0 };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: msg, transient: /\[RATE_LIMIT\]|\[HTTP_503\]|JSON/.test(msg) };
+    }
+  }, (x) => !x.ok && x.transient, { state: rotation, label: "採点(まとめて): " });
+}

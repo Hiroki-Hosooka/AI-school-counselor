@@ -25,7 +25,7 @@ import path from "node:path";
 import {
   requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, isTransientGenerateFailure,
 } from "./_lib/test-env.mjs";
-import { rateReply } from "./_lib/flow-rater.mjs";
+import { rateReply, rateConversation } from "./_lib/flow-rater.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -185,6 +185,28 @@ async function runOne({ variant, mode, rep, root, knowledge }) {
   appendFileSync(OUT, JSON.stringify({ variant, mode, rep, last: true }) + "\n");
 }
 
+// ---- 採点(軽いモデル。1回の会話をまとめて1回で。--rate-each で返事ごと)----
+async function rateBatch() {
+  const recs = readRecords();
+  const rated = new Set(recs.filter((r) => r.rating_of).map((r) => r.rating_of));
+  const groups = {};
+  for (const r of recs.filter((x) => x.turn && !x.rating_of)) (groups[`${r.variant}|${r.mode}|${r.rep}`] ??= []).push(r);
+  for (const [key, list] of Object.entries(groups)) {
+    list.sort((a, b) => a.turn - b.turn);
+    const need = list.filter((r) => !r.crisis && !rated.has(`${key}|${r.turn}`));
+    if (!need.length) continue;
+    const turns = list.map((r) => ({ turn: r.turn, student: r.student, counselor: r.crisis ? null : r.counselor }));
+    const res = await patient(() => rateConversation(turns, KEY_POOL, ROT_RATE), (x) => !x.ok && x.transient, ROT_RATE, "採点: ");
+    if (!res.ok) { console.error(`  採点できませんでした ${key}: ${String(res.error ?? "").slice(0, 80)}`); continue; }
+    for (const r of need) {
+      const it = res.items[r.turn];
+      if (it) appendFileSync(OUT, JSON.stringify({ rating_of: `${key}|${r.turn}`, ...it }) + "\n");
+    }
+    console.log(`  採点 ${key}: ${need.filter((r) => res.items[r.turn]).length}/${need.length}件`);
+    await sleep(1000);
+  }
+}
+
 // ---- 採点(軽いモデル)----
 async function rateAll() {
   const recs = readRecords();
@@ -273,7 +295,8 @@ function summarize() {
 
 // ---- 実行 ----
 mkdirSync(path.dirname(OUT), { recursive: true });
-if (flag("rate")) { await rateAll(); process.exit(0); }
+if (flag("rate")) { await rateBatch(); process.exit(0); }
+if (flag("rate-each")) { await rateAll(); process.exit(0); }
 if (flag("summary")) { summarize(); process.exit(0); }
 const variant = arg("variant", "after");
 const mode = arg("mode", "replay");
