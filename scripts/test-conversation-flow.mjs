@@ -260,16 +260,19 @@ function summarize() {
     const gen = list.filter((r) => !r.crisis);
     const rt = gen.map((r) => ratings[`${key}|${r.turn}`]).filter(Boolean);
     const concreteDen = rt.filter((x) => x.concrete === "yes" || x.concrete === "no").length;
-    const p2 = gen.filter((r) => r.flow_phase === "phase2" || (r.flow_phase == null && r.phase === "phase2"));
+    // フェーズ2の最初のターン = 進め方がフェーズ2で生成した最初の返事(インテークを終えたターンの次)
+    const p2 = gen.filter((r) => r.flow_phase === "phase2");
     const firstP2 = p2.length ? p2[0].turn : null;
     const cbtTurns = gen.filter((r) => ratings[`${key}|${r.turn}`]?.cbt_move === "yes").map((r) => r.turn);
-    const cbtAfterP2 = firstP2 != null ? cbtTurns.filter((t) => t > firstP2) : [];
+    const cbtAfterP2 = firstP2 != null ? cbtTurns.filter((t) => t >= firstP2) : [];
+    // サーバの記録(修正後だけ。モデルが「最初の一手を使った」と申告したターン)
+    const flagTurn = gen.find((r) => (r.flags ?? []).includes("記録のみ:モードの最初の一手"))?.turn ?? null;
     runs.push({
       variant, mode, rep: +rep, turns: list.length,
       max_receive_only: m.maxReceiveOnly, regen_count: m.regenCount, regen_flags: m.regenFlags,
       summaries: gen.filter((r) => r.did_summarize).map((r) => r.turn),
       summary_form_flags: gen.filter((r) => (r.flags ?? []).some((f) => String(f).includes("まとめの形"))).map((r) => r.turn),
-      cbt_first_move_turn: cbtAfterP2[0] ?? null, phase2_start_turn: firstP2,
+      cbt_first_move_turn: cbtAfterP2[0] ?? null, first_move_flag_turn: flagTurn, phase2_start_turn: firstP2,
       strong_words: strong, heavy_words: heavy, generic_repeats: m.genericRepeats, generic_counts: m.genericCounts,
       max_same_ending: m.maxSameEnding, sentence_dist: m.sentenceDist,
       concrete_rate: concreteDen ? rt.filter((x) => x.concrete === "yes").length / concreteDen : null, rated: rt.length,
@@ -284,7 +287,7 @@ function summarize() {
   const summaryPath = OUT.replace(/\.jsonl$/, "-summary.json");
   writeFileSync(summaryPath, JSON.stringify({ out: path.relative(ROOT, OUT), targets: F_METRICS.FLOW_PASS_TARGETS, runs }, null, 2));
   const lines = runs.sort((a, b) => `${a.mode}${a.variant}${a.rep}`.localeCompare(`${b.mode}${b.variant}${b.rep}`)).map((r) =>
-    `${r.mode}/${r.variant}#${r.rep}: 受け止めのみ最大${r.max_receive_only} 作り直し${r.regen_count} まとめ${JSON.stringify(r.summaries)} CBTの一手T${r.cbt_first_move_turn ?? "-"}(P2開始T${r.phase2_start_turn ?? "-"}) `
+    `${r.mode}/${r.variant}#${r.rep}: 受け止めのみ最大${r.max_receive_only} 作り直し${r.regen_count} まとめ${JSON.stringify(r.summaries)} CBTの一手T${r.cbt_first_move_turn ?? "-"}(記録T${r.first_move_flag_turn ?? "-"}・P2開始T${r.phase2_start_turn ?? "-"}) `
     + `強い言葉${r.strong_words} 重さ${r.heavy_words} 汎用の2回目${r.generic_repeats} 同じ終わり方最大${r.max_same_ending} 具体${r.concrete_rate == null ? "-" : Math.round(r.concrete_rate * 100) + "%"} `
     + `つなぎ${r.links} 見立て${r.hypotheses}(条件外${r.hypothesis_out_of_rule.length}) 気になった${r.noticed}(条件外${r.noticed_out_of_rule.length}) 他人事${r.generic_feel}/${r.rated}`);
   writeFileSync(OUT.replace(/\.jsonl$/, "-summary.txt"), lines.join("\n") + "\n");

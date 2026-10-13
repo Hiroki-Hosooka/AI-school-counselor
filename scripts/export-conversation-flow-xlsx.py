@@ -117,7 +117,7 @@ def main():
                 f"汎用の言葉の2回目 {t.get('genericRepeats')}回 / 同じ終わり方の最大連続 {t.get('maxSameEnding')}回以下")
     ws["A3"].font = st["base"]
     headers = ["場面", "版", "回", "ターン数", "受け止めのみの最大連続", "作り直しの回数", "まとめが入ったターン", "まとめの形を満たさず数えなかったターン",
-               "フェーズ2の開始ターン", "CBTの最初の一手のターン", "強い言葉の数", "重さを足す言葉の数", "汎用の言葉の2回目以降",
+               "フェーズ2の開始ターン", "CBTの最初の一手のターン(採点)", "最初の一手の記録のターン(修正後のみ)", "強い言葉の数", "重さを足す言葉の数", "汎用の言葉の2回目以降",
                "同じ終わり方の最大連続", "具体への言及の割合", "つなぎ", "仮の見立て", "見立て(条件外)", "気になったこと", "気になった(条件外)",
                "他人事に聞こえる返事", "採点した返事", "生成の失敗", "段階(ターン:段階)"]
     runs = sorted(summary["runs"], key=lambda r: (r["mode"], r["variant"] != "before", r["rep"]))
@@ -129,13 +129,14 @@ def main():
             "ログの再現" if r["mode"] == "replay" else "ペルソナP1", "修正前" if r["variant"] == "before" else "修正後", r["rep"], r["turns"],
             r["max_receive_only"], r["regen_count"], ",".join(map(str, r["summaries"])) or "なし", ",".join(map(str, r["summary_form_flags"])) or "",
             r["phase2_start_turn"], r["cbt_first_move_turn"] if r["cbt_first_move_turn"] is not None else "なし",
+            r.get("first_move_flag_turn") if r.get("first_move_flag_turn") is not None else ("なし" if r["variant"] == "after" else "—"),
             r["strong_words"], r["heavy_words"], r["generic_repeats"], r["max_same_ending"],
             r["concrete_rate"], r["links"], r["hypotheses"], len(r["hypothesis_out_of_rule"]), r["noticed"], len(r["noticed_out_of_rule"]),
             r["generic_feel"], r["rated"], r["generation_failures"], " ".join(f"{k}:{v}" for k, v in r["stage_by_turn"].items()),
         ])
-    end = write_table(ws, 5, headers, rows, st, [10, 7, 4, 7, 10, 8, 12, 12, 9, 10, 8, 8, 9, 9, 9, 6, 7, 7, 7, 7, 9, 8, 7, 40])
+    end = write_table(ws, 5, headers, rows, st, [10, 7, 4, 7, 10, 8, 12, 12, 9, 10, 10, 8, 8, 9, 9, 9, 6, 7, 7, 7, 7, 9, 8, 7, 40])
     for i in range(6, end):
-        ws.cell(row=i, column=15).number_format = "0%"
+        ws.cell(row=i, column=16).number_format = "0%"
     # 平均(数式)
     row = end + 1
     ws.cell(row=row, column=1, value="平均(数式)").font = st["bold"]
@@ -144,12 +145,12 @@ def main():
         for ver in ["修正前", "修正後"]:
             ws.cell(row=row, column=1, value=scene).font = st["base"]
             ws.cell(row=row, column=2, value=ver).font = st["base"]
-            for col in [5, 6, 11, 12, 13, 14, 15, 16, 17, 19, 21]:
+            for col in [5, 6, 12, 13, 14, 15, 16, 17, 18, 20, 22]:
                 L = get_column_letter(col)
                 f = (f'=IFERROR(AVERAGEIFS({L}6:{L}{end - 1},$A$6:$A${end - 1},"{scene}",$B$6:$B${end - 1},"{ver}"),"")')
                 c = ws.cell(row=row, column=col, value=f)
                 c.font = st["base"]
-                c.number_format = "0%" if col == 15 else "0.0"
+                c.number_format = "0%" if col == 16 else "0.0"
             row += 1
 
     # ---- 返事の全文 ----
