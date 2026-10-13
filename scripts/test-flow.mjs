@@ -63,6 +63,7 @@ for (const t of ["頑張ってきたんだね", "踏ん張ってきたんだね"
   check(`「${t}」は「頑張ってきた」の組`, genericGroupsIn(t).includes("頑張ってきた"));
 }
 check("「一人でやってるように思える」(相談者の言葉のなぞり)は労いに入れない", !genericGroupsIn("結局自分一人でやってるように思えるの").includes("頑張ってきた"));
+check("かぎかっこの中の引用(「なんのために頑張っているのかわからない」)は数えない", genericGroupsIn("「なんのために頑張っているのかわからない」という気持ちがあること").length === 0 && genericGroupsIn("ずっと一人で耐えて頑張ってきたんだね").includes("頑張ってきた"));
 check("「しんどいよね」「しんどかったね」は同じ組", genericGroupsIn("しんどいよね")[0] === "しんどい" && genericGroupsIn("しんどかったね")[0] === "しんどい");
 
 console.log("記録のみ");

@@ -74,7 +74,10 @@ export const GENERIC_GROUPS = [
   { key: "汎用の促し", re: /その気持ち、?(もう少し|もっと)聞かせて/ },
   { key: "モヤモヤ・嫌", re: /(モヤモヤ|もやもや)する(よね|ね)|嫌だった(よね|ね)|きつかった(よね|ね)|きつい(よね|ね)/ },
 ];
-export const genericGroupsIn = (t) => GENERIC_GROUPS.filter((g) => g.re.test(String(t ?? ""))).map((g) => g.key);
+// かぎかっこ(「」『』)の中は相談者の言葉の引用なので数えない(2026年10月13日。検証で、まとめの中の
+// 「なんのために頑張っているのかわからない」のような引用まで「頑張ってきた」の組に数えて作り直していたため)
+const stripQuotes = (t) => String(t ?? "").replace(/「[^」]*」|『[^』]*』/g, "「」");
+export const genericGroupsIn = (t) => GENERIC_GROUPS.filter((g) => g.re.test(stripQuotes(t))).map((g) => g.key);
 // 一般化(誰にでもあることとして広げる言い方)。1回の会話で1回まで(心理教育のモードは除く)
 export const GENERALIZATION_RE = /(時|とき|こと)って?(も)?ある(よね|よ)|みんな.{0,12}(だよ|よね|あるよ)|誰にでも(ある|起こ)|よくあること/;
 // 人間のふり・AI が相談者以上に感情的になる

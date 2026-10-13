@@ -232,6 +232,13 @@ export async function POST(req: Request) {
     if (action === "rate") {
       const { seq, rating, comment } = payload as { seq: number; rating: number; comment?: string };
       if (!seq || !(rating >= 1 && rating <= 5)) return json({ error: "パラメータが不正です" }, 400);
+      // 自分の会話の AI の返事だけを評価できるようにする(2026年10月13日)。以前は seq さえわかれば、
+      // ほかの人の会話の返事の評価を書き換えられた。引き継ぎコード(client_id)がその会話の持ち主かを確かめる。
+      const clientId = String(payload.client_id ?? "");
+      const { data: target } = await db.from("messages").select("session_id,role").eq("seq", seq).maybeSingle();
+      if (!clientId || !target || target.role !== "ai") return json({ error: "評価できない返答です" }, 403);
+      const { data: owner } = await db.from("sessions").select("client_id").eq("id", target.session_id).maybeSingle();
+      if (!owner || owner.client_id !== clientId) return json({ error: "評価できない返答です" }, 403);
       await db.from("messages").update({ rating, rating_comment: comment ?? null }).eq("seq", seq);
       return json({ ok: true });
     }
