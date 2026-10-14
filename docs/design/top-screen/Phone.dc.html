@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>相談室 トップ(スマホ)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600&amp;family=Zen+Kaku+Gothic+New:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2F4858}a:hover{color:#1C2E38}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #FBFAF7; color: #232A2E; font-family: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', sans-serif">
+<header style="height: 56px; box-sizing: border-box; padding: 0 20px; display: flex; align-items: center; border-bottom: 1px solid #E4E0D6">
+<div style="font-family: 'Shippori Mincho B1', serif; font-size: 19px; color: {{accent}}; letter-spacing: 0.08em">相談室</div>
+</header>
+<main style="flex-grow: 1; display: flex; flex-direction: column; padding: 36px 20px 0; gap: 22px">
+<h1 style="margin: 0; font-family: 'Shippori Mincho B1', serif; font-weight: 600; font-size: 22px; line-height: 1.75; color: #232A2E; letter-spacing: 0.03em"><span style="display: block">よくぞ来てくれました。</span><span style="display: block">今日は、どんなことで</span><span style="display: block">来てくれた?</span></h1>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<button type="button" style="width: 100%; height: 52px; padding: 0 18px; border: 1.5px solid #B9B2A4; border-radius: 14px; background: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 500; color: #232A2E; text-align: left">友達・人間関係</button>
+<button type="button" style="width: 100%; height: 52px; padding: 0 18px; border: 1.5px solid #B9B2A4; border-radius: 14px; background: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 500; color: #232A2E; text-align: left">勉強・進路・部活</button>
+<button type="button" style="width: 100%; height: 52px; padding: 0 18px; border: 1.5px solid #B9B2A4; border-radius: 14px; background: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 500; color: #232A2E; text-align: left">家族・家のこと</button>
+<button type="button" style="width: 100%; height: 52px; padding: 0 18px; border: 1.5px solid #B9B2A4; border-radius: 14px; background: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 500; color: #232A2E; text-align: left">自分の気持ちや性格</button>
+<button type="button" style="width: 100%; height: 52px; padding: 0 18px; border: 1.5px solid #B9B2A4; border-radius: 14px; background: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 500; color: #232A2E; text-align: left">うまく言えない</button>
+<button type="button" style="width: 100%; height: 52px; padding: 0 18px; border: 1.5px solid #B9B2A4; border-radius: 14px; background: #FFFFFF; font-family: inherit; font-size: 16px; font-weight: 500; color: #232A2E; text-align: left">どれに当てはまるかわからない</button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 14px; color: #3A4449">あてはまるものがなければ、そのまま書いてもいいよ。</div>
+<div style="display: flex; gap: 8px; align-items: stretch">
+<label for="msg-sp" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap">相談したいことを書く</label>
+<input id="msg-sp" type="text" placeholder="ここに書いてみてください" style="flex-grow: 1; min-width: 0; height: 50px; box-sizing: border-box; padding: 0 14px; border: 1.5px solid #C9C3B6; border-radius: 12px; background: #FFFFFF; font-family: inherit; font-size: 16px; color: #232A2E">
+<button type="button" style="height: 50px; padding: 0 18px; border: none; border-radius: 12px; background: {{accent}}; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 700; letter-spacing: 0.08em">送る</button>
+</div>
+</div>
+</main>
+<footer style="box-sizing: border-box; padding: 14px 20px 24px; border-top: 1px solid #E4E0D6; display: flex; flex-direction: column; gap: 8px; font-size: 14px">
+<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: #3A4449">
+<span>相手はAIです。話したことは記録されます。</span>
+<a href="Details.dc.html" style="font-weight: 700">くわしく</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-weight: 700; color: #8E3329">いますぐ助けが必要なとき</span>
+<div style="display: flex; gap: 14px; flex-wrap: wrap">
+<a href="tel:119" style="font-weight: 700">119</a>
+<a href="tel:0120078310" style="font-weight: 700">子供SOSダイヤル 0120-0-78310</a>
+</div>
+</div>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#2F4858","options":["#2F4858","#6E8B74","#7A6480"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#2F4858' };
+}
+}
+</script>
+</body>
+</html>
