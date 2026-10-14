@@ -63,6 +63,11 @@ type ChoiceInfo = {
   why?: string;
 };
 
+type VersionInfo = {
+  app_version: string; commit: string | null;
+  history: { version: string; date: string; summary: string; areas?: string[] }[];
+};
+
 type SafetyInfo = { risk: string; keywords: number; model: string } | null;
 
 const WEIGHT_FILL: Record<Weight, string> = { rapport: "#6E8B74", main: "#2F4858", goal: "#7A6480", plan: "#A8794A" };
@@ -129,6 +134,8 @@ export default function Page() {
   // サーバは環境変数 DEV_PANEL=on のときだけ true を返す(本番には設定しない。無いときは必ず出さない)
   const [dev, setDev] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // アプリの版(src/version.mjs)。開発用の表示のときだけサーバが返す
+  const [version, setVersion] = useState<VersionInfo | null>(null);
 
   async function api(action: string, body?: Record<string, unknown>) {
     const res = await fetch("/api/chat", {
@@ -155,6 +162,7 @@ export default function Page() {
     try {
       const r = await api("resume");
       setDev(r.dev === true);
+      setVersion(r.version ?? null);
       if (r.session && r.messages && r.messages.length) {
         sessionIdRef.current = r.session.id;
         if (r.session.weight) setWeight(r.session.weight);
@@ -184,6 +192,7 @@ export default function Page() {
         const s = await api("start");
         sessionIdRef.current = s.session.id;
         setDev(s.dev === true);
+        setVersion(s.version ?? null);
       }
       setSub("接続済み");
       setBanner("");
@@ -389,6 +398,11 @@ export default function Page() {
         <div className="head-row">
           <div className="mark">相談室</div>
           {dev && <div className="sub">{sub}</div>}
+          {dev && version && (
+            <div className="sub" title="アプリの版(src/version.mjs)とデプロイしたコミット">
+              版 {version.app_version}{version.commit ? `・${version.commit}` : ""}
+            </div>
+          )}
           <div className="spacer" />
           {dev && <button className="icon-btn" onClick={() => setPanelOpen(true)}>開発用の表示</button>}
         </div>
@@ -493,6 +507,18 @@ export default function Page() {
             <button className="close" onClick={() => setPanelOpen(false)}>×</button>
             <h3>開発用の表示</h3>
             <p>プレビュー・開発の環境だけに出ます(DEV_PANEL=on)。本番の生徒の画面には出ません。</p>
+
+            <h5>版(バージョン)</h5>
+            {version ? (
+              <>
+                <div className="code">{version.app_version}{version.commit ? `(コミット ${version.commit})` : ""}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-soft)", lineHeight: 1.8 }}>
+                  {version.history.map((h) => (
+                    <div key={h.version}><b>{h.version}</b> {h.summary}</div>
+                  ))}
+                </div>
+              </>
+            ) : <span style={{ color: "var(--ink-faint)", fontSize: 12 }}>—</span>}
 
             <h5>引き継ぎコード</h5>
             <p style={{ fontSize: 11.5 }}>別の端末でも同じ続きから話したいときは、このコードを相手の端末に入力してください。名前は使いません。</p>

@@ -115,6 +115,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   <div class="head-row">
     <span class="mark">相談ログ レビュー</span>
     <span class="sub">心理士専用・このページのURLを共有しないでください</span>
+    <span class="sub" id="appVersion" title="いま動いているアプリの版(src/version.mjs)とデプロイしたコミット"></span>
     <span class="spacer"></span>
     <a class="icon-btn" href="/knowledge.html" style="text-decoration:none">ナレッジ管理</a>
     <button id="refreshBtn" class="icon-btn">更新</button>
@@ -381,6 +382,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     loadError.hidden = true;
     return api("admin_sessions", {}).then(function (body) {
       sessions = (body && body.sessions) || [];
+      // いま動いているアプリの版(src/version.mjs)
+      var v = body && body.version;
+      document.getElementById("appVersion").textContent = v ? "いまの版 " + v.app_version + (v.commit ? "・" + v.commit : "") : "";
       listView.hidden = false;
       renderList();
     }, function (e) {
@@ -580,6 +584,12 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     }
     if (m.choice_id) {
       parts.push('<span class="tag warn">選んだもの ' + esc(m.choice_id) + '(' + (m.choice_input === "typed" ? "数字を書いた" : "ボタン") + ')</span>');
+    }
+    // その返事を作ったときの版(db/schema.sql 16節。prompt_version = 版#プロンプトのハッシュ)
+    if (m.role === "ai" && (m.prompt_version || (m.settings && m.settings.app_version))) {
+      var ver = m.settings && m.settings.app_version ? m.settings.app_version : String(m.prompt_version).split("#")[0];
+      var commit = m.settings && m.settings.commit ? "・" + m.settings.commit : "";
+      parts.push('<span class="tag" title="' + esc((m.prompt_version || "") + (m.model ? " / " + m.model : "")) + '">版 ' + esc(ver + commit) + '</span>');
     }
     if (m.ending_variant) parts.push('<span class="tag">締めの文面 ' + esc(m.ending_variant) + '案目(仮)</span>');
     // 危機の状態で、固定の文面を出さずに指示つきの生成で返した応答(db/schema.sql 12節)

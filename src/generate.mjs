@@ -10,6 +10,7 @@
 //  危機判定(classify)は別モジュール(src/classify.mjs)。
 // ============================================================================
 
+import { APP_VERSION } from "./version.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
@@ -45,8 +46,9 @@ import { buildIntakeStepBlock, INTAKE_STEP_OUTPUT_SCHEMA, INTAKE_HIGH_DISTRESS_B
 // (実測データなし)。レート制限の分散先として最後尾に残す
 // (https://ai.google.dev/gemini-api/docs/gemini-3 で実在・無料枠ありを確認済み)。
 // プロンプトの版(研究のため1ターンごとに messages.prompt_version に残す。2026年10月14日。top-screen-intake.md 3-3)。
-// プロンプト(buildSystem・各ブロック・出力形式)を変えたら上げる。組み立てた文そのもののハッシュも一緒に残すので、上げ忘れても見分けられる
-export const PROMPT_VERSION = "2026-10-14a";
+// アプリの版(src/version.mjs の APP_VERSION)をそのまま使う。修正したら version.mjs に1件足して版を上げる。
+// 組み立てた文そのもののハッシュも一緒に残すので、上げ忘れても見分けられる
+export const PROMPT_VERSION = APP_VERSION;
 
 export const PRIMARY_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"];
 

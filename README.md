@@ -352,6 +352,8 @@ npm run test:crisis
     `--rate` で返事を軽いモデルで採点、`--summary` で集計とエクセル。`--knowledge` を省くと Supabase から読む)。
     採点の妥当性は、エクセルの「採点の較正(人が記入)」を人が埋めて `python3 scripts/export-conversation-flow-xlsx.py --agreement <ファイル>` で確かめる
   - 管理画面の「違和感があった」の印を使うには、`db/schema.sql` の15節を Supabase の SQL エディタで実行する(未実行でも会話は止まらない)
+- **版(バージョン)**:修正するたびに `src/version.mjs` の先頭に1件足し、`npm run changelog` で `docs/changelog.md` を作り直す。
+  `npm run test:version` で確かめる。いまの版は開発用の表示(DEV_PANEL=on)の上部と、管理画面の上部・返事ごとの「版」の印に出る
 - **トップ画面とインテーク(2026年10月14日。CLAUDE.md 5.13)**:コードで進めるインテークを使うには、`db/schema.sql` の16節を
   Supabase の SQL エディタで実行する(未実行でも会話は止まらず、以前の台本で進む)。開発用の表示は `DEV_PANEL=on`(Preview・Development だけ)。
   - 確かめ: `node scripts/test-shima4-part1.mjs`(オフライン)、`node scripts/test-api-path.mjs --scenarios=intake-K1,...,intake-free --reps=5`

@@ -65,6 +65,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── declined.mjs       本人が断った相手(先生・親など)を会話の記録から求める・勧めない指示と出力チェック(5.20)
 │   ├── intake.mjs         トップ画面のボタンとインテークをコードの状態で進める(主訴→背景→つらさ→ゴール。5.13)
 │   ├── notices.mjs        上限・エラーのときの文面、画面の下の一行と「くわしく」の説明(仮)
+│   ├── version.mjs        アプリの版(バージョン)と変更の記録。修正するたびに1件足す(6節)
 │   └── app/
 │       ├── layout.tsx     フォント・メタデータ
 │       ├── page.tsx       クライアント(表示のみ。トップ画面・「くわしく」。開発用の表示は DEV_PANEL=on のときだけ)
@@ -88,6 +89,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── test-conversation-flow.mjs    会話の流れの検証(ログの再現・ペルソナ P1。修正前と修正後。無料枠。5.19)
 │   ├── test-shima4-part1.mjs         チップの受け取り・同じ固定の文を出さない・断った相手・AIから終える形のオフラインテスト(5.20)
 │   ├── test-api-path.mjs             画面と同じ API の経路のテスト(route.ts をそのまま呼ぶ。偽の DB。修正前と修正後。5.20)
+│   ├── test-version.mjs              版の書き方と docs/changelog.md が最新かの確かめ(6節)
 │   ├── test-*.mjs                    そのほかの自動テスト(使い方は README.md「自動テスト一式」)
 │   ├── check-knowledge.mjs           DB のナレッジに seed の欠けが無いかを確かめる(読むだけ)
 │   ├── run-until-done.mjs            無料枠の上限で止まったテストを、上限が戻ったら自動で続きから再開する
@@ -95,6 +97,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   └── _lib/                         テストの共通部品(キー・予算・ナレッジの確認)
 └── docs/
     ├── backlog.md         優先順位つきタスク
+    ├── changelog.md       版ごとの変更の記録(src/version.mjs から scripts/export-changelog.mjs で作る。手で直さない)
     ├── project-history.md 経緯のまとめ(中間発表用の素材。出典つき)
     ├── crisis-stage2-provisional-texts.md  仮の文面の一覧(心理士の確認用。scripts/export-provisional-texts.mjs で作る)
     ├── psychologist-review-texts.md        心理士さんに確認していただく文面の全部(scripts/export-review-texts.mjs で作る)
@@ -888,6 +891,11 @@ AI側から一方的に「もう十分話せた」と判断して締めくくら
 - Next.js標準構成(next, react, react-dom, @supabase/supabase-js, eslint, typescript)以外の
   依存パッケージを不用意に増やさない。追加するときは何のためかをコミットメッセージに書く
 - 秘密情報を絶対にコミットしない(`.env`、APIキー、逐語の未マスキング版)。`.gitignore` の `.env*` を外さない
+- **修正するたびに版(バージョン)を上げる**(2026年10月14日に人が依頼)。`src/version.mjs` の `VERSION_HISTORY` の先頭に
+  1件(版・日付・触れたところ・変えたこと)を足し、`node scripts/export-changelog.mjs` で `docs/changelog.md` を作り直す。
+  版の形は「日付+その日の何回目か」(例: `2026-10-14b`)。プロンプトの版(`PROMPT_VERSION`)も同じ値になる。
+  AIの返事ごとに版とコミット(`messages.prompt_version`・`messages.settings`)が残り、開発用の表示(DEV_PANEL=on)と管理画面に出る。
+  確かめは `node scripts/test-version.mjs`。生徒の画面には版を出さない
 
 ### 変更時に必ず確認すること
 

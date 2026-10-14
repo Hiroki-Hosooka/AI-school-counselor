@@ -48,6 +48,7 @@
 //                                  (2026年10月5日より前の動き)。既定は付ける(CLAUDE.md 5.17)
 // ============================================================================
 
+import { APP_VERSION, VERSION_HISTORY } from "@/version.mjs";
 import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -127,9 +128,15 @@ function makeTimer() {
   };
 }
 
+// デプロイしたコミット(Vercel が入れる環境変数。手元の実行では無い)
+const commitShort = () => (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) || null;
+// 開発用の表示・管理画面に出す版(src/version.mjs)
+const versionInfo = () => ({ app_version: APP_VERSION, commit: commitShort(), history: VERSION_HISTORY.slice(0, 5) });
+
 // その返事を作ったときの設定(研究のため1ターンごとに記録する。2026年10月14日。top-screen-intake.md 3-3)
 function settingsSnapshot() {
   return {
+    app_version: APP_VERSION, commit: commitShort(),
     crisis_response: process.env.CRISIS_RESPONSE ?? null, crisis_detection: process.env.CRISIS_DETECTION ?? "v2",
     crisis_keywords: process.env.CRISIS_KEYWORDS ?? "v3", crisis_aftercare: process.env.CRISIS_AFTERCARE ?? "on",
     crisis_step3_variant: process.env.CRISIS_STEP3_VARIANT ?? "A", dev_panel: process.env.DEV_PANEL === "on",
@@ -343,7 +350,7 @@ export async function POST(req: Request) {
         // 合成データ(ペルソナテスト)の識別。admin.htmlの表示切替に使う(2026年9月)。
         is_synthetic: s.is_synthetic, persona_id: s.persona_id, run_id: s.run_id,
       }));
-      return json({ sessions });
+      return json({ version: versionInfo(), sessions });
     }
 
     // ------------------------------------------------------------------
@@ -399,6 +406,10 @@ export async function POST(req: Request) {
         : withSource.data) as Record<string, unknown> | null;
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        // 16節(版・モデル・設定)の列
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings")
+          .eq("session_id", sessionId).order("seq"),
         // 15節(違和感の印)の列
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason")
@@ -497,7 +508,7 @@ export async function POST(req: Request) {
           .select("id,weight,relation,turns_since_summary,notes").single();
       }
       if (created.error) throw new Error(created.error.message);
-      return json({ session: created.data, knowledge_count: rows.length, dev: devPanel() });
+      return json({ session: created.data, knowledge_count: rows.length, dev: devPanel(), ...(devPanel() ? { version: versionInfo() } : {}) });
     }
 
     // ------------------------------------------------------------------
@@ -530,7 +541,7 @@ export async function POST(req: Request) {
       );
       // 参照したナレッジ・出力チェック・評価は開発用の表示のときだけ返す
       const shown = msgs.map(withCareLine).map((m) => (devPanel() ? m : withoutKeys(m, ["used", "flags", "rating"])));
-      return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel() });
+      return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel(), ...(devPanel() ? { version: versionInfo() } : {}) });
     }
 
     // ------------------------------------------------------------------

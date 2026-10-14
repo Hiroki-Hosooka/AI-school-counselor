@@ -226,7 +226,7 @@ async function runScenario(name, sc, rep) {
     session: sess && { phase: sess.phase, intake_step: sess.intake_step, chief_complaint_category: sess.chief_complaint_category,
       chief_complaint_source: sess.chief_complaint_source, distress_level: sess.distress_level, user_goal: sess.user_goal,
       recommended_mode: sess.recommended_mode, onset_context: sess.onset_context },
-    stored: msgs.map((m) => ({ role: m.role, body: m.body, crisis: m.crisis, flags: m.flags, timings: m.timings ?? null, model: m.model ?? null })) };
+    stored: msgs.map((m) => ({ role: m.role, body: m.body, crisis: m.crisis, flags: m.flags, timings: m.timings ?? null, model: m.model ?? null, prompt_version: m.prompt_version ?? null, settings: m.settings ?? null })) };
 }
 
 function measure(run) {
