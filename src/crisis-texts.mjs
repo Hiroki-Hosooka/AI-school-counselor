@@ -29,25 +29,59 @@ const CONCERN_OBJECT = { violence: "そのこと", sexual: "そのこと", bully
 export const concernText = (category) => CONCERN_TEXT_PROVISIONAL[category] ?? CONCERN_TEXT_PROVISIONAL.unknown;
 export const concernObject = (category) => CONCERN_OBJECT[category] ?? "その気持ち";
 
+// 本人が断った相手(src/declined.mjs)を除いて、相手の並びを組む(2026年10月14日。断った相手は勧めない)。
+// 断った相手が無いときは、今までと同じ文になる
+const keep = (pairs, declined) => pairs.filter(([p]) => !(declined ?? []).includes(p)).map(([, w]) => w);
+// 「学校の先生や保健室、スクールカウンセラー、家の人など、」(何も残らなければ空)
+function peopleListText(declined) {
+  const w = keep([["teacher", "学校の先生"], ["nurse", "保健室"], ["counselor", "スクールカウンセラー"], ["parent", "家の人"]], declined);
+  if (!w.length) return "";
+  return (w.length === 1 ? w[0] : `${w[0]}や${w.slice(1).join("、")}`) + "など、";
+}
+
 // 本番の固定応答(段階ごとの応答が無効なとき。本人の危機で生成をスキップして返す。CLAUDE.md 5.2)。
 // 2026年10月9日、「わたしだけで受け止めるには重い内容です」を消し、指示書の2通目の型(「〜が、とても心配です」)で組み直した。
 // 「あなたが一番話せそうなところで大丈夫です」も消した(指示書の型に無く、「大丈夫」を軽く使わないため)。
-export function buildCrisisReply(category) {
+export function buildCrisisReply(category, declined = []) {
   // 2026年10月11日、「どうしてここでなら言えると思ったのか」を2文目から最後に移した(人が決めた)。途中にあると、
   // どれに返事をすればよいかわからなかったため。最後に置いて、返事をするならここ、とわかるようにした。
   // 最後に来るので「あとで」を「よかったら」に替えた
   return "よく、ここで言えたね。誰にも言えないと思っていたことを書くのは、すごく力が要ったと思う。\n\n" +
     `${concernText(category)}が、とても心配です。あなたのために、${concernObject(category)}を、` +
-    "学校の先生や保健室、スクールカウンセラー、家の人など、あなたの声が届く人とも一緒に考えてほしいなと思っています。\n\n" +
+    `${peopleListText(declined)}あなたの声が届く人とも一緒に考えてほしいなと思っています。\n\n` +
     "ここで話すのをやめてほしいわけじゃないよ。下に、話せるところものせておくね。\n\n" +
     "どうしてここでなら言えると思ったのか、よかったら聞かせてもらえたら嬉しい。";
 }
 
+// 本番の既定(段階ごとの応答が無効)で、同じ会話の2回目のはっきりした打ち明けに出す短い1通(危機カードつき。仮)。
+// 同じ固定応答を1回の会話で2回出さない(2026年10月14日に人が決めた。嶋先生「同じメッセージが2回来ると傷つく」・相談ログ 86130eef)。
+// 3回目からは危機の状態の指示つきの生成。段階ごとの応答の「2回目以降の短い1通」(src/crisis-response.mjs)と同じ文
+export function crisisRepeatText(declined = []) {
+  const teacher = !(declined ?? []).includes("teacher");
+  return "また書いてくれてありがとう。ひとりで抱えなくていいからね。" +
+    (teacher ? "下の窓口や、学校の先生にも、あなたの声を届けてほしいです。" : "下の窓口にも、あなたの声を届けてほしいです。");
+}
+
 // 段階ごとの応答の2通目(短い吹き出しに分け、1〜2秒の間をおいて1つずつ出す。3つ目の吹き出しの下に危機カード)
-export function buildConcernBubbles(category) {
+export function buildConcernBubbles(category, declined = []) {
+  const counselor = !(declined ?? []).includes("counselor");
   return [
     `${concernText(category)}が、とても心配です。`,
-    `あなたのために、${concernObject(category)}を、カウンセラーの先生など、あなたの声が届く人とも一緒に考えてほしいなと思っています。`,
+    `あなたのために、${concernObject(category)}を、${counselor ? "カウンセラーの先生など、" : ""}あなたの声が届く人とも一緒に考えてほしいなと思っています。`,
     "ここで話すのをやめてほしいわけじゃないよ。下に、話せるところものせておくね。",
   ];
+}
+
+// 3通目(相談先や大人に話したいか)。候補 A〜C(設定 CRISIS_STEP3_VARIANT)。断った相手を名前で挙げない
+export function crisisStep3TextFor(variant, declined = []) {
+  const w = keep([["teacher", "先生"], ["parent", "おうちの人"]], declined);
+  if (variant === "B") {
+    return w.length ? `今日のこと、下の相談先や、${w.join("・")}のような、まわりの大人にも話せそう？` : "今日のこと、下の相談先にも話せそう？";
+  }
+  if (variant === "C") {
+    return w.length
+      ? `ここで話してくれたことを、下の相談先や、まわりの大人（${w.join("や")}など）にも話してみるのはどうかな。話してみたいって思う？`
+      : "ここで話してくれたことを、下の相談先にも話してみるのはどうかな。話してみたいって思う？";
+  }
+  return w.length ? `下にのせた相談先や、${w.join("・")}など、まわりの大人に話してみたいって思う？` : "下にのせた相談先に話してみたいって思う？";
 }

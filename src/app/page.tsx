@@ -234,8 +234,10 @@ export default function Page() {
         const next = [...t, r.weight as Weight];
         return next.length > 28 ? next.slice(next.length - 28) : next;
       });
+      // 返事が空のまま表示しない(サーバでも防いでいるが、念のため。2026年10月14日。相談ログ 86130eef の10ターン目)
+      const replyText = typeof r.reply === "string" && r.reply.trim() ? r.reply : SEND_FAILED_NOTICE;
       setMessages((m) => [...m, {
-        role: "ai", body: r.reply, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
+        role: "ai", body: replyText, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
         card: r.card ?? null, careLine: r.care_line ?? null,
         // 整理・作業の提案のチップ(組G。会話の流れ。選ばずに書いてもよい)
         choices: r.choices ?? null, choiceNote: r.choice_note ?? null,

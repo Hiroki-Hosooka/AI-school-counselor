@@ -47,7 +47,10 @@ import {
   callGemini, parseJSON, LITE_MODELS, buildClassifierInput, classifyStaged, crisisDetectionVersion,
 } from "./classify.mjs";
 import { matchNegation, normalizeV3, categoryOfSafety, CATEGORY_PRIORITY } from "./crisis-keywords-v3.mjs";
-import { buildConcernBubbles } from "./crisis-texts.mjs";
+import { buildConcernBubbles, crisisStep3TextFor, crisisRepeatText, buildCrisisReply } from "./crisis-texts.mjs";
+import { CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET } from "./flow.mjs";
+
+export * from "./declined.mjs";
 
 export * from "./crisis-texts.mjs";
 
@@ -100,13 +103,12 @@ export const WHY_HERE_FREE_ACK_PROVISIONAL = "教えてくれてありがとう�
 
 // 3通目: 相談先や大人に話したいか(仮・文面は要検討。3つの候補を持ち、設定 CRISIS_STEP3_VARIANT=A|B|C で切り替える。既定は A)。
 // 前置き(「もうひとつ聞かせてね」など)は付けない。AIが先生に伝えるとは言わない(ナレッジ D7)
+// 本人が断った相手(src/declined.mjs)は名前で挙げない(src/crisis-texts.mjs の crisisStep3TextFor。2026年10月14日)
 export const CRISIS_STEP3_VARIANTS_PROVISIONAL = {
-  A: "下にのせた相談先や、先生・おうちの人など、まわりの大人に話してみたいって思う？",
-  B: "今日のこと、下の相談先や、先生・おうちの人のような、まわりの大人にも話せそう？",
-  C: "ここで話してくれたことを、下の相談先や、まわりの大人（先生やおうちの人など）にも話してみるのはどうかな。話してみたいって思う？",
+  A: crisisStep3TextFor("A"), B: crisisStep3TextFor("B"), C: crisisStep3TextFor("C"),
 };
-export const crisisStep3Text = () =>
-  CRISIS_STEP3_VARIANTS_PROVISIONAL[process.env.CRISIS_STEP3_VARIANT] ?? CRISIS_STEP3_VARIANTS_PROVISIONAL.A;
+export const crisisStep3Text = (declined = []) =>
+  crisisStep3TextFor(["A", "B", "C"].includes(process.env.CRISIS_STEP3_VARIANT) ? process.env.CRISIS_STEP3_VARIANT : "A", declined);
 
 // 3通目への答えへの一言。no のときは、このあとに組Bのチップを付ける(理由は書かせず、選んでもらう。嶋先生 10/7)
 export const CRISIS_STEP4_PROVISIONAL = {
@@ -114,6 +116,10 @@ export const CRISIS_STEP4_PROVISIONAL = {
   unclear: "うん、すぐに決めなくて大丈夫だよ。話してみようと思えたときは、この画面を先生に見せるだけでも伝わるからね。",
   no: "そっか、今は話したくないんだね。無理に、とは言わないよ。よかったら、そう思う理由に近いものを教えてくれる？ 選ぶだけでいいよ。",
 };
+// 先生を断っているときは「先生に見せる」を言わない
+export const crisisStep4Text = (answer, declined = []) => (answer === "unclear" && (declined ?? []).includes("teacher")
+  ? "うん、すぐに決めなくて大丈夫だよ。話してみようと思えたときは、この画面を見せるだけでも伝わるからね。"
+  : CRISIS_STEP4_PROVISIONAL[answer]);
 
 // 組B(「話したくない」の2択)と組C(「話せない」の背景)。嶋先生(10/7)の発言と、生徒から出た例(嶋先生が「人間あるある」と
 // して選択肢に使ってよいとしたもの。C7 は嶋先生自身が挙げたもの)
@@ -156,15 +162,14 @@ export const SCALING_PROMPT_PROVISIONAL =
 export const SCALING_PROMPT_A_PROVISIONAL =
   "そう思う気持ちも、ちゃんとあるんだね。つらい気持ちと、そうじゃない気持ちと、どっちもあるのかな。" +
   "AIは文字どおりに受け取りやすいから、よかったら今の気持ちに近い数字を選んでみてね。";
-// インテークのつらさのスケーリングと同じ向き(1がいちばん軽く、5がいちばんつらい)。問いの中身が違う(悩みのつらさ / 今の気持ち)ので
-// ラベルは指示書のまま(2026年10月9日に人が確認)
-export const CHOICES_SCALING_PROVISIONAL = [
-  { id: "S1", label: "1 いまは落ち着いている" },
-  { id: "S2", label: "2 少しつらい" },
-  { id: "S3", label: "3 つらい" },
-  { id: "S4", label: "4 かなりつらい" },
-  { id: "S5", label: "5 とてもつらい" },
-];
+// 2回目のスケーリングの問い(同じ固定の文を1回の会話で2回出さないため。2026年10月14日)
+export const SCALING_PROMPT_SECOND_PROVISIONAL =
+  "もう一度だけ、今の気持ちに近い数字を選んでみてくれる？ 気持ちは、話しているうちに変わってもいいからね。";
+// インテークのつらさと同じラベル・同じ向き(1がいちばん軽く、5がいちばんつらい)。2026年10月14日にそろえた
+// (相談ログ 86130eef で「4 かなりつらい」と「4: 限界に近い」が混在した。docs/prompts/fix-after-shima4.md 1-1)。
+// 段階を下げる条件(lowersStage)は数字で決めているので、ラベルを変えても意味は変わらない
+export const DISTRESS_LABELS_PROVISIONAL = ["少し気になる", "まあまあモヤモヤする", "かなりつらい", "限界に近い", "もう耐えられない"];
+export const CHOICES_SCALING_PROVISIONAL = DISTRESS_LABELS_PROVISIONAL.map((l, i) => ({ id: `S${i + 1}`, label: `${i + 1} ${l}` }));
 // 選んだ数字を受け止める一言(下げないとき。このあと止まっていた次の文面へ)
 export const SCALING_ACK_PROVISIONAL = "教えてくれてありがとう。どっちの気持ちもあるんだね。";
 
@@ -185,8 +190,8 @@ export const nextEndingVariant = (last) => (Number.isInteger(last) && last >= 1 
 export const CRISIS_AGAIN_PROVISIONAL = "そう感じているんだね。書いてくれてありがとう。";
 
 // 同じ会話で2回目以降の段階2(危機カードを添える)。キーワード・受動パターンによる新しい打ち明けのときだけ、1回の会話で1回まで
-export const CRISIS_REPEAT_PROVISIONAL =
-  "また書いてくれてありがとう。ひとりで抱えなくていいからね。下の窓口や、学校の先生にも、あなたの声を届けてほしいです。";
+// (文は src/crisis-texts.mjs の crisisRepeatText。本番の既定の2回目の打ち明けでも同じ文を使う。断った相手は挙げない)
+export const CRISIS_REPEAT_PROVISIONAL = crisisRepeatText();
 
 // 危機の状態で生成した返事が出力チェックを通らなかったとき・生成に失敗したときの固定の返事(2つを順に使う)
 export const CRISIS_GENERATION_FALLBACK_PROVISIONAL = [
@@ -423,7 +428,158 @@ export const CHOICE_SETS = { scaling: CHOICES_SCALING_PROVISIONAL, B: CHOICES_B_
 // 「はっきりした打ち明けから始めた step1 で、組Wを出したことがある」で見分ける(2026年10月11日)
 const awaitingWhyHere = (s) => s.crisis_state === "step1" && s.crisis_trigger !== "accumulation"
   && s.pending_choice_set == null && s.choice_sets_shown.includes("W");
-// 相談者が押したチップを確かめる。直前のAIの返事に付けた組のものだけ受け付ける(それ以外は自由に書いた発言として扱う)
+// ----------------------------------------------------------------------------
+// チップの受け取り(2026年10月14日。docs/design-shima4-part1-topscreen.md 1-1)。
+// 相談ログ 86130eef では、状態(pending_choice_set)の保存がだまって失敗し、押したチップが受け付けられず、ラベルの文字が
+// 自由記述として判定されていた。チップは、状態ではなく「直前の AI の返事に保存したチップ(messages.choices・choice_set)」から
+// 受け取る。危機の流れの組(W・B・C・スケーリング)・会話の流れの組G・インテークの組を、すべてこの1つの関数で受け取る。
+//  - 送られた choice_id が直前の返事のチップにある → そのチップ(button)
+//  - choice_id が無くても、書いた文字がラベルと同じ(空白・記号・全角半角・かなをそろえて比べる)、
+//    または数字の組で数字だけ・数字を除いたラベルだけ → そのチップ(typed)
+//  - それ以外 → null(自由記述)
+// hist: その会話の messages(古い順。今回の発言は含めない)。行: role・choices・choice_set
+// ----------------------------------------------------------------------------
+const KNOWN_SETS = () => ({ ...CHOICE_SETS, [FLOW_CHOICE_SET]: CHOICES_G_PROVISIONAL, ...EXTRA_CHOICE_SETS });
+// インテークの組など、ほかのファイルで定める組をここに登録する(registerChoiceSet)
+const EXTRA_CHOICE_SETS = {};
+export const registerChoiceSet = (set, items) => { EXTRA_CHOICE_SETS[set] = items; };
+// 数字で答えられる組(数字だけ・「4です」などもそのチップとして受け取る)
+const NUMERIC_SETS = new Set(["scaling"]);
+export const registerNumericSet = (set) => NUMERIC_SETS.add(set);
+const normLabel = (t) => normalizeV3(String(t ?? "")).replace(/\s+/g, "");
+const labelWithoutNumber = (l) => String(l).replace(/^\s*[0-9０-９]+\s*[:：.．、]?\s*/, "");
+
+export function lastAiChoices(hist) {
+  const lastAi = [...(hist ?? [])].reverse().find((m) => m?.role === "ai");
+  if (!lastAi || !Array.isArray(lastAi.choices) || !lastAi.choices.length || !lastAi.choice_set) return null;
+  return { set: lastAi.choice_set, items: lastAi.choices };
+}
+
+export function resolveChoice(hist, choiceId, text) {
+  const offered = lastAiChoices(hist);
+  if (!offered) return null;
+  const canonical = KNOWN_SETS()[offered.set];
+  if (!canonical) return null;
+  const offeredIds = new Set(offered.items.map((c) => c?.id).filter(Boolean));
+  const items = canonical.filter((c) => offeredIds.has(c.id));
+  const pick = (item, input) => (item ? { set: offered.set, id: item.id, label: item.label, input } : null);
+  if (choiceId) {
+    const hit = items.find((c) => c.id === choiceId);
+    if (hit) return pick(hit, "button");
+  }
+  const t = normLabel(text);
+  if (!t) return null;
+  // 画面に出したラベル(保存した文字)と、今のラベルの両方と比べる
+  const byLabel = items.find((c) => {
+    const shown = offered.items.find((o) => o?.id === c.id)?.label;
+    return [c.label, shown, labelWithoutNumber(c.label), shown ? labelWithoutNumber(shown) : null]
+      .filter(Boolean).some((l) => normLabel(l) === t);
+  });
+  if (byLabel) return pick(byLabel, "typed");
+  if (NUMERIC_SETS.has(offered.set)) {
+    const n = typedScale(text);
+    if (n != null) return pick(items.find((c) => c.id.endsWith(String(n)) && /^[A-Z]+\d$/.test(c.id)), "typed");
+  }
+  return null;
+}
+
+// 受け取ったチップ(危機の流れの組)が、状態とずれているとき(状態の保存の失敗など)は、記録(直前の返事のチップ)を正として
+// 状態をそろえる。戻り値: { state, mismatch }
+const STATE_FOR_SET = { scaling: "scaling", B: "choice_b", C: "choice_c" };
+export function stateForChoice(state, choice) {
+  const s = normalizeSafetyState(state);
+  if (!choice || !CHOICE_SETS[choice.set]) return { state: s, mismatch: false };
+  if (choice.set === "W") {
+    if (awaitingWhyHere(s)) return { state: s, mismatch: false };
+    return {
+      state: { ...s, crisis_state: "step1", crisis_trigger: "direct", pending_choice_set: null,
+        choice_sets_shown: [...new Set([...s.choice_sets_shown, "W"])] },
+      mismatch: true,
+    };
+  }
+  if (s.crisis_state === STATE_FOR_SET[choice.set] && s.pending_choice_set === choice.set) return { state: s, mismatch: false };
+  return {
+    state: {
+      ...s, crisis_state: STATE_FOR_SET[choice.set], pending_choice_set: choice.set,
+      crisis_resume: choice.set === "scaling" ? (s.crisis_resume ?? "done") : s.crisis_resume,
+      choice_sets_shown: [...new Set([...s.choice_sets_shown, choice.set])],
+    },
+    mismatch: true,
+  };
+}
+export const STATE_MISMATCH_FLAG = "記録のみ:状態と直前のチップの記録がずれていた(記録に合わせた)";
+
+// ----------------------------------------------------------------------------
+// 状態の保存の失敗(2026年10月14日に人が決めた)。状態に関わる書き込みが失敗したら、記録に残し、
+// **その会話では固定の文を出さず、指示つきの生成で返す**(誤った状態のまま進めない)。印は AI の行の flags に残し、
+// 以後のターンは会話の記録からこの印を見つけて同じ扱いにする
+// ----------------------------------------------------------------------------
+export const STATE_SAVE_FAILED_FLAG = "記録のみ:状態の保存に失敗";
+export const stateUnreliable = (hist) => (hist ?? []).some((m) => Array.isArray(m?.flags)
+  && m.flags.some((f) => typeof f === "string" && f.startsWith(STATE_SAVE_FAILED_FLAG)));
+
+// 固定の文面を出す予定(plan)を、指示つきの生成に切り替える。段階・通知・記録はそのまま。
+// 段階2(本人)なら危機の状態の指示(crisisGeneration)、それ以外は今の指示に危機のあとを足す
+export function toGenerationPlan(plan, reason) {
+  if (!plan || plan.action !== "fixed") return plan;
+  const self2 = plan.stage === 2 && plan.subject === "self";
+  const bubbleCard = plan.bubbles?.some((b) => b.card === "crisis") ? "crisis"
+    : plan.bubbles?.some((b) => b.card) ? "hotlines" : null;
+  const contexts = self2 ? ["crisisGeneration", "afterCrisis"]
+    : [...new Set([...(plan.safetyContexts ?? []), "afterCrisis"])];
+  return {
+    ...plan, action: "generate", bubbles: null, choices: null, text: null, crisisStep: null,
+    card: bubbleCard ?? plan.card ?? null, safetyContexts: contexts, crisisGenerated: self2, provisional: true,
+    decidedBy: [...plan.decidedBy, reason],
+    nextState: {
+      ...plan.nextState, pending_choice_set: null, watch_turns_left: 0,
+      ...(self2 ? { crisis_state: "done" } : {}),
+    },
+    event: plan.event ? { ...plan.event, crisis_step: null, decided_by: [...plan.decidedBy, reason] } : plan.event,
+    suppressed: reason,
+  };
+}
+
+// 同じ固定の文を、1回の会話で2回出さない(仕組みとしての保証。2026年10月14日)。
+// その会話の AI の発言にすでにある文の吹き出しは出さない。問いを含む最後の吹き出し(チップを付ける吹き出し)が重なる、
+// または出す吹き出しが1つも残らないときは、指示つきの生成に切り替える
+export function dedupeFixedPlan(plan, hist) {
+  if (!plan || plan.action !== "fixed" || !plan.bubbles?.length) return plan;
+  const shown = new Set((hist ?? []).filter((m) => m?.role === "ai").map((m) => String(m.body ?? "").trim()));
+  const isDup = (b) => shown.has(String(b.text).trim());
+  if (!plan.bubbles.some(isDup)) return plan;
+  const rest = plan.bubbles.filter((b) => !isDup(b));
+  if (!rest.length || isDup(plan.bubbles[plan.bubbles.length - 1])) return toGenerationPlan(plan, "fixed_repeat_suppressed");
+  return {
+    ...plan, bubbles: rest, text: rest.map((b) => b.text).join("\n\n"), crisisStep: rest[0].crisisStep,
+    card: rest.find((b) => b.card)?.card ?? null,
+    decidedBy: [...plan.decidedBy, "fixed_repeat_dropped"],
+    event: plan.event ? { ...plan.event, crisis_step: rest[0].crisisStep } : plan.event,
+  };
+}
+
+// 本番の既定(段階ごとの応答が無効)の、本人の危機への返し方(2026年10月14日に人が決めた。CLAUDE.md 5.2)。
+// 同じ固定応答を1回の会話で2回出さない: 1回目 = 固定応答(buildCrisisReply)/ 2回目 = 短い別の固定の1通(crisisRepeatText。
+// 危機カードつき)/ 3回目から = 危機の状態の指示つきの生成。どれも断った相手は挙げない。
+// 状態の保存に失敗した会話(stateUnreliable)は、固定の文を出さず生成。すでに同じ文を出していても生成。
+// 戻り値: { kind: "full" | "repeat" | "generate", text }
+export function defaultCrisisReplyFor(hist, category, declined = []) {
+  const ais = (hist ?? []).filter((m) => m?.role === "ai");
+  const shown = new Set(ais.map((m) => String(m.body ?? "").trim()));
+  const prior = ais.filter((m) => m.crisis === true).length;
+  if (stateUnreliable(hist)) return { kind: "generate", text: null, reason: "state_unreliable" };
+  const candidate = prior === 0 ? { kind: "full", text: buildCrisisReply(category, declined) }
+    : prior === 1 ? { kind: "repeat", text: crisisRepeatText(declined) } : null;
+  if (!candidate || shown.has(candidate.text.trim())) return { kind: "generate", text: null, reason: "fixed_repeat_suppressed" };
+  return candidate;
+}
+
+// 返事が空にならないようにする(2026年10月14日。相談ログ 86130eef の10ターン目)
+export const EMPTY_REPLY_FLAG = "記録のみ:返事が空だったので固定の一言に置き換えた";
+export const EMPTY_REPLY_FALLBACK_PROVISIONAL = "うん、ちゃんと読んでいるよ。よかったら、もう少し聞かせてね。";
+
+// 相談者が押したチップを確かめる。直前のAIの返事に付けた組のものだけ受け付ける(それ以外は自由に書いた発言として扱う)。
+// (以前の受け取り方。状態だけを見る。route.ts は resolveChoice を使う。テストのために残す)
 export function validateChoice(state, choiceId) {
   const s = normalizeSafetyState(state);
   const set = s.pending_choice_set ?? (awaitingWhyHere(s) ? "W" : null);
@@ -498,7 +654,7 @@ export function lowersStage(negationType, scale) {
 //   event         safety_events に書く内容(書かなくてよいターンは null)
 // ----------------------------------------------------------------------------
 export function planSafetyTurn({
-  staged, state, text = "", withdrawal = null, figurative = false, teacherAnswer = null, choice = null,
+  staged, state, text = "", withdrawal = null, figurative = false, teacherAnswer = null, choice = null, declined = [],
 }) {
   const s = normalizeSafetyState(state);
   const detected = [...(staged?.decidedBy ?? [])];
@@ -577,22 +733,22 @@ export function planSafetyTurn({
   const bubble = (text_, crisisStep, card = null) => ({ text: text_, crisisStep, card });
   // 2通目(心配。種類ごと)+3通目。危機カードは2通目の最後の吹き出しの下
   const concernAndQuestion = (category) => {
-    const cb = buildConcernBubbles(category);
+    const cb = buildConcernBubbles(category, declined);
     return [
       ...cb.map((t, i) => bubble(t, 2, i === cb.length - 1 ? "crisis" : null)),
-      bubble(crisisStep3Text(), 3),
+      bubble(crisisStep3Text(declined), 3),
     ];
   };
   // はっきりした打ち明けへの最初のターン: 受け止め → 心配(危機カード)→ ここで話せた理由の問い(組Wのチップ)
   const firstTurnBubbles = (category) => [
     bubble(CRISIS_STEP1_PROVISIONAL, 1),
-    bubble(buildConcernBubbles(category).join("\n"), 2, "crisis"),
+    bubble(buildConcernBubbles(category, declined).join("\n"), 2, "crisis"),
     bubble(CRISIS_WHY_HERE_PROVISIONAL, 1),
   ];
   // step1 のあとに出す残り。最初のターンで心配まで出した(組Wを出した)なら3通目だけ。積み重なりで始めた step1 と、
   // 以前の流れ(受け止めだけの1通目)の途中のセッションは、心配をまだ出していないので2通目・3通目
   const afterStep1 = (trigger, category) => (trigger !== "accumulation" && s.choice_sets_shown.includes("W")
-    ? [bubble(crisisStep3Text(), 3)] : concernAndQuestion(category));
+    ? [bubble(crisisStep3Text(declined), 3)] : concernAndQuestion(category));
   const crisisGeneration = (extraNext = {}, baseRules = rules) => ({
     crisisGenerated: true, safetyContexts: ["crisisGeneration", "afterCrisis"],
     decidedBy: [...baseRules, "crisis_generation"],
@@ -601,7 +757,7 @@ export function planSafetyTurn({
   // 固定の文面を出し終えたあとの、はっきりした危機のサイン。キーワード・受動パターンによる新しい打ち明けで、
   // 2回目以降の短い1通をまだ出していなければその1通(危機カードつき。1回の会話で1回まで)、それ以外は指示つきの生成
   const afterAllSteps = (extraNext = {}, baseRules = rules) => (ownWords && !s.repeat_used
-    ? { bubbles: [bubble(CRISIS_REPEAT_PROVISIONAL, 5, "crisis")],
+    ? { bubbles: [bubble(crisisRepeatText(declined), 5, "crisis")],
       nextState: { ...next, ...extraNext, crisis_state: "done", watch_turns_left: 0, repeat_used: true } }
     : crisisGeneration(extraNext, baseRules));
   // 止めていた流れの続き。step1(1通目のあと)なら2通目・3通目、それ以外(3通目のあと・出し終えた)なら afterAllSteps
@@ -615,7 +771,8 @@ export function planSafetyTurn({
   const canScale = !!negationType && !crisisSelf && s.pending_choice_set == null && s.scaling_count < SCALING_MAX;
   const scalingTurn = (resume) => build({
     stage: 2, subject: "self", decidedBy: [...rules, "scaling"],
-    bubbles: [bubble(negationType === "A" ? SCALING_PROMPT_A_PROVISIONAL : SCALING_PROMPT_PROVISIONAL, 10)],
+    bubbles: [bubble(s.scaling_count >= 1 ? SCALING_PROMPT_SECOND_PROVISIONAL
+      : negationType === "A" ? SCALING_PROMPT_A_PROVISIONAL : SCALING_PROMPT_PROVISIONAL, 10)],
     choices: { set: "scaling", items: CHOICES_SCALING_PROVISIONAL },
     notify: notifyThisTurn, notifySubject: "self",
     nextState: {
@@ -633,7 +790,7 @@ export function planSafetyTurn({
     // 選ばずに自由に書いた・はっきりした新しいサインがある → 下げずに、止まっていた状態として続ける(続けてチップは出さない)
     if (scale == null || crisisSelf) {
       return planSafetyTurn({
-        staged, text, withdrawal, figurative, teacherAnswer, choice: null,
+        staged, text, withdrawal, figurative, teacherAnswer, choice: null, declined,
         state: { ...state, ...s, crisis_state: resume, pending_choice_set: "scaling", crisis_resume: null, crisis_negation: null },
       });
     }
@@ -679,7 +836,7 @@ export function planSafetyTurn({
       });
     }
     // 選ばずに自由に書いた → 出し終えた状態として続ける(続けてチップは出さない)
-    return planSafetyTurn({ staged, text, withdrawal, figurative, teacherAnswer, choice: null, state: { ...state, ...s, crisis_state: "done", pending_choice_set: "B" } });
+    return planSafetyTurn({ staged, text, withdrawal, figurative, teacherAnswer, choice: null, declined, state: { ...state, ...s, crisis_state: "done", pending_choice_set: "B" } });
   }
 
   // ==== 組C(「話せない」の背景)を出したあと ====
@@ -692,7 +849,7 @@ export function planSafetyTurn({
         event: { stage: 2, risk: eventRisk },
       });
     }
-    return planSafetyTurn({ staged, text, withdrawal, figurative, teacherAnswer, choice: null, state: { ...state, ...s, crisis_state: "done", pending_choice_set: "C" } });
+    return planSafetyTurn({ staged, text, withdrawal, figurative, teacherAnswer, choice: null, declined, state: { ...state, ...s, crisis_state: "done", pending_choice_set: "C" } });
   }
 
   // ==== 1通目のあと(はっきりした打ち明けから始めた応答)====
@@ -701,7 +858,7 @@ export function planSafetyTurn({
     if (choice?.set === "W") {
       return build({
         stage: 2, subject: "self", decidedBy: [...rules, "choice_w"], userChoice: choice,
-        bubbles: [bubble(CHOICE_W_ACK_PROVISIONAL[choice.id], 4), bubble(crisisStep3Text(), 3)],
+        bubbles: [bubble(CHOICE_W_ACK_PROVISIONAL[choice.id], 4), bubble(crisisStep3Text(declined), 3)],
         nextState: { ...next, crisis_state: "step3" },
         event: { stage: 2, risk: eventRisk },
       });
@@ -711,7 +868,7 @@ export function planSafetyTurn({
     // 最初のターンで心配まで出している(組Wを出した)なら、自由に書いた答えを短く受け止めて3通目。
     // 以前の流れ(受け止めだけの1通目)の途中のセッションなら、今までどおり2通目・3通目
     const tail = s.choice_sets_shown.includes("W")
-      ? [bubble(WHY_HERE_FREE_ACK_PROVISIONAL, 4), bubble(crisisStep3Text(), 3)]
+      ? [bubble(WHY_HERE_FREE_ACK_PROVISIONAL, 4), bubble(crisisStep3Text(declined), 3)]
       : concernAndQuestion(category);
     return build({
       stage: 2, subject: "self", decidedBy: [...rules, "crisis_flow"], bubbles: tail,
@@ -731,12 +888,12 @@ export function planSafetyTurn({
     };
     if (answer === "no" && !s.choice_sets_shown.includes("B")) {
       return build({
-        ...common, bubbles: [bubble(CRISIS_STEP4_PROVISIONAL.no, 4)], choices: { set: "B", items: CHOICES_B_PROVISIONAL },
+        ...common, bubbles: [bubble(crisisStep4Text("no", declined), 4)], choices: { set: "B", items: CHOICES_B_PROVISIONAL },
         nextState: { ...next, crisis_state: "choice_b", pending_choice_set: "B", choice_sets_shown: [...new Set([...s.choice_sets_shown, "B"])] },
       });
     }
     return build({
-      ...common, bubbles: [bubble(CRISIS_STEP4_PROVISIONAL[answer === "no" ? "unclear" : answer], 4)],
+      ...common, bubbles: [bubble(crisisStep4Text(answer === "no" ? "unclear" : answer, declined), 4)],
       nextState: { ...next, crisis_state: "done" },
     });
   }
@@ -993,7 +1150,7 @@ export async function judgeWithdrawal(text, recentMessages = []) {
 
 // 3通目(相談先や大人に話したいか)への答えの判定。答えの一言の出し分けと、組Bのチップを出すかに使う
 const TEACHER_PROMPT = `あなたは中高生向け相談AIの補助判定器です。次のJSONだけを返します。
-{"answer": "yes|no|unclear", "reason": "20字以内"}
+{"answer": "yes|no|unclear", "declined": ["teacher|parent|counselor|nurse"], "reason": "20字以内"}
 
 状況: AIが相談者に、画面にのせた相談先(窓口)や、先生・おうちの人など、まわりの大人に話してみたいかをたずねました。
 
@@ -1004,22 +1161,32 @@ const TEACHER_PROMPT = `あなたは中高生向け相談AIの補助判定器で
 answer の基準:
 yes: 相談先やまわりの大人に話すことに前向き(「話してみる」「いいかも」「話せそう」「先生なら話せるかも」など)
 no: 話すことに後ろ向き(「いやだ」「話したくない」「無理」「言いたくない」「話せない」など)
-unclear: どちらとも言えない、わからない、問いに答えていない`;
+unclear: どちらとも言えない、わからない、問いに答えていない
+
+declined: 【判定する発言】で、話したくない・頼れないと言っている相手(2026年10月14日)。
+teacher(先生・担任)/ parent(親・おうちの人・家族)/ counselor(カウンセラー)/ nurse(保健室)。
+はっきり書かれている相手だけを入れる。相手を挙げずに「話したくない」とだけ書いているときは空の配列。迷ったら入れない`;
 
 const TEACHER_SCHEMA = {
   type: "OBJECT",
-  properties: { answer: { type: "STRING", enum: ["yes", "no", "unclear"] }, reason: { type: "STRING" } },
-  required: ["answer", "reason"],
-  propertyOrdering: ["answer", "reason"],
+  properties: {
+    answer: { type: "STRING", enum: ["yes", "no", "unclear"] },
+    declined: { type: "ARRAY", items: { type: "STRING", enum: ["teacher", "parent", "counselor", "nurse"] } },
+    reason: { type: "STRING" },
+  },
+  required: ["answer", "declined", "reason"],
+  propertyOrdering: ["answer", "declined", "reason"],
 };
 
+// 戻り値の declined は推定(route.ts が AI の行の flags に「断った相手(推定)」として残す)
 export async function judgeTeacherAnswer(text, recentMessages = []) {
   const input = buildClassifierInput(text, recentMessages);
   const r = await withTimeout(judgeOnce(TEACHER_PROMPT, TEACHER_SCHEMA, input, (p) => {
     if (!["yes", "no", "unclear"].includes(p.answer)) throw new Error(`想定外の answer: ${p.answer}`);
-    return { answer: p.answer };
+    const declined = Array.isArray(p.declined) ? p.declined.filter((x) => ["teacher", "parent", "counselor", "nurse"].includes(x)) : [];
+    return { answer: p.answer, declined };
   }));
-  return { answer: r.ok ? r.answer : "unclear", vote: r, error: r.ok ? null : r.error };
+  return { answer: r.ok ? r.answer : "unclear", declined: r.ok ? r.declined : [], vote: r, error: r.ok ? null : r.error };
 }
 
 // ----------------------------------------------------------------------------
@@ -1029,38 +1196,50 @@ export async function judgeTeacherAnswer(text, recentMessages = []) {
 // ----------------------------------------------------------------------------
 // 会話の流れのチップ(組G「もう少しこのまま話したい」「一緒に整理してみたい」。src/flow.mjs)を押したターン。
 // ラベルは本人の言葉ではないので分類器にかけず、段階0の発言として状態だけ進める(見守りの残りなど。2026年10月11日)
-export function assessFlowChoiceTurn(state) {
+// reason: "flow_choice"(組G)/ "intake_answer"(インテークの答え。数字・選択肢。2026年10月14日。fix-after-shima4.md 1-2)
+const SKIP_REASONS = {
+  flow_choice: "会話の流れのチップを押したターンは分類器にかけない",
+  intake_answer: "インテークの答え(数字・選択肢)は分類器にかけない",
+};
+export function assessFlowChoiceTurn(state, reason = "flow_choice", declined = []) {
   const s = normalizeSafetyState(state);
   const staged = {
-    risk: "none", subject: "self", stage: 0, decidedBy: ["flow_choice"], keywords: [], patterns: [], idiomExempted: [], floor: [], hits: [],
-    keywordVersion: null, model: { risk: "チップ", subject: "self", reason: "会話の流れのチップを押したターンは分類器にかけない" },
+    risk: "none", subject: "self", stage: 0, decidedBy: [reason], keywords: [], patterns: [], idiomExempted: [], floor: [], hits: [],
+    keywordVersion: null, model: { risk: "チップ", subject: "self", reason: SKIP_REASONS[reason] ?? SKIP_REASONS.flow_choice },
     classifierError: null, usedModel: null, votes: [], classifierMode: "choice",
   };
-  const plan = planSafetyTurn({ staged, state: s, text: "" });
+  const plan = planSafetyTurn({ staged, state: s, text: "", declined });
   return { staged, withdrawal: null, teacher: null, plan, choice: null };
 }
 
-/** @param {string|null} [choiceId] */
-export async function assessSafetyTurn(text, recentMessages, state, choiceId = null) {
-  const s = normalizeSafetyState(state);
-  const choice = validateChoice(s, choiceId);
+// choice: resolveChoice で受け取ったチップ(route.ts)。文字列なら以前と同じく状態だけで確かめる(validateChoice。テスト用)。
+// opts.declined: 本人が断った相手(src/declined.mjs の declinedPeopleFrom)。3通目への答えの判定が返した相手もこのターンから足す
+/** @param {string|{set:string,id:string}|null} [choiceIn] @param {{declined?: string[]}} [opts] */
+export async function assessSafetyTurn(text, recentMessages, state, choiceIn = null, opts = {}) {
+  let s = normalizeSafetyState(state);
+  const choice = typeof choiceIn === "string" || choiceIn == null ? validateChoice(s, choiceIn) : choiceIn;
+  const declined = [...(opts.declined ?? [])];
   if (choice) {
+    // 危機の流れの組なら、状態を記録(直前の返事のチップ)にそろえる
+    const aligned = stateForChoice(s, choice);
+    s = aligned.state;
     const staged = {
       risk: "none", subject: "self", stage: 0, decidedBy: ["choice"], keywords: [], patterns: [], idiomExempted: [], floor: [], hits: [],
       keywordVersion: null, model: { risk: "チップ", subject: "self", reason: "チップを押したターンは分類器にかけない" },
       classifierError: null, usedModel: null, votes: [], classifierMode: "choice",
     };
-    const plan = planSafetyTurn({ staged, state: s, text: "", choice });
-    return { staged, withdrawal: null, teacher: null, plan, choice };
+    const plan = planSafetyTurn({ staged, state: s, text: "", choice: CHOICE_SETS[choice.set] ? choice : null, declined });
+    return { staged, withdrawal: null, teacher: null, plan, choice, stateMismatch: aligned.mismatch, declined };
   }
   const [staged, withdrawal, teacher] = await Promise.all([
     classifyStaged(text, recentMessages ?? [], { mode: classifierModeFor(s) }),
     needsWithdrawalJudge(s) ? judgeWithdrawal(text, recentMessages ?? []) : Promise.resolve(null),
     s.crisis_state === "step3" ? judgeTeacherAnswer(text, recentMessages ?? []) : Promise.resolve(null),
   ]);
+  const turnDeclined = [...new Set([...declined, ...(teacher?.declined ?? [])])];
   const plan = planSafetyTurn({
     staged, state: s, text, withdrawal: withdrawal?.type ?? null, figurative: withdrawal?.figurative === true,
-    teacherAnswer: teacher?.answer ?? null,
+    teacherAnswer: teacher?.answer ?? null, declined: turnDeclined,
   });
-  return { staged, withdrawal, teacher, plan, choice: null };
+  return { staged, withdrawal, teacher, plan, choice: null, stateMismatch: false, declined: turnDeclined };
 }

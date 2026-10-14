@@ -694,3 +694,44 @@ alter table messages add column if not exists discomfort_reason text;
 alter table messages add column if not exists discomfort_at timestamptz;
 alter table messages drop constraint if exists messages_discomfort_reason_len_check;
 alter table messages add constraint messages_discomfort_reason_len_check check (discomfort_reason is null or char_length(discomfort_reason) <= 200);
+
+-- ============================================================================
+-- 16. 研究のための1ターンごとの記録と、トップ画面からのインテーク(2026年10月14日。嶋先生4回目を受けた修正)
+--   設計: docs/design-shima4-part1-topscreen.md。指示書: docs/prompts/fix-after-shima4.md・docs/prompts/top-screen-intake.md
+--   未実行でも会話は止まらない(route.ts は、この節の列が無ければ外して書き直す)。
+--
+--  messages.timings            1ターンの所要時間の内訳(ミリ秒。セッションの読み込み・会話の読み込み・判定・ナレッジ・生成・合計)
+--  messages.model              実際に返事をしたモデルの名前(フォールバックしたときはその名前)
+--  messages.prompt_version     プロンプトの版(コードの定数)#組み立てたシステムプロンプトの短いハッシュ
+--  messages.knowledge_version  ナレッジの版(件数・最終更新日時)
+--  messages.settings           その返事を作ったときの設定(段階ごとの応答・危機検知の版・キーワードの版 など)
+--  messages.intake_step        そのターンのインテークの段階(category / background / distress / goal / done)
+--  sessions.chief_complaint_category に 6(どれに当てはまるかわからない)を足す
+--  sessions.chief_complaint_source  主訴の記録の出どころ(button = トップ画面の選択肢 / estimated = 自由に書いた内容から AI が推定)
+--  sessions.intake_step        インテークの今の段階(次に何を聞くかを、この状態だけで決める。AI には任せない)
+-- ============================================================================
+alter table messages add column if not exists timings jsonb;
+alter table messages add column if not exists model text;
+alter table messages add column if not exists prompt_version text;
+alter table messages add column if not exists knowledge_version text;
+alter table messages add column if not exists settings jsonb;
+alter table messages add column if not exists intake_step text;
+
+alter table sessions drop constraint if exists sessions_chief_complaint_category_check;
+alter table sessions add constraint sessions_chief_complaint_category_check
+  check (chief_complaint_category is null or chief_complaint_category between 1 and 6);
+alter table sessions add column if not exists chief_complaint_source text;
+alter table sessions drop constraint if exists sessions_chief_complaint_source_check;
+alter table sessions add constraint sessions_chief_complaint_source_check
+  check (chief_complaint_source is null or chief_complaint_source in ('button','estimated'));
+alter table sessions add column if not exists intake_step text;
+alter table sessions drop constraint if exists sessions_intake_step_check;
+alter table sessions add constraint sessions_intake_step_check
+  check (intake_step is null or intake_step in ('category','background','distress','goal','done'));
+alter table messages drop constraint if exists messages_intake_step_check;
+alter table messages add constraint messages_intake_step_check
+  check (intake_step is null or intake_step in ('category','background','distress','goal','done'));
+
+-- 確かめ(読むだけ): 状態の制約が14節の版になっているか(相談ログ 86130eef の原因の確認。docs/design-shima4-part1-topscreen.md 1-1-3)
+-- select conname, pg_get_constraintdef(oid) from pg_constraint
+-- where conname in ('sessions_crisis_state_check','sessions_pending_choice_set_check','messages_crisis_step_check');

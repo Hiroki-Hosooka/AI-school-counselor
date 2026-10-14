@@ -554,3 +554,41 @@ export function conversationMetrics(hist) {
     strongCount: strong.length, heavyCount: heavy.length, strongFlags: strong, heavyFlags: heavy, moves,
   };
 }
+
+// ============================================================================
+//  AI から会話を終える事故(2026年10月14日。docs/prompts/fix-after-shima4.md 1-4)
+//  嶋先生とのミーティング中、相談者が終わりの合図を出していないのに、AI の返事が区切りの挨拶だけで終わった。
+//  本人が終わりの合図を出していないのに、返事が「終わりの形」(問いも次につながる一言も無く、終わりの言い回しを含む)なら、
+//  作り直す(1回。src/generate.mjs の endCheck)。作り直しても残れば、続きを促す一言(仮)を足す。どのフェーズでも使う。
+// ============================================================================
+// 終わりの言い回し
+export const ENDING_PHRASE_RE =
+  /(今日は(もう)?(ゆっくり|一旦|いったん)?休んで|ゆっくり休んで|一服して|また話そう|また話せたら|また話してね|またね|また来てね|またここに来て|また、?よかったら(ここ|ここで)|おやすみ|今日はここまで|ここまでにしよう|ここで終わりにしよう|また明日|今日は(話してくれて)?ありがとう(ね)?[。！!]?$)/;
+// 相談者の終わりの合図(このターンの発言)
+export const USER_END_RE =
+  /(終わり|おわり|おわる|終わる|終える|もう寝|寝る|ねる|寝ます|落ちる|おちる|また今度|またね|また来る|ばいばい|バイバイ|じゃあね|じゃね|ここまで|今日はいい|もういいや|やめる|やめとく|ありがとう(ございました)?[。！!]*$|さようなら|さよなら|おやすみ)/;
+// 次につながる一言(これがあれば終わりの形ではない)
+const CONTINUE_RE = /(聞かせて|教えて|続けて|話して(みて|ね|くれる)|もう少し|どうかな|どう思う|選んで|書いてみて)/;
+
+export const userSignalsEnd = (text) => USER_END_RE.test(String(text ?? "").trim());
+
+export function endsConversation(reply) {
+  const t = String(reply ?? "").trim();
+  if (!t || hasQuestion(t) || CONTINUE_RE.test(t)) return false;
+  // 最後の2文のどこかに終わりの言い回し
+  const tail = sentencesOf(t).slice(-2).join("");
+  return ENDING_PHRASE_RE.test(tail);
+}
+
+// 作り直しの検査。sess.closing_state が awaiting_choice(続けるか区切るかを聞いた)で、本人が区切りを選んだときと、
+// 本人が終わりの合図を出したときは当てない
+export function aiEndingCheck(out, { text, closingState } = {}) {
+  if (userSignalsEnd(text)) return false;
+  if (closingState === "awaiting_choice" && out?.closing_event === "close") return false;
+  return endsConversation(out?.reply);
+}
+export const AI_ENDING_FIX_HINT = `# 修正指示(重要)
+相談者はまだ終わりの合図を出していません。AI から会話を終えないでください。区切りの挨拶(「ゆっくり休んでね」「また話そうね」など)で
+締めくくらず、相談者の言葉を一つ拾って受け止め、続きを話せる一言か、問いを1つで終えてください。`;
+export const AI_ENDING_FLAG = "AIから終える形→作り直し";
+export const AI_ENDING_TAIL_PROVISIONAL = "もう少し話せそうなら、続けて聞かせてね。";

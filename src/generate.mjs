@@ -15,11 +15,12 @@ import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
 // 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
-import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock } from "./flow.mjs";
+import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock, AI_ENDING_FIX_HINT, AI_ENDING_FLAG, AI_ENDING_TAIL_PROVISIONAL } from "./flow.mjs";
 import {
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
   DAIJOUBU_RULE_PROVISIONAL, CHOICE_B1_BLOCK_PROVISIONAL, choiceCBlock, intakeStyleOf, STAGE1_CLOSING_LINE_PROVISIONAL,
 } from "./crisis-response.mjs";
+import { declinedBlock } from "./declined.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
 //
@@ -42,6 +43,10 @@ import {
 // gemini-3-flash-preview(2026年9月に追加。プレビュー版):上記の比較検証の対象外
 // (実測データなし)。レート制限の分散先として最後尾に残す
 // (https://ai.google.dev/gemini-api/docs/gemini-3 で実在・無料枠ありを確認済み)。
+// プロンプトの版(研究のため1ターンごとに messages.prompt_version に残す。2026年10月14日。top-screen-intake.md 3-3)。
+// プロンプト(buildSystem・各ブロック・出力形式)を変えたら上げる。組み立てた文そのもののハッシュも一緒に残すので、上げ忘れても見分けられる
+export const PROMPT_VERSION = "2026-10-14a";
+
 export const PRIMARY_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"];
 
 // ----------------------------------------------------------------------------
@@ -570,7 +575,7 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   const safetyBlock = contexts.map((c) => {
     const b = SAFETY_CONTEXT_BLOCKS[c];
     return typeof b === "function" ? b(intake) : b ?? "";
-  }).join("");
+  }).join("") + declinedBlock(flow?.declined);
   // phase: intake(Turn1〜4のスロットフィリング) | phase2(それ以降)。
   // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
   // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。
@@ -868,7 +873,28 @@ export async function generateReply(
       flags = [...flags, note];
     }
   }
-  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens };
+
+  // ---- AI から会話を終える形(2026年10月14日。src/flow.mjs の aiEndingCheck。作り直しは1回)----
+  // 本人が終わりの合図を出していないのに、区切りの挨拶だけで終わる返事。作り直しても残れば、続きを促す一言(仮)を足す。
+  // 作り直しの返事が禁止表現に当たったら採らない(安全層が先)
+  let endRegens = 0;
+  const endCheckFn = typeof opts?.endCheck === "function" ? opts.endCheck : null;
+  if (endCheckFn && !generationFailed && endCheckFn(out)) {
+    endRegens = 1;
+    let fixedEnd = false;
+    try {
+      const fix = system + "\n\n" + AI_ENDING_FIX_HINT;
+      const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
+      const retry = parseJSON(retryResult.text);
+      usage = addUsage(usage, retryResult.usage);
+      if (checkAll(retry.reply ?? "").length === 0 && !endCheckFn(retry) && String(retry.reply ?? "").trim()) {
+        out = retry; usedModel = retryResult.model; fixedEnd = true;
+      }
+    } catch { /* 作り直しに失敗したら、下で一言を足す */ }
+    if (!fixedEnd) out = { ...out, reply: `${String(out.reply ?? "").trim()}\n${AI_ENDING_TAIL_PROVISIONAL}` };
+    flags = [...flags, `${AI_ENDING_FLAG}(${fixedEnd ? "解消" : "残ったので続きを促す一言を足した"})`];
+  }
+  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens, endRegens };
 }
 
 // ============================================================================
@@ -1048,10 +1074,12 @@ export async function updatePersonMemory(db, clientId, sessionNotes) {
   }
   if (newSummary.length > MEMORY_MAX_CHARS) newSummary = newSummary.slice(0, MEMORY_MAX_CHARS);
 
-  await db.from("person_memory").upsert({
+  const { error } = await db.from("person_memory").upsert({
     client_id: clientId,
     summary: newSummary,
     session_count: (existing?.session_count ?? 0) + 1,
     last_seen: new Date().toISOString(),
   });
+  // 失敗しても会話は止めない(引き継ぎメモは次回の参考情報)。見逃さないようサーバのログに残す(2026年10月14日)
+  if (error) console.error("引き継ぎメモ(person_memory)を保存できませんでした:", error.message);
 }
