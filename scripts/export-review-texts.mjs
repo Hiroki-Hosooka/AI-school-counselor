@@ -53,7 +53,6 @@ function must(value, label) {
 // 画面の文言(src/app/page.tsx)
 // ---------------------------------------------------------------------------
 const page = readFileSync(path.join(ROOT, "src/app/page.tsx"), "utf8");
-const jsxText = (s) => s.replace(/<br\s*\/>/g, "\n").replace(/[ \t]*\n[ \t]*/g, "\n").replace(/\n+/g, "\n").trim();
 const hotlinesBlock = must(page.match(/const HOTLINES[^=]*=\s*\[([\s\S]*?)\n\];/)?.[1], "page.tsx の HOTLINES");
 const hotlines = [...hotlinesBlock.matchAll(/\["([^"]+)",\s*"([^"]+)"\]/g)].map((m) => [m[1], m[2]]);
 const consult = hotlines.filter(([name]) => name !== "いますぐ危ないとき");
