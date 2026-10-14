@@ -212,6 +212,7 @@ async function runScenario(name, sc, rep) {
     turns.push({
       turn: i + 1, kind, text, choice_id: choiceId, status: r.status, crisis: b.crisis === true,
       replies: [...replies, ...(Array.isArray(b.after) ? b.after.map((a) => a.body) : [])],
+      card: b.card ?? null,
       choices: (lastChoices ?? []).map((c) => c.id), dev_keys: ["safety", "flags", "used", "weight", "timings"].filter((k) => k in b), classifier: b.safety?.model ?? null, stage: b.safety?.stage ?? null,
       flags: b.flags ?? [], local_stage: classifyLocal(text, "check").stage,
     });
@@ -233,11 +234,14 @@ function measure(run) {
   let dupFixed = 0, empty = 0, aiEnded = 0, chipClassified = 0, intakeClassified = 0, fixedNoSign = 0, recommendDeclined = 0;
   const declined = new Set();
   const details = [];
-  let chipMissing = 0;
+  let chipMissing = 0, cardOnlyCount = 0;
   for (const t of run.turns) {
     // 台本で押すはずのチップが、直前の返事に出ていなかった(流れが台本どおりに進まなかった)
     if (t.error) { chipMissing++; details.push(`T${t.turn} ${t.error}(直前の返事のチップ: ${t.offered.join(",") || "なし"})`); continue; }
-    if (t.status !== 200 || !t.replies.length || t.replies.some((x) => !String(x ?? "").trim())) { empty++; details.push(`T${t.turn} 返事なし(${t.status})`); }
+    // 生成の失敗が同じ会話で3回目以降のときは、決まりとして一言を出さずカードだけを出す(CLAUDE.md 5.11)。空の返事とは分けて数える
+    const cardOnly = t.status === 200 && t.card && t.replies.length === 1 && !String(t.replies[0] ?? "").trim();
+    if (cardOnly) { cardOnlyCount++; details.push(`T${t.turn} カードだけ(生成の失敗の3回目以降。${t.card})`); }
+    else if (t.status !== 200 || !t.replies.length || t.replies.some((x) => !String(x ?? "").trim())) { empty++; details.push(`T${t.turn} 返事なし(${t.status})`); }
     for (const body of t.replies) {
       const k = String(body ?? "").trim();
       if (t.crisis && seen.has(k)) { dupFixed++; details.push(`T${t.turn} 同じ固定の文: ${k.slice(0, 30)}`); }
@@ -286,7 +290,7 @@ function measure(run) {
     : [];
   details.push(...intake.map((x) => `インテーク: ${x}`), ...devLeak.map((x) => `開発用の値: ${x}`));
   return {
-    intake_errors: intake.length, dev_leak: devLeak.length,
+    intake_errors: intake.length, dev_leak: devLeak.length, card_only: cardOnlyCount,
     dup_fixed: dupFixed, empty_replies: empty, ai_ended: aiEnded, recommend_declined: recommendDeclined,
     chip_classified: chipClassified, intake_classified: intakeClassified, fixed_without_explicit_sign: fixedNoSign,
     chip_missing: chipMissing, failed_writes: run.failedWrites.length, details,
