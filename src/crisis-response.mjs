@@ -49,6 +49,11 @@ import {
 import { matchNegation, normalizeV3, categoryOfSafety, CATEGORY_PRIORITY } from "./crisis-keywords-v3.mjs";
 import { buildConcernBubbles, crisisStep3TextFor, crisisRepeatText, buildCrisisReply } from "./crisis-texts.mjs";
 import { CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET } from "./flow.mjs";
+import {
+  DISTRESS_LABELS_PROVISIONAL, CATEGORY_SET, CATEGORY_CHOICES_PROVISIONAL, DISTRESS_SET, DISTRESS_CHOICES_PROVISIONAL,
+  GOAL_SET, GOAL_CHOICES_PROVISIONAL,
+} from "./intake.mjs";
+export { DISTRESS_LABELS_PROVISIONAL };
 
 export * from "./declined.mjs";
 
@@ -168,7 +173,7 @@ export const SCALING_PROMPT_SECOND_PROVISIONAL =
 // インテークのつらさと同じラベル・同じ向き(1がいちばん軽く、5がいちばんつらい)。2026年10月14日にそろえた
 // (相談ログ 86130eef で「4 かなりつらい」と「4: 限界に近い」が混在した。docs/prompts/fix-after-shima4.md 1-1)。
 // 段階を下げる条件(lowersStage)は数字で決めているので、ラベルを変えても意味は変わらない
-export const DISTRESS_LABELS_PROVISIONAL = ["少し気になる", "まあまあモヤモヤする", "かなりつらい", "限界に近い", "もう耐えられない"];
+// ラベルは src/intake.mjs の DISTRESS_LABELS_PROVISIONAL(インテークのつらさ)を1か所で持つ
 export const CHOICES_SCALING_PROVISIONAL = DISTRESS_LABELS_PROVISIONAL.map((l, i) => ({ id: `S${i + 1}`, label: `${i + 1} ${l}` }));
 // 選んだ数字を受け止める一言(下げないとき。このあと止まっていた次の文面へ)
 export const SCALING_ACK_PROVISIONAL = "教えてくれてありがとう。どっちの気持ちもあるんだね。";
@@ -446,6 +451,11 @@ export const registerChoiceSet = (set, items) => { EXTRA_CHOICE_SETS[set] = item
 // 数字で答えられる組(数字だけ・「4です」などもそのチップとして受け取る)
 const NUMERIC_SETS = new Set(["scaling"]);
 export const registerNumericSet = (set) => NUMERIC_SETS.add(set);
+// インテークの組(トップ画面の主訴・つらさ・なりたい姿。src/intake.mjs)
+registerChoiceSet(CATEGORY_SET, CATEGORY_CHOICES_PROVISIONAL);
+registerChoiceSet(DISTRESS_SET, DISTRESS_CHOICES_PROVISIONAL);
+registerChoiceSet(GOAL_SET, GOAL_CHOICES_PROVISIONAL);
+registerNumericSet(DISTRESS_SET);
 const normLabel = (t) => normalizeV3(String(t ?? "")).replace(/\s+/g, "");
 const labelWithoutNumber = (l) => String(l).replace(/^\s*[0-9０-９]+\s*[:：.．、]?\s*/, "");
 

@@ -174,5 +174,48 @@ check("スケーリングのラベルはインテークのつらさと同じ",
   CHOICES_SCALING_PROVISIONAL.map((c) => c.label).join("/") === "1 少し気になる/2 まあまあモヤモヤする/3 かなりつらい/4 限界に近い/5 もう耐えられない");
 check("インテークの指示の文と同じ語", DISTRESS_LABELS_PROVISIONAL.every((l) => buildSystem([], [], "rapport", {}, 0, null, [], { phase: "intake" }, {}).includes(l)));
 
+// ---------------------------------------------------------------------------
+console.log("\n8. トップ画面とインテーク(コードで進める。src/intake.mjs)");
+{
+  const { planIntakeTurn, finishIntakeTurn, topScreenChoice, modesFromGoal, CATEGORY_CHOICES_PROVISIONAL } = await import("../src/intake.mjs");
+  const sess = (step, extra = {}) => ({ phase: "intake", intake_step: step, ...extra });
+  check("ボタンは最初の発言でだけ受け取る", topScreenChoice([], "K3", "家族・家のこと")?.id === "K3"
+    && topScreenChoice([{ role: "ai", body: "x" }], "K3", "家族・家のこと") === null);
+  check("同じラベルを手で打っても受け取る(印は typed)", topScreenChoice([], null, "家族・家のこと")?.input === "typed");
+  check("ラベルと違う文は受け取らない", topScreenChoice([], null, "家族のことで") === null);
+  check("6 つのボタンがある(6 = どれに当てはまるかわからない)", CATEGORY_CHOICES_PROVISIONAL.length === 6
+    && CATEGORY_CHOICES_PROVISIONAL[5].label === "どれに当てはまるかわからない");
+  for (const k of [1, 2, 3, 4, 5, 6]) {
+    const t = planIntakeTurn({ sess: sess("category"), picked: { set: "K", id: `K${k}`, label: "x" }, text: "x", lastOffered: null });
+    check(`K${k}: 主訴 ${k}・出どころ button・次は背景`, t.patch.chief_complaint_category === k && t.patch.chief_complaint_source === "button"
+      && t.patch.intake_step === "background");
+  }
+  const free = finishIntakeTurn(planIntakeTurn({ sess: sess("category"), picked: null, text: "部活がつらい", lastOffered: null }),
+    { intake: { chief_complaint_category: 2, background_present: false } });
+  check("自由に書いたら主訴は AI の推定(出どころ estimated)", free.patch.chief_complaint_category === 2 && free.patch.chief_complaint_source === "estimated");
+  const bad = finishIntakeTurn(planIntakeTurn({ sess: sess("category"), picked: null, text: "x", lastOffered: null }), { intake: { chief_complaint_category: 9 } });
+  check("推定が範囲の外なら 6(未分類)", bad.patch.chief_complaint_category === 6);
+  const bg = finishIntakeTurn(planIntakeTurn({ sess: sess("background"), picked: null, text: "先週から", lastOffered: null }), { intake: { onset_context: "先週から" } });
+  check("背景のあとに、つらさの問い(チップつき)", bg.question?.choice_set === "D" && bg.patch.intake_step === "distress");
+  const d2 = planIntakeTurn({ sess: sess("distress"), picked: { set: "D", id: "D2", label: "2" }, text: "2", lastOffered: "D" });
+  check("つらさ 1〜3 はそのままゴールの問いへ", d2.after === "goal" && d2.contexts.length === 0 && d2.patch.distress_level === 2);
+  for (const n of [4, 5]) {
+    const d = planIntakeTurn({ sess: sess("distress"), picked: { set: "D", id: `D${n}`, label: `${n}` }, text: `${n}`, lastOffered: "D" });
+    check(`つらさ ${n} は、コードで指示を付け、ゴールの問いは次のターン`, d.contexts.includes("intakeHighDistress") && d.after === null && d.patch.distress_level === n);
+  }
+  const dt = planIntakeTurn({ sess: sess("distress"), picked: null, text: "けっこうしんどい", lastOffered: "D" });
+  check("つらさを言葉で答えたら数字を求め直さない", dt.after === "goal" && dt.patch.distress_level === undefined && dt.patch.intake_step === "goal");
+  const again = planIntakeTurn({ sess: sess("distress"), picked: null, text: "うん", lastOffered: null });
+  check("つらさの問いをまだ出していなければ、受け止めのあとに出す", again.prompt === "askDistressAgain" && again.after === "distress");
+  const g = planIntakeTurn({ sess: sess("goal"), picked: { set: "H", id: "H2", label: "一緒に整理したい" }, text: "一緒に整理したい", lastOffered: "H" });
+  check("ゴールを選んだらフェーズ2へ", g.patch.phase === "phase2" && g.patch.intake_step === "done" && g.patch.user_goal === "一緒に整理したい");
+  check("進め方: H1・H4 は傾聴、H2 は AI の見立てか CBT、H3 は傾聴+",
+    modesFromGoal("H1", ["CBT"]).join() === "LISTEN_ONLY" && modesFromGoal("H4", []).join() === "LISTEN_ONLY"
+    && modesFromGoal("H2", []).join() === "CBT" && modesFromGoal("H2", ["SFBT"]).join() === "SFBT"
+    && modesFromGoal("H3", []).join() === "LISTEN_ONLY,CBT");
+  check("フェーズ2・危機のあとでは動かない", planIntakeTurn({ sess: { phase: "phase2", intake_step: "goal" }, picked: null, text: "x", lastOffered: null }) === null
+    && planIntakeTurn({ sess: { phase: "intake", intake_step: null }, picked: null, text: "x", lastOffered: null }) === null);
+}
+
 console.log(`\n${failed ? `失敗 ${failed}件` : "全件通過"}(${passed + failed}件中)`);
 process.exit(failed ? 1 : 0);

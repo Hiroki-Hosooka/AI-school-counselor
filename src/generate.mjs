@@ -21,6 +21,7 @@ import {
   DAIJOUBU_RULE_PROVISIONAL, CHOICE_B1_BLOCK_PROVISIONAL, choiceCBlock, intakeStyleOf, STAGE1_CLOSING_LINE_PROVISIONAL,
 } from "./crisis-response.mjs";
 import { declinedBlock } from "./declined.mjs";
+import { buildIntakeStepBlock, INTAKE_STEP_OUTPUT_SCHEMA, INTAKE_HIGH_DISTRESS_BLOCK_PROVISIONAL } from "./intake.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
 //
@@ -188,6 +189,8 @@ export function retrieve(rows, text, weight, relation, n, safetyContext, modes, 
 // Tier A(risk==="crisis" && subject==="self")のような生成スキップ+固定応答(CLAUDE.md 5.2)
 // とは別の扱い。二択で程度を確認する質問(実質的なリスクアセスメント)を避けることが共通の核。
 const SAFETY_CONTEXT_BLOCKS = {
+  // インテークでつらさを4・5と答えたターン(コードが値を見て付ける。src/intake.mjs。2026年10月14日)
+  intakeHighDistress: INTAKE_HIGH_DISTRESS_BLOCK_PROVISIONAL,
   tierB: `
 
 # 今回のターンについて(重要・曖昧な危機のサイン)
@@ -558,7 +561,8 @@ export function flowPhaseFor(intake, safetyContext) {
 //
 // ナレッジが増えて対象範囲(principle/ng)が4000トークン規模に近づいたら再検討する
 // (第7節のRAG導入基準「1000件を超えたら」と同じく、規模に応じて見直す性質のもの)。
-// flow(省略可。2026年10月11日・会話の流れ): { stats(src/flow.mjs の flowStats), text(相談者の今回の発言)}。
+// flow(省略可。2026年10月11日・会話の流れ): { stats(src/flow.mjs の flowStats), text(相談者の今回の発言),
+//   declined(本人が断った相手。2026年10月14日), intakeTurn(src/intake.mjs の planIntakeTurn。2026年10月14日)}。
 //   フェーズ2のときだけ、決まり(FLOW_RULES_BLOCK)といまの状態(buildFlowBlock)を進め方のあとに足す
 export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake, flow) {
   const principles = rows.filter((k) => k.cat === "principle")
@@ -584,13 +588,18 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   // 台本を止める。CLAUDE.md 5.13・5.16・5.17)。
   // sessions.phase は intake のまま変えない(applyIntakeUpdate は出力に intake が無ければ何もしない)。
   const phase = flowPhaseFor(intake, safetyContext);
-  const flowBlock = phase === "intake"
+  // トップ画面から始めたインテーク(sessions.intake_step。2026年10月14日)は、そのターンの段階の指示だけを出す
+  // (次に何を聞くかはコードが決める。src/intake.mjs)。intake_step が無い以前のセッションは、今までの台本
+  const stepTurn = phase === "intake" && intake?.intake_step && flow?.intakeTurn ? flow.intakeTurn : null;
+  const flowBlock = stepTurn ? buildIntakeStepBlock(stepTurn)
+    : phase === "intake"
     ? buildIntakeBlock(intake)
     : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode)
       + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"), endingStyleOf(contexts))
       + "\n\n" + FLOW_RULES_BLOCK
       + (flow?.stats ? "\n\n" + buildFlowBlock(flow.stats, intake, flow.text) : "");
-  const intakeSchema = phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA + FLOW_OUTPUT_SCHEMA;
+  const intakeSchema = stepTurn ? INTAKE_STEP_OUTPUT_SCHEMA
+    : phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA + FLOW_OUTPUT_SCHEMA;
 
   return `あなたはAIです。中学生・高校生の相談にのる、学校のカウンセリング支援AIとして応答します。
 拠りどころは、現役スクールカウンセラー二人へのインタビュー(出典:嶋/石)と、

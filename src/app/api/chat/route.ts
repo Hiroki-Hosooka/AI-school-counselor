@@ -61,13 +61,14 @@ import {
   DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION,
 } from "@/generate.mjs";
 import { validateKnowledgeInput } from "@/knowledge-admin.mjs";
+import { planIntakeTurn, finishIntakeTurn, topScreenChoice } from "@/intake.mjs";
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
   aftercareEnabled, hadCrisisReply, defaultSafetyContexts, SAFETY_STATE_COLUMNS,
   CRISIS_ENDINGS_PROVISIONAL, nextEndingVariant, daijoubuYokattaNote, CHOICE_NOTE_PROVISIONAL,
   contextFailureReply, CONTEXT_FAILURE_FLAG, assessFlowChoiceTurn,
-  resolveChoice, stateUnreliable, toGenerationPlan, dedupeFixedPlan, defaultCrisisReplyFor,
+  resolveChoice, lastAiChoices, stateUnreliable, toGenerationPlan, dedupeFixedPlan, defaultCrisisReplyFor,
   STATE_SAVE_FAILED_FLAG, STATE_MISMATCH_FLAG, EMPTY_REPLY_FLAG, EMPTY_REPLY_FALLBACK_PROVISIONAL, typedScale,
   declinedPeopleFrom, declinedNg, declinedEstimateFlag,
 } from "@/crisis-response.mjs";
@@ -144,6 +145,10 @@ const withoutKeys = (row: Record<string, unknown>, keys: string[]) =>
 // 開発用の表示(2026年10月14日に人が決めた)。サーバの環境変数 DEV_PANEL=on のときだけ。Vercel の Preview・Development にだけ
 // 設定し、Production には設定しない。環境変数が無いときは必ず出さない(画面で隠すだけにせず、サーバが応答に入れない)
 const devPanel = () => process.env.DEV_PANEL === "on";
+// 会話の応答のうち、開発用の表示だけに使う値(重心・関わりの型・判定・参照したナレッジ・出力チェック・所要時間)。
+// DEV_PANEL が無いときは応答に入れない(生徒の画面に出さない。top-screen-intake.md 1-5)
+const DEV_KEYS = ["weight", "relation", "question_level", "role", "turns_since_summary", "hypothesis", "why", "notes", "used", "flags", "safety", "timings"];
+const chatJson = (body: Record<string, unknown>, status = 200) => json(devPanel() ? body : withoutKeys(body, DEV_KEYS), status);
 
 // 相談者の発言の行に印を残す(返事そのものを保存できなかったとき。その会話では固定の文を出さないため。2026年10月14日)
 async function markUserRow(db: SupabaseClient, seq: number | undefined, flag: string) {
@@ -280,7 +285,7 @@ async function overLimitCrisisReply(
   const { data: aiMsg } = await checkedWrite("危機の固定応答(上限)", () => db.from("messages").insert({
     session_id: sessionId, role: "ai", body: reply, crisis: true, ...(flags.length ? { flags } : {}),
   }).select("seq").single());
-  return json({
+  return chatJson({
     reply, crisis: true,
     safety: { risk: "crisis", subject: "self", keywords: local.keywords.length, model: local.model.risk },
     user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
@@ -302,6 +307,8 @@ export async function POST(req: Request) {
     // ------------------------------------------------------------------
     if (action === "rate") {
       const { seq, rating, comment } = payload as { seq: number; rating: number; comment?: string };
+      // 返事ごとの評価は開発用の表示のときだけ(生徒の画面から外した。top-screen-intake.md 1-5)
+      if (!devPanel()) return json({ error: "評価は開発用の表示のときだけ使えます" }, 403);
       if (!seq || !(rating >= 1 && rating <= 5)) return json({ error: "パラメータが不正です" }, 400);
       // 自分の会話の AI の返事だけを評価できるようにする(2026年10月13日)。以前は seq さえわかれば、
       // ほかの人の会話の返事の評価を書き換えられた。引き継ぎコード(client_id)がその会話の持ち主かを確かめる。
@@ -383,9 +390,13 @@ export async function POST(req: Request) {
       if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
       const sessionId = String(payload.session_id ?? "").trim();
       if (!sessionId) return json({ error: "session_id が必要です" }, 400);
-      const { data: s } = await db.from("sessions")
-        .select("id,client_id,started_at,last_at,closed_at,relation,weight,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
-        .eq("id", sessionId).maybeSingle();
+      const baseCols = "id,client_id,started_at,last_at,closed_at,relation,weight,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state";
+      // 16節(主訴の出どころ・インテークの段階)の列。SQL が未実行のときは、無い列を除いて読み直す
+      const withSource = await db.from("sessions")
+        .select(baseCols + ",chief_complaint_source,intake_step").eq("id", sessionId).maybeSingle();
+      const s = (withSource.error
+        ? (await db.from("sessions").select(baseCols).eq("id", sessionId).maybeSingle()).data
+        : withSource.data) as Record<string, unknown> | null;
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
         // 15節(違和感の印)の列
@@ -475,11 +486,18 @@ export async function POST(req: Request) {
       }
 
       const rows = await loadKnowledge(db);
-      const { data, error } = await db.from("sessions")
-        .insert({ client_id: clientId, knowledge_version: knowledgeVersion(rows) })
+      // 新しいセッションは、トップ画面の6つのボタンから始めるインテーク(intake_step = category。16節。2026年10月14日)。
+      // 16節が未実行の DB では、以前の台本のインテークで始める
+      let created = await db.from("sessions")
+        .insert({ client_id: clientId, knowledge_version: knowledgeVersion(rows), intake_step: "category" })
         .select("id,weight,relation,turns_since_summary,notes").single();
-      if (error) throw new Error(error.message);
-      return json({ session: data, knowledge_count: rows.length });
+      if (created.error) {
+        created = await db.from("sessions")
+          .insert({ client_id: clientId, knowledge_version: knowledgeVersion(rows) })
+          .select("id,weight,relation,turns_since_summary,notes").single();
+      }
+      if (created.error) throw new Error(created.error.message);
+      return json({ session: created.data, knowledge_count: rows.length, dev: devPanel() });
     }
 
     // ------------------------------------------------------------------
@@ -510,7 +528,9 @@ export async function POST(req: Request) {
         () => db.from("messages").select("seq,role,body,used,flags,crisis,rating,closing")
           .eq("session_id", s.id).order("seq"),
       );
-      return json({ session: s, messages: msgs.map(withCareLine) });
+      // 参照したナレッジ・出力チェック・評価は開発用の表示のときだけ返す
+      const shown = msgs.map(withCareLine).map((m) => (devPanel() ? m : withoutKeys(m, ["used", "flags", "rating"])));
+      return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel() });
     }
 
     // ------------------------------------------------------------------
@@ -559,20 +579,19 @@ export async function POST(req: Request) {
       // 見守り・危機の応答の状態(db/schema.sql 11節〜13節)も読む。状態の列がまだ無い(SQL未実行の)DBなら、
       // このリクエストは第1段階の動きにする(設定を誤っても会話そのものは止めない)。
       let stagedOn = stagedResponseEnabled();
-      const sessWithState = stagedOn
-        ? await db.from("sessions")
-          .select(`id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state,${SAFETY_STATE_COLUMNS}`)
-          .eq("id", sessionId).single()
-        : null;
+      // 16節の列(インテークの段階 intake_step。2026年10月14日)も読む。まだ無い DB では外して読み直す(以前の台本のインテークになる)
+      const BASE_COLS = "id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state";
+      const readSess = async (cols: string) => {
+        const withStep = await db.from("sessions").select(`${cols},intake_step`).eq("id", sessionId).single();
+        return withStep.error ? db.from("sessions").select(cols).eq("id", sessionId).single() : withStep;
+      };
+      const sessWithState = stagedOn ? await readSess(`${BASE_COLS},${SAFETY_STATE_COLUMNS}`) : null;
       if (sessWithState?.error) {
         console.error("段階ごとの応答の状態を読めませんでした(db/schema.sql 11節〜14節が未実行?)。第1段階の動きにします:", sessWithState.error.message);
         stagedOn = false;
       }
-      const sess = sessWithState && !sessWithState.error
-        ? sessWithState.data
-        : (await db.from("sessions")
-          .select("id,weight,relation,turns_since_summary,notes,phase,chief_complaint_category,onset_context,distress_level,physical_mental_symptoms,user_goal,ambivalence_detected,recommended_mode,closing_state")
-          .eq("id", sessionId).single()).data;
+      const sess = (sessWithState && !sessWithState.error ? sessWithState.data : (await readSess(BASE_COLS)).data) as
+        Record<string, unknown> & { [k: string]: any } | null; // eslint-disable-line @typescript-eslint/no-explicit-any
       if (!sess) return json({ error: "セッションが見つかりません" }, 404);
 
       timer.mark("session_read");
@@ -608,7 +627,8 @@ export async function POST(req: Request) {
 
       // チップ(2026年10月14日)。状態ではなく、直前の AI の返事に保存したチップから受け取る。押した(choice_id)ときも、
       // 同じラベル・数字を手で打ったときも同じ扱い。どの組でも、チップのターンは分類器にかけない(ラベルは本人の言葉ではないため)
-      const picked = resolveChoice(prior, choiceId, text);
+      // 会話の最初の発言では、トップ画面の6つのボタン(主訴)。以後は直前の返事のチップ(src/intake.mjs の topScreenChoice)
+      const picked = topScreenChoice(prior, choiceId, text) ?? resolveChoice(prior, choiceId, text);
       const flowChoice = picked?.set === FLOW_CHOICE_SET ? picked : null;
       if (picked) {
         const cur = hist[hist.length - 1];
@@ -762,7 +782,7 @@ export async function POST(req: Request) {
             }
             // 返事を記録に残せなかったら、その会話では固定の文を出さない(同じ文のくり返しを記録から見つけられないため)
             if (bubbleSaveFailed) await markUserRow(db, userMsg?.seq, `${STATE_SAVE_FAILED_FLAG}(危機の固定の文面を保存できなかった)`);
-            return json({
+            return chatJson({
               reply: fixedPlan.text, crisis: true, crisis_step: fixedPlan.crisisStep, card: fixedPlan.card, care_line: null,
               replies, choices: fixedPlan.choices?.items ?? null, choice_set: fixedPlan.choices?.set ?? null,
               choice_note: fixedPlan.choices ? CHOICE_NOTE_PROVISIONAL : null,
@@ -803,7 +823,7 @@ export async function POST(req: Request) {
             }
             if (!saved.ok) await markUserRow(db, userMsg?.seq, `${STATE_SAVE_FAILED_FLAG}(危機の固定応答を保存できなかった)`);
             await checkedWrite("最後の時刻", () => db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId));
-            return json({
+            return chatJson({
               reply, crisis: true,
               safety: { risk: safety.risk, subject: safety.subject, keywords: safety.keywords.length, model: safety.model.risk },
               user_seq: userMsg?.seq, ai_seq: (saved.data as { seq?: number } | null)?.seq,
@@ -834,9 +854,15 @@ export async function POST(req: Request) {
         else if (planContexts.includes("tierB")) planContexts.push("stage1Ending");
       }
       // 本番の既定で本人の危機を生成で受けるターンは、段階ごとの応答と同じ「危機の状態の指示」を付ける(2026年10月14日)
-      const safetyContext = plan ? planContexts
+      const baseContext: string[] = plan ? planContexts
         : defaultCrisisGen ? ["crisisGeneration", "afterCrisis"]
           : defaultSafetyContexts({ risk: safety.risk, subject: safety.subject, afterCrisis });
+      // トップ画面から始めたインテーク(sessions.intake_step。2026年10月14日)。次に何を聞くかはコードが決める(src/intake.mjs)。
+      // 危機の応答のあとは、今までどおり台本を止める(CLAUDE.md 5.13 の例外)
+      const intakePaused = baseContext.includes("afterCrisis") || baseContext.includes("crisisGeneration");
+      const intakeTurn = intakePaused ? null
+        : planIntakeTurn({ sess, picked, text, lastOffered: lastAiChoices(prior)?.set ?? null });
+      const safetyContext = intakeTurn ? [...baseContext, ...intakeTurn.contexts] : baseContext;
       // 会話の流れ(フェーズ2のときだけ使う。src/flow.mjs)。このターンの段階は、見立て・気になったことを出してよいかの判定に使う
       const flowPhase = flowPhaseFor(sess, safetyContext);
       const turnStage = plan ? plan.stage
@@ -875,7 +901,7 @@ export async function POST(req: Request) {
       // buildSystem/applyIntakeUpdateが期待する形と一致するように選択している)。
       const system = buildSystem(
         rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
-        safetyContext, sess, { stats, text, declined: declinedNow },
+        safetyContext, sess, { stats, text, declined: declinedNow, intakeTurn },
       );
 
       // 危機の状態で、固定の文面を出さずに生成で受けるターン(段階ごとの応答・仮。CLAUDE.md 5.2)は、出力チェックを
@@ -954,7 +980,10 @@ export async function POST(req: Request) {
       // (手順6・7)。それぞれ別のキー(recommended_mode/closing_state)しか
       // 返さないので、そのままマージしてよい。ただしクロージングは、危機の応答のあとでインテーク中でも
       // 自由な進め方(クロージングのルールつき)で生成したターンなら記録する(flowPhaseFor。2026年10月6日)。
-      const intakePatch = {
+      // トップ画面から始めたインテークは、コードの段取り(src/intake.mjs)の値だけを書く(AI の intake_complete では進めない)
+      const intakeDone = intakeTurn ? finishIntakeTurn(intakeTurn, out) : null;
+      if (intakeDone) flags.push(...intakeDone.flags);
+      const intakePatch: Record<string, unknown> = intakeDone ? { ...intakeDone.patch } : {
         ...applyIntakeUpdate(sess, out), ...applyModeUpdate(sess, out),
         ...applyClosingUpdate(sess, out, flowPhaseFor(sess, safetyContext)),
       };
@@ -986,6 +1015,7 @@ export async function POST(req: Request) {
         model: generated.usedModel ?? null,
         prompt_version: promptVersionOf(system), knowledge_version: knowledgeVersion(rows),
         settings: settingsSnapshot(), timings: timer.done(),
+        intake_step: intakeTurn?.step ?? null,
       };
       let aiSave = await checkedWrite("AIの返事", () => db.from("messages").insert(aiRow).select("seq").single());
       // 16節が未実行の DB では、その列を外して書き直す
@@ -1004,7 +1034,17 @@ export async function POST(req: Request) {
 
       // 危機のあと(段階ごとの応答のとき)に本人が終わりの合図を出したら、決まった締めの文面を1つ足す(3案を人ごとに順に。嶋先生 10/7。仮)。
       // 「応援し続ける」は何度伝えてもよいが、言い回しは毎回変える
-      const after: { body: string; seq?: number; crisis_step: number }[] = [];
+      const after: { body: string; seq?: number; crisis_step?: number; choices?: unknown; choice_set?: string; choice_note?: string | null }[] = [];
+      // インテークの決まった問いとチップ(つらさ・なりたい姿。AI の受け止めのあとに続ける。src/intake.mjs)
+      if (intakeDone?.question) {
+        const q = intakeDone.question;
+        const qSave = await checkedWrite("インテークの問い", () => db.from("messages").insert({
+          session_id: sessionId, role: "ai", body: q.body, choices: q.choices, choice_set: q.choice_set,
+          flags: ["記録のみ:インテークの決まった問い(コード)"], intake_step: intakeTurn?.step ?? null,
+        }).select("seq").single());
+        if (!qSave.ok) await markUserRow(db, userMsg?.seq, `${STATE_SAVE_FAILED_FLAG}(インテークの問いを保存できなかった)`);
+        after.push({ body: q.body, seq: (qSave.data as { seq?: number } | null)?.seq, choices: q.choices, choice_set: q.choice_set, choice_note: CHOICE_NOTE_PROVISIONAL });
+      }
       if (plan && endingAppend) {
         const { data: lastEnding } = await db.from("messages")
           .select("ending_variant, sessions!inner(client_id)")
@@ -1041,7 +1081,7 @@ export async function POST(req: Request) {
         .map((k: { id: string; src: string; cat: string; body: string }) =>
           ({ id: k.id, src: k.src, cat: k.cat, body: k.body }));
 
-      return json({
+      return chatJson({
         reply: out.reply,
         weight, relation,
         question_level: out.question_level, role: out.role,

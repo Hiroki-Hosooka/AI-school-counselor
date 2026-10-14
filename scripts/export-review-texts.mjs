@@ -22,7 +22,9 @@ import { CRISIS_REPLY } from "../src/classify.mjs";
 import { buildSystem, GENERATION_FAILURE_REPLIES } from "../src/generate.mjs";
 import { CONTEXT_FAILURE_REPLIES_PROVISIONAL } from "../src/crisis-response.mjs";
 import { FLOW_RULES_BLOCK, CHOICES_G_PROVISIONAL, GENERIC_GROUPS, STRONG_WORDS, HEAVY_WORDS } from "../src/flow.mjs";
-import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE } from "../src/notices.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, GENERATION_STUCK_NOTICE,
+  DETAILS_ITEMS_PROVISIONAL, FOOTER_DISCLOSURE, TOP_FREE_TEXT_HINT } from "../src/notices.mjs";
+import { CATEGORY_CHOICES_PROVISIONAL, DISTRESS_CHOICES_PROVISIONAL, DISTRESS_QUESTION_PROVISIONAL, GOAL_CHOICES_PROVISIONAL, GOAL_QUESTION_PROVISIONAL, INTAKE_HIGH_DISTRESS_BLOCK_PROVISIONAL } from "../src/intake.mjs";
 import {
   CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, CRISIS_STEP4_PROVISIONAL,
   CRISIS_WHY_HERE_PROVISIONAL, CHOICES_W_PROVISIONAL, CHOICE_W_ACK_PROVISIONAL, WHY_HERE_FREE_ACK_PROVISIONAL,
@@ -31,7 +33,9 @@ import {
   CRISIS_ENDINGS_PROVISIONAL, CONCERN_TEXT_PROVISIONAL, buildConcernBubbles, buildCrisisReply,
   CARE_LINE_PROVISIONAL, CRISIS_AGAIN_PROVISIONAL, CRISIS_REPEAT_PROVISIONAL, CRISIS_GENERATION_FALLBACK_PROVISIONAL,
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL,
+  SCALING_PROMPT_SECOND_PROVISIONAL, crisisRepeatText, crisisStep3Text, EMPTY_REPLY_FALLBACK_PROVISIONAL,
 } from "../src/crisis-response.mjs";
+import { AI_ENDING_TAIL_PROVISIONAL } from "../src/flow.mjs";
 const CATEGORY_JA = { suicidal: "希死念慮", selfharm: "自傷・過量服薬", violence: "暴力・虐待", sexual: "性被害", bullying: "重大ないじめ", unknown: "種類がわからないとき" };
 const chipList = (items) => items.map((c) => `- ${c.label}`).join("\n");
 
@@ -59,9 +63,13 @@ const foldedNote = must(page.match(/<details className="care-hotlines">[\s\S]*?<
 const closingCard = page.match(/<div className="closing-card">\s*<h4>([^<]+)<\/h4>[\s\S]*?<p>([^<]+)<\/p>/);
 const closingTitle = must(closingCard?.[1], "区切りのカードの見出し");
 const closingNote = must(closingCard?.[2], "区切りのカードの説明文");
-const footNote = jsxText(must(page.match(/<div className="foot-note">([\s\S]*?)<\/div>/)?.[1], "画面下の常設の表示"));
-const emptyText = jsxText(must(page.match(/<div className="empty">\s*([\s\S]*?)<em>/)?.[1], "最初の画面のあいさつ"));
-const chips = [...must(page.match(/const CHIPS = \[([^\]]*)\]/)?.[1], "最初の画面の書き出しの例").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+// 画面の下の常設の表示(2026年10月14日から。説明の一行+押せば電話がかかる窓口)
+const footHotlines = [...must(page.match(/const FOOTER_HOTLINES[^=]*=\s*\[([\s\S]*?)\n\];/)?.[1], "page.tsx の FOOTER_HOTLINES")
+  .matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
+const footNote = `${FOOTER_DISCLOSURE}(くわしく)\nいますぐ助けが必要なとき ${must(footHotlines.join(" / "), "画面下の窓口")}`;
+// 最初の画面の見出しとボタン(2026年10月14日から。A5)
+const emptyText = must([...(page.match(/<h1>([\s\S]*?)<\/h1>/)?.[1] ?? "").matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]).join("\n"), "最初の画面のあいさつ");
+const chips = CATEGORY_CHOICES_PROVISIONAL.map((c) => c.label);
 
 // ---------------------------------------------------------------------------
 // 生成のプロンプトから取り出すもの(src/generate.mjs の buildSystem)
@@ -229,6 +237,42 @@ ${asks([
   "「いますぐ誰かと話したいときは、画面の下の窓口に電話することもできます」を添えるのは、送れなかった場面に合っていますか。",
 ])}
 
+### A5. トップ画面・はじめの質問(仮。2026年10月14日。嶋先生インタビュー4)
+
+最初の画面の見出しは「よくぞ来てくれました。/ 今日は、どんなことで来てくれた?」です。押して選ぶボタン:
+
+${chipList(CATEGORY_CHOICES_PROVISIONAL)}
+
+入力欄の上の一言: ${TOP_FREE_TEXT_HINT}
+
+画面の下に常に出す一行: ${FOOTER_DISCLOSURE}(「くわしく」を押すと次の説明が出ます)
+
+${DETAILS_ITEMS_PROVISIONAL.map((d) => `**${d.title}**\n\n${quote(d.body)}`).join("\n\n")}
+
+背景を聞いたあとの、つらさの質問(押して選ぶ。書いて答えてもよい):
+
+${quote(DISTRESS_QUESTION_PROVISIONAL)}
+
+${chipList(DISTRESS_CHOICES_PROVISIONAL)}
+
+どうなれたらいいかの質問:
+
+${quote(GOAL_QUESTION_PROVISIONAL)}
+
+${chipList(GOAL_CHOICES_PROVISIONAL)}
+
+つらさで4か5を選んだときに、AIに付ける指示(生徒には出ません):
+
+\`\`\`
+${INTAKE_HIGH_DISTRESS_BLOCK_PROVISIONAL.trim()}
+\`\`\`
+
+${asks([
+  "「記録されます」「命に関わるときは」の説明は、学校との取り決めが決まるまでの仮の文面です。生徒に伝える言い方として合っていますか。",
+  "つらさの5段階の言葉と、どうなれたらいいかの4つの選び方は、中高生が選びやすいものになっていますか。",
+  "つらさ4・5を選んだときの指示(人に相談することを促す流れ)は、強すぎたり弱すぎたりしないでしょうか。",
+])}
+
 ---
 
 ## B. いま本番で、AI に付けている指示(生徒には見えません)
@@ -376,6 +420,10 @@ ${quote(SCALING_PROMPT_A_PROVISIONAL)}
 
 ${quote(SCALING_PROMPT_PROVISIONAL)}
 
+同じ会話で2回目に数字を選んでもらうとき(同じ文を2回出さないため。2026年10月14日)
+
+${quote(SCALING_PROMPT_SECOND_PROVISIONAL)}
+
 **選択肢**(最初の受付のつらさの質問と同じ向き。1がいちばん軽い)
 
 ${chipList(CHOICES_SCALING_PROVISIONAL)}
@@ -418,6 +466,27 @@ ${quote(CRISIS_AGAIN_PROVISIONAL)}
 **決まった文面を出し終えたあと、同じ会話で新しい打ち明けがあったとき(1回の会話で1回まで。窓口のカードを添えます)**
 
 ${quote(CRISIS_REPEAT_PROVISIONAL)}
+
+相談者が「先生には話したくない」と言っていたとき(断った相手は挙げません。2026年10月14日)
+
+${quote(crisisRepeatText(["teacher"]))}
+
+段階ごとの応答が無効のとき(本番の今の設定)も、2回目のはっきりした打ち明けには、上の短い1通を出します。3回目からは、
+同じ文をくり返さないよう、AI が下のルール(C8)に沿って自分の言葉で受け止めます。
+
+**相談者が断った相手を除いた、3通目の問いの例**(先生を断ったとき / 先生と親を断ったとき)
+
+${quote(crisisStep3Text(["teacher"]))}
+
+${quote(crisisStep3Text(["teacher", "parent"]))}
+
+**AI の返事が空になってしまったときに、代わりに出す一言**
+
+${quote(EMPTY_REPLY_FALLBACK_PROVISIONAL)}
+
+**相談者がまだ終わりの合図を出していないのに、AI の返事が区切りの挨拶だけになってしまい、作り直しても直らなかったときに足す一言**
+
+${quote(AI_ENDING_TAIL_PROVISIONAL)}
 
 **AI が作った返事がルールに合わなかったときに、代わりに出す返事(2つを順に使います)**
 
@@ -463,7 +532,9 @@ ${asks([
 ## E. 参考:最初の受付で聞く4つの質問(本番で使っています)
 
 最初の数ターンで、相談の種類・きっかけ・つらさ・ゴールを1つずつたずねます。AI への指示の一部で、AI はやりとりに合わせて言い回しを自然に調整します。
-最初の画面には、次のあいさつと、書き出しの例(押すとそのまま送られます)が出ます。
+最初の画面には、次のあいさつと、相談の種類のボタン(押すとそのまま送られます。A5)が出ます。
+2026年10月14日から、相談の種類・つらさ・ゴールは、ボタンを押したときはサーバ(コード)が順に進めます。下の指示は、
+その仕組みが使えない古いセッションのためのものです。
 
 ${quote(emptyText)}
 

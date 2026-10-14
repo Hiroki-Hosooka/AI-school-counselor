@@ -13,8 +13,9 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--gothic)
 button{font-family:inherit;cursor:pointer}
 
 header{border-bottom:1px solid var(--sand);padding:13px 20px 0;background:var(--paper);position:sticky;top:0;z-index:20}
+header.plain{padding:13px 20px}
 .head-row{display:flex;align-items:baseline;gap:12px;max-width:760px;margin:0 auto;width:100%}
-.mark{font-family:var(--mincho);font-size:19px;letter-spacing:.06em;color:var(--indigo)}
+.mark{font-family:var(--mincho);font-size:22px;line-height:38px;letter-spacing:.06em;color:var(--indigo)}
 .sub{font-size:11.5px;color:var(--ink-faint);letter-spacing:.04em}
 .spacer{flex:1}
 .icon-btn{background:none;border:1px solid var(--sand);border-radius:999px;color:var(--ink-soft);
@@ -100,7 +101,41 @@ textarea:focus{border-color:var(--indigo)}
 .send{border:none;background:var(--indigo);color:#fff;border-radius:11px;padding:0 19px;height:44px;
   font-size:14px;letter-spacing:.08em}
 .send:disabled{background:var(--sand-deep);cursor:default}
-.foot-note{max-width:760px;margin:9px auto 0;font-size:10.5px;color:var(--ink-faint);line-height:1.7}
+/* 画面の下の説明と窓口(2026年10月14日。docs/design/top-screen/Main.dc.html)。読める大きさ・押せば電話がかかる */
+.foot-note{max-width:760px;margin:10px auto 0;font-size:15px;color:#3A4449;line-height:1.75;display:flex;flex-direction:column;gap:4px}
+.foot-link{border:none;background:none;padding:0 0 0 .6em;font:inherit;font-weight:700;color:var(--indigo);text-decoration:underline;text-underline-offset:3px}
+.foot-hotlines{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}
+.foot-hotlines b{color:#8E3329}
+.foot-hotlines a{color:var(--indigo);font-weight:700}
+.crisis-card dd a,.closing-card dd a,.care-hotlines dd a{color:inherit}
+
+/* トップ画面(まだ何も話していないとき) */
+main.is-top{display:flex;flex-direction:column}
+/* margin:auto で縦の中ほどに置く(画面より高いときは上から並べ、見出しが切れないようにする) */
+.top-screen{max-width:760px;width:100%;margin:auto;padding:12px 0 24px;display:flex;flex-direction:column;gap:22px}
+.top-screen h1{margin:0;font-family:var(--mincho);font-weight:600;font-size:32px;line-height:1.7;letter-spacing:.04em;color:var(--ink)}
+.top-screen h1 span{display:block}
+.top-choices{display:flex;flex-wrap:wrap;gap:12px}
+.top-choice{min-height:58px;padding:8px 26px;border:1.5px solid #B9B2A4;border-radius:16px;background:#fff;
+  font-size:18px;font-weight:500;color:var(--ink);line-height:1.5;text-align:left}
+.top-choice:hover,.top-choice:focus-visible{border-color:var(--indigo);background:#F6F4EF;outline:none}
+.top-choice:disabled{opacity:.6;cursor:default}
+.top-hint{margin:6px 0 0;font-size:15px;color:#3A4449}
+.composer.top{max-width:none;margin:0}
+.composer.top textarea{min-height:54px;font-size:16px;padding:14px 18px;border:1.5px solid #C9C3B6;border-radius:14px}
+.composer.top .send{height:54px;padding:0 24px;font-size:16px;font-weight:700;border-radius:14px}
+
+/* 「くわしく」の説明 */
+.details{position:fixed;z-index:50;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,calc(100% - 32px));
+  max-height:calc(100% - 32px);overflow-y:auto;background:#fff;border-radius:16px;padding:36px 36px 28px;
+  display:flex;flex-direction:column;gap:22px;color:var(--ink)}
+.details h2{margin:0;font-family:var(--mincho);font-weight:600;font-size:24px;letter-spacing:.04em}
+.details-items{display:flex;flex-direction:column;gap:18px}
+.details-title{font-size:16px;font-weight:700}
+.details-title.alert{color:#8E3329}
+.details-body{font-size:15px;line-height:1.7;color:#3A4449}
+.details-ok{align-self:flex-start;height:48px;padding:0 26px;border:none;border-radius:14px;background:var(--indigo);color:#fff;font-size:16px;font-weight:700}
+.staff-link{align-self:flex-end;font-size:11px;color:var(--ink-soft)}
 
 .scrim{position:fixed;inset:0;background:rgba(35,42,46,.34);z-index:40;display:none}
 .scrim.open{display:block}
@@ -141,7 +176,15 @@ input:focus{border-color:var(--indigo)}
 @media(max-width:600px){
   main{padding:20px 15px 6px}.msg{max-width:95%}
   .msg.ai .bubble{font-size:15.5px;line-height:1.95}
-  header{padding:11px 15px 0}footer{padding:11px 15px 13px}
+  header{padding:11px 16px 0}footer{padding:11px 16px 13px}
+  header.plain{padding:11px 16px}
+  main.is-top{padding:16px 16px 8px}
+  .top-screen{gap:18px;margin-top:0}
+  .top-screen h1{font-size:25px;line-height:1.65}
+  .top-choices{flex-direction:column;gap:10px}
+  .top-choice{width:100%;min-height:54px;font-size:17px}
+  .foot-note{font-size:14px}
+  .details{padding:26px 22px 22px}
 }
 
 /* チップ(危機の流れの見直し・仮。AIの返事の下に並べる。押しつけないよう、控えめな見た目にする) */

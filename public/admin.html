@@ -222,7 +222,10 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     ASSERTION: "アサーション", LISTEN_ONLY: "傾聴", PROBLEM_SOLVING: "問題解決技法",
     PSYCHOEDUCATION: "心理教育・ノーマライズ",
   };
-  var CATEGORY_JA = { 1: "友達・人間関係", 2: "勉強・進路・部活", 3: "家族・家", 4: "性格・メンタル", 5: "漠然としたしんどさ" };
+  // 主訴のカテゴリ(6 は 2026年10月14日に足した「どれに当てはまるかわからない」。src/intake.mjs の CATEGORY_JA と同じ)。
+  // 危機の種類の CATEGORY_JA(下)と名前が重なって上書きされていたので、名前を分けた
+  var COMPLAINT_JA = { 1: "友達・人間関係", 2: "勉強・進路・部活", 3: "家族・家のこと", 4: "自分の気持ちや性格", 5: "うまく言えない(なんとなくしんどい)", 6: "どれに当てはまるかわからない(未分類)" };
+  var COMPLAINT_SOURCE_JA = { button: "本人がボタンで選んだ", estimated: "AIの推定" };
   // 構造化面接AI統合 手順7。closing_stateは11章のクロージング交渉の進み具合(sessions列)。
   var CLOSING_JA = {
     none: "なし", awaiting_choice: "続ける/区切るを確認中",
@@ -388,7 +391,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   // 構造化面接AI統合 手順5。フェーズ1(インテーク)で集めた情報とモード判定結果を表示する。
   function renderIntake(s) {
     var rows = [];
-    if (s.chief_complaint_category) rows.push(["主訴カテゴリ", CATEGORY_JA[s.chief_complaint_category] || s.chief_complaint_category]);
+    if (s.chief_complaint_category) rows.push(["主訴カテゴリ", (COMPLAINT_JA[s.chief_complaint_category] || s.chief_complaint_category)
+      + (s.chief_complaint_source ? "(" + (COMPLAINT_SOURCE_JA[s.chief_complaint_source] || s.chief_complaint_source) + ")" : "")]);
     if (s.onset_context) rows.push(["背景・きっかけ", s.onset_context]);
     if (s.distress_level) rows.push(["つらさスケール", s.distress_level + " / 5"]);
     if (s.physical_mental_symptoms) rows.push(["心身の症状", s.physical_mental_symptoms]);
@@ -728,7 +732,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     lines.push("- 期間: " + fmtDate(s.started_at) + " 〜 " + (s.closed_at ? fmtDate(s.closed_at) : "(継続中)"));
     lines.push("- 関わりの型: " + (REL_JA[s.relation] || s.relation || "—") + " / 重心: " + (WEIGHT_JA[s.weight] || s.weight || "—"));
     if (s.phase) lines.push("- フェーズ: " + (s.phase === "intake" ? "インテーク中" : "フェーズ2以降"));
-    if (s.chief_complaint_category) lines.push("- 主訴カテゴリ: " + (CATEGORY_JA[s.chief_complaint_category] || s.chief_complaint_category));
+    if (s.chief_complaint_category) lines.push("- 主訴カテゴリ: " + (COMPLAINT_JA[s.chief_complaint_category] || s.chief_complaint_category)
+      + (s.chief_complaint_source ? "(" + (COMPLAINT_SOURCE_JA[s.chief_complaint_source] || s.chief_complaint_source) + ")" : ""));
     if (s.onset_context) lines.push("- 背景・きっかけ: " + s.onset_context);
     if (s.distress_level) lines.push("- つらさスケール: " + s.distress_level + " / 5");
     if (s.user_goal) lines.push("- 期待するゴール: " + s.user_goal);

@@ -352,8 +352,12 @@ npm run test:crisis
     `--rate` で返事を軽いモデルで採点、`--summary` で集計とエクセル。`--knowledge` を省くと Supabase から読む)。
     採点の妥当性は、エクセルの「採点の較正(人が記入)」を人が埋めて `python3 scripts/export-conversation-flow-xlsx.py --agreement <ファイル>` で確かめる
   - 管理画面の「違和感があった」の印を使うには、`db/schema.sql` の15節を Supabase の SQL エディタで実行する(未実行でも会話は止まらない)
+- **トップ画面とインテーク(2026年10月14日。CLAUDE.md 5.13)**:コードで進めるインテークを使うには、`db/schema.sql` の16節を
+  Supabase の SQL エディタで実行する(未実行でも会話は止まらず、以前の台本で進む)。開発用の表示は `DEV_PANEL=on`(Preview・Development だけ)。
+  - 確かめ: `node scripts/test-shima4-part1.mjs`(オフライン)、`node scripts/test-api-path.mjs --scenarios=intake-K1,...,intake-free --reps=5`
+    (偽の DB。`--dev-panel=off` で本番の設定、`--missing16=on` で16節が未実行の DB、`--constraints=v13` で古い制約、`--model=free` で無料枠)
 - **段階ごとの応答(危機検知の作り直し 第2段階。仮の文面・心理士の確認待ち。CLAUDE.md 5.16)** は、
-  設定 `CRISIS_RESPONSE=staged` のときだけ動く(2026年10月11日に、本番でも有効にすると人が決めた。Vercel の環境変数に設定する)。
+  設定 `CRISIS_RESPONSE=staged` のときだけ動く(2026年10月11日に本番でも有効にすると人が決めたが、2026年10月14日に、第1部の修正と心理士の確認が済むまで本番では無効に戻した)。
   有効にする前に `db/schema.sql` の11節〜14節を Supabase の SQL エディタで実行する。
   - 状態の移り変わり(見守り・分けて出す危機の応答・引き下がりへのまとめの1通・危機の状態の生成・本番の既定の
     「危機のあと」など)のオフラインのテスト: `npm run test:staged-response`(API・DB は使わない。
