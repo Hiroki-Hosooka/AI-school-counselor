@@ -925,7 +925,9 @@ export async function POST(req: Request) {
       // 本人が断った相手を勧める言い方(src/declined.mjs)と、AI から会話を終える形(src/flow.mjs)は、どの生成でも確かめる(2026年10月14日)
       const declinedChecks = declinedNg(declinedNow);
       const declinedHint = declinedChecks.length ? "相談者が断った相手に話すこと・相談することを勧めない。" : "";
-      const endCheck = (o: Record<string, unknown>) => aiEndingCheck(o, { text, closingState: sess.closing_state });
+      // 危機の状態で生成するターンは、問いか続きを促す一言で終えることも確かめる(受け止めて終わるだけにしない。2026年10月15日)
+      const endCheck = (o: Record<string, unknown>) =>
+        aiEndingCheck(o, { text, closingState: sess.closing_state, requireNext: crisisGenerated });
       const generated = await generateReply(
         system, messages, undefined, undefined, undefined, priorFailureCount,
         crisisGenerated

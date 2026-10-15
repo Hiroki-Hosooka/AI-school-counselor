@@ -165,6 +165,16 @@ check("続きを促す一言がある → 終わりの形ではない", !endsCon
 check("ふつうの受け止め → 終わりの形ではない", !endsConversation("それはしんどかったね。"));
 check("本人が終わりの合図を出したら当てない", !aiEndingCheck({ reply: "今日はゆっくり休んでね。" }, { text: "もう寝るね" }));
 check("合図が無ければ当てる", aiEndingCheck({ reply: "今日はゆっくり休んでね。" }, { text: "うん" }));
+// 相談ログ 83fe3472 の T8(危機の状態の生成。問いも続きの一言も無い)
+const L83 = "話してみたいとは思わないんだね。そう感じるのも無理はないよ。大人や相談先には話しにくい気持ち、そのまま教えてくれてありがとう。";
+check("危機の状態の生成: 受け止めて終わるだけなら当てる(83fe3472 T8)", aiEndingCheck({ reply: L83 }, { text: "思わない", requireNext: true }));
+check("ふつうの生成では受け止めのみに当てない(2回までは許す)", !aiEndingCheck({ reply: L83 }, { text: "思わない" }));
+check("危機の状態の生成: 問いがあれば当てない",
+  !aiEndingCheck({ reply: "話してみたいとは思わないんだね。今、いちばん気になっていることはある？" }, { text: "思わない", requireNext: true }));
+check("危機の状態の生成: 続きを促す一言があれば当てない",
+  !aiEndingCheck({ reply: "そう感じるのも無理はないよ。もう少し話せそうなら、続けて聞かせてね。" }, { text: "思わない", requireNext: true }));
+check("危機の状態の生成でも、本人の終わりの合図があれば当てない",
+  !aiEndingCheck({ reply: L83 }, { text: "もう寝るね", requireNext: true }));
 check("区切りを聞いて本人が区切りを選んだら当てない",
   !aiEndingCheck({ reply: "今日はゆっくり休んでね。", closing_event: "close" }, { text: "うん", closingState: "awaiting_choice" }));
 

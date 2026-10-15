@@ -582,9 +582,19 @@ export function endsConversation(reply) {
 
 // 作り直しの検査。sess.closing_state が awaiting_choice(続けるか区切るかを聞いた)で、本人が区切りを選んだときと、
 // 本人が終わりの合図を出したときは当てない
-export function aiEndingCheck(out, { text, closingState } = {}) {
+// requireNext: 危機の状態で生成するターン(固定の文を生成に置き換えたターンを含む)では、区切りの挨拶が無くても、
+// 問いも続きを促す一言も無い返事(受け止めて終わるだけ)を「AI から終える形」として扱う(2026年10月15日。相談ログ 83fe3472。
+// 3通目への「思わない」に、問いもチップも無い返事が出て、AI が会話を終わらせたように見えた。5.18「AI から危機の会話を終わらせない」)
+/** @param {{ text?: string, closingState?: string | null, requireNext?: boolean }} [opts] */
+export function aiEndingCheck(out, { text = "", closingState = "", requireNext = false } = {}) {
   if (userSignalsEnd(text)) return false;
   if (closingState === "awaiting_choice" && out?.closing_event === "close") return false;
+  if (requireNext) {
+    const t = String(out?.reply ?? "").trim();
+    // 「教えてくれてありがとう」「話してくれて」のような、すでに話したことへのお礼は、続きを促す一言に数えない
+    const forward = t.replace(/(教えて|聞かせて|話して)くれて/g, "");
+    if (t && !hasQuestion(t) && !CONTINUE_RE.test(forward)) return true;
+  }
   return endsConversation(out?.reply);
 }
 export const AI_ENDING_FIX_HINT = `# 修正指示(重要)
