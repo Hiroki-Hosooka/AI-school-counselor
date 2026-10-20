@@ -70,6 +70,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │       ├── layout.tsx     フォント・メタデータ
 │       ├── page.tsx       クライアント(表示のみ。トップ画面・「くわしく」。開発用の表示は DEV_PANEL=on のときだけ)
 │       ├── globals.css
+│       ├── icon.svg / apple-icon.png  ブラウザのタブ・ホーム画面のアイコン(藍の地に2つの吹き出し。Next.js が自動で読む)
 │       └── api/chat/route.ts   判断ロジック・プロンプト・安全層・DB読み書き
 ├── public/
 │   ├── admin.html         心理士用のログレビュー画面(合言葉で保護。5.9)
