@@ -350,9 +350,16 @@ export default function Page() {
     await boot();
   }
 
-  async function newSession() {
+  // 新しい会話を始める(2026年10月21日。生徒の画面のヘッダのボタンと、開発用の表示から)。
+  // 今の会話はサーバ側で閉じて、人単位の記憶(要約)に畳み込まれる(route.ts の start)。押し間違いで会話が消えたように
+  // 見えないよう、ヘッダのボタンからは一度たずねる
+  async function newSession(ask = false) {
+    if (busy) return;
+    if (ask && !window.confirm("いまの会話を終えて、新しく話しはじめますか?")) return;
     try {
       resetView();
+      setInputValue("");
+      setBanner("");
       const s = await api("start");
       sessionIdRef.current = s.session.id;
       setPanelOpen(false);
@@ -404,6 +411,9 @@ export default function Page() {
             </div>
           )}
           <div className="spacer" />
+          {!isTop && (
+            <button className="icon-btn" disabled={busy} onClick={() => newSession(true)}>新しく話す</button>
+          )}
           {dev && <button className="icon-btn" onClick={() => setPanelOpen(true)}>開発用の表示</button>}
         </div>
         {dev && (
@@ -587,7 +597,7 @@ export default function Page() {
             </div>
 
             <h5>この端末の会話</h5>
-            <button className="btn ghost" onClick={newSession}>新しく話しはじめる</button>
+            <button className="btn ghost" onClick={() => newSession()}>新しく話しはじめる</button>
           </aside>
         </>
       )}
