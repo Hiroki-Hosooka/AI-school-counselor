@@ -79,6 +79,9 @@ export const GENERIC_GROUPS = [
 const stripQuotes = (t) => String(t ?? "").replace(/「[^」]*」|『[^』]*』/g, "「」");
 export const genericGroupsIn = (t) => GENERIC_GROUPS.filter((g) => g.re.test(stripQuotes(t))).map((g) => g.key);
 // 一般化(誰にでもあることとして広げる言い方)。1回の会話で1回まで(心理教育のモードは除く)
+// 「ありがとう」(教えてくれて・書いてくれて・話してくれて)は、1回の会話で要所の2回まで(2026年10月21日。採点の前の修正 1-5・2章)
+export const THANKS_RE = /ありがと/;
+export const THANKS_MAX = 2;
 export const GENERALIZATION_RE = /(時|とき|こと)って?(も)?ある(よね|よ)|みんな.{0,12}(だよ|よね|あるよ)|誰にでも(ある|起こ)|よくあること/;
 // 人間のふり・AI が相談者以上に感情的になる
 export const HUMAN_PRETENSE_RE = /(わたし|私|僕|ぼく)も(そういう|同じ|似た|経験|わかる|つらい|辛い|悲しい|苦しい)|わかるよ、?(わたし|私)も|胸が(痛|締め付け|ぎゅっ)|(わたし|私)まで(つらく|悲しく|苦しく)/;
@@ -159,6 +162,10 @@ const moveOfFlags = (flags) => {
 
 // 生成した返事か(危機の流れの固定の文面は数えない)
 const isGeneratedAi = (m) => m?.role === "ai" && !m?.crisis;
+// 受け止めだけの返事か(問いも選択肢も無い)。AI の申告(question_level)は使わず、本文の「?」と選択肢の有無だけで決める
+// (2026年10月21日。採点の前の修正 1-6。相談ログ 86130eef で受け止めのみが3回続いた原因の1つ。申告が none でない返事は、
+// 本文に問いが無くても数えられず、連続が途切れていた)
+export const isReceiveOnly = (m) => !hasQuestion(m?.body) && !(Array.isArray(m?.choices) && m.choices.length);
 const hasMode = (m) => Array.isArray(m?.mode) && m.mode.length > 0;
 // 危機のあと・危機の状態で生成するターン
 export const crisisContext = (contexts) => (contexts ?? []).some((c) => c === "afterCrisis" || c === "crisisGeneration");
@@ -174,7 +181,7 @@ export function flowStats(hist, sess, opts = {}) {
   let receiveOnlyStreak = 0;
   for (let i = ais.length - 1; i >= 0; i--) {
     const m = ais[i];
-    const receiveOnly = m.question_level === "none" && !hasQuestion(m.body) && !(Array.isArray(m.choices) && m.choices.length);
+    const receiveOnly = isReceiveOnly(m);
     if (!receiveOnly) break;
     receiveOnlyStreak++;
   }
@@ -182,6 +189,7 @@ export function flowStats(hist, sess, opts = {}) {
   const lastSentenceCounts = ais.slice(-2).map((m) => sentencesOf(m.body).length);
   const usedGeneric = [...new Set(ais.flatMap((m) => genericGroupsIn(m.body)))];
   const generalizationUsed = ais.some((m) => GENERALIZATION_RE.test(String(m.body ?? "")));
+  const thanksUsed = ais.filter((m) => THANKS_RE.test(String(m.body ?? ""))).length;
   // フェーズ2の何ターン目か(mode が入った最初の行はインテークを終えたターンなので数えない)
   const modeRows = ais.filter(hasMode).length;
   const phase2Index = sess?.phase === "phase2" ? Math.max(0, modeRows - 1) + 1 : 0;
@@ -233,7 +241,7 @@ export function flowStats(hist, sess, opts = {}) {
   const noticedAllowed = !crisis && phase2Index >= 1 && sinceNoticed >= NOTICED_EVERY;
   const linkDue = !crisis && phase2Index >= 2 && sinceLink > LINK_EVERY && userTexts.length >= 3;
   return {
-    receiveOnlyStreak, lastEndings, lastSentenceCounts, usedGeneric, generalizationUsed,
+    receiveOnlyStreak, lastEndings, lastSentenceCounts, usedGeneric, generalizationUsed, thanksUsed,
     phase2Index, firstMoveUsed, sinceLink, sinceHypothesis, sinceNoticed,
     offers, lastOfferedG, chosen, lastChoice, ventTurns, lastWasSummary, askedSummaryPermission,
     goal, goalOrganize, workMode, listenOnly, listenOnlyReason, userTexts, modes, stage, crisis,
@@ -340,6 +348,10 @@ export function buildFlowBlock(stats, intake, text) {
     lines.push(`・受け止めだけ(問いも選択肢も無い返事)が、いま${stats.receiveOnlyStreak}回続いている。続けて${RECEIVE_ONLY_MAX}回まで。`);
     if (stats.receiveOnlyStreak >= RECEIVE_ONLY_MAX && !stats.crisis) {
       lines.push("  ★ この返事は、問い(1つだけ)・まとめ・進め方を選んでもらう選択肢のどれかにする。受け止めだけで終えない。");
+    } else if (stats.receiveOnlyStreak >= RECEIVE_ONLY_MAX) {
+      // 危機のあとも、受け止めだけを3回続けない(2026年10月21日。採点の前の修正 1-6)。問いは軽いもの1つだけ
+      lines.push("  ★ この返事は、受け止めだけで終えない。相談者の直前の言葉に触れた軽い問いを1つ置く(今話したいこと・今の気持ちなど)。"
+        + "危険度・方法・どのくらい本気かは聞かない。");
     }
   }
   // まとめ
@@ -377,6 +389,7 @@ export function buildFlowBlock(stats, intake, text) {
     lines.push(`・この会話でもう使った汎用の受け止め:${stats.usedGeneric.map((k) => `「${k}」`).join("、")}。同じ意味のものはもう言わない。`);
   }
   if (stats.generalizationUsed) lines.push("・誰にでもあることとして広げる言い方(〜って時あるよね 等)は、この会話でもう使った。もう言わない。");
+  if (stats.thanksUsed >= THANKS_MAX) lines.push(`・「ありがとう」は、この会話でもう${stats.thanksUsed}回言った。もう言わない。`);
   if (stats.lastEndings.length) {
     lines.push(`・直前の返事の終わり方と文の数:${stats.lastEndings.map((e, i) => `${endingLabel(e)}(${stats.lastSentenceCounts[i]}文)`).join("、")}。同じ型を続けない。`);
   }
@@ -389,8 +402,8 @@ export function flowCheck(out, stats) {
   const reply = String(out?.reply ?? "");
   const reasons = [];
   const offered = out?.offer_organize === true && canOfferOrganize(stats);
-  if (!hasQuestion(reply) && !offered && stats.receiveOnlyStreak >= RECEIVE_ONLY_MAX && !stats.listenOnly && !stats.crisis) {
-    reasons.push("A受け止めのみの3回目");
+  if (!hasQuestion(reply) && !offered && stats.receiveOnlyStreak >= RECEIVE_ONLY_MAX && !stats.listenOnly) {
+    reasons.push(stats.crisis ? "A受け止めのみの3回目(危機のあと)" : "A受け止めのみの3回目");
   }
   const dupGeneric = genericGroupsIn(reply).filter((k) => stats.usedGeneric.includes(k));
   if (dupGeneric.length) reasons.push(`B汎用の言葉の2回目(${dupGeneric.join("・")})`);
@@ -402,6 +415,7 @@ export function flowCheck(out, stats) {
   // まとめてよいかを、2回続けてたずねない(相談ログの再生で、たずねるだけが5回続いた。2026年10月11日)
   if (stats.askedSummaryPermission && asksSummaryPermission(reply) && !isValidSummary(reply)) reasons.push("Dまとめてよいかを2回たずねた");
   if (GENERALIZATION_RE.test(reply) && stats.generalizationUsed && !stats.modes.includes("PSYCHOEDUCATION")) reasons.push("E一般化の2回目");
+  if (THANKS_RE.test(reply) && stats.thanksUsed >= THANKS_MAX) reasons.push(`Hありがとうの${stats.thanksUsed + 1}回目`);
   if (HUMAN_PRETENSE_RE.test(reply)) reasons.push("F人間のふり・感情的");
   const move = out?.move;
   if (!stats.hypothesisAllowed && (move === "hypothesis" || HYPOTHESIS_RE.test(reply))) reasons.push("G出してよくない見立て");
@@ -415,6 +429,7 @@ const FIX_HINTS = {
   D: "まとめると言った(または、まとめてよいかをもうたずねた)のに、まとめていません。たずねずに「一回まとめてみるね」と断って、このターンでまとめの形(相談者の言葉で2〜4個並べて「合ってるかな?」)にしてください。",
   E: "誰にでもあることとして広げる言い方を、この会話ですでに使っています。今回は使わないでください。",
   F: "人間のふりをする言い方、または相談者以上に感情的な言い方が入っています。こちらの経験や感情を語らず、相談者の言葉に戻ってください。",
+  H: "「ありがとう」を、この会話ですでに2回言っています。今回は言わず、相談者が書いた具体的な言葉に触れてください。",
   G: "このターンは、仮の見立て(「もしかして〜?」)・気になったこと(「気になった」)は出さないでください。",
 };
 export function flowFixHint(reasons) {
@@ -474,7 +489,7 @@ export function flowSummaryOfSession(hist) {
     run = e !== "Q" && e === prev ? run + 1 : e !== "Q" ? 1 : 0;
     prev = e;
     maxSameEnding = Math.max(maxSameEnding, run);
-    const receiveOnly = m.question_level === "none" && !hasQuestion(m.body) && !(Array.isArray(m.choices) && m.choices.length);
+    const receiveOnly = isReceiveOnly(m);
     ro = receiveOnly ? ro + 1 : 0;
     maxReceiveOnly = Math.max(maxReceiveOnly, ro);
   }
@@ -506,7 +521,7 @@ export function annotateForAdmin(msgs, events) {
     const view = { stage, basis, afterCrisis: crisisSeen && !m.crisis };
     if (m.crisis) crisisSeen = true;
     if (!m.crisis) {
-      const receiveOnly = m.question_level === "none" && !hasQuestion(m.body) && !(Array.isArray(m.choices) && m.choices.length);
+      const receiveOnly = isReceiveOnly(m);
       streak = receiveOnly ? streak + 1 : 0;
       sinceSummary = m.summarized ? 0 : sinceSummary + 1;
       Object.assign(view, {

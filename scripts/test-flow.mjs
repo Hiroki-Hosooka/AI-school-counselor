@@ -110,6 +110,23 @@ console.log("傾聴に切り替えてよいとき(この3つだけ)");
   check("組G を付けた返事のあとだけ、組G のチップを受け付ける", flowChoiceOf(g, "G2")?.id === "G2" && flowChoiceOf(ro, "G2") === null);
 }
 
+console.log("受け止めのみ2回まで(採点の前の修正 1-6。相談ログ 86130eef で3回続いた)");
+{
+  const base = { phase: "phase2", user_goal: "整理したい" };
+  // AI が question_level を data と申告していても、本文に問いが無ければ受け止めのみに数える
+  const mislabeled = [1, 2].flatMap(() => [{ role: "user", body: "うん" }, { role: "ai", body: "そうなんだね。", question_level: "data" }]);
+  check("申告ではなく本文の「?」で数える", flowStats(mislabeled, base).receiveOnlyStreak === 2);
+  check("申告が data でも3回目は作り直し", flowCheck({ reply: "そっか。" }, flowStats(mislabeled, base)).some((r) => r.startsWith("A")));
+  // 危機のあとでも、受け止めだけを3回続けない(問いは軽いもの1つ)
+  const st = flowStats(mislabeled, base, { stage: 0, contexts: ["afterCrisis"] });
+  check("危機のあとでも3回目は作り直し", st.crisis && flowCheck({ reply: "そっか。" }, st).some((r) => r.startsWith("A")));
+  check("危機のあとの指示は軽い問い・危険度は聞かない", buildFlowBlock(st, {}, "うん").includes("危険度・方法・どのくらい本気かは聞かない"));
+  const thanks = [1, 2].flatMap(() => [{ role: "user", body: "うん" }, { role: "ai", body: "話してくれてありがとう。どんなときにそう思う?" }]);
+  check("ありがとうは2回まで(3回目は作り直し)", flowCheck({ reply: "教えてくれてありがとう。それはいつごろ?" }, flowStats(thanks, base)).some((r) => r.startsWith("H")));
+  check("ありがとうが1回なら当てない", !flowCheck({ reply: "教えてくれてありがとう。それはいつごろ?" }, flowStats(thanks.slice(0, 2), base)).some((r) => r.startsWith("H")));
+  check("危機のあとでも、問いがあれば当てない", !flowCheck({ reply: "そっか。今いちばん話したいことはある?" }, st).some((r) => r.startsWith("A")));
+}
+
 console.log("見立て・気になったこと・つなぎはサーバが判定する");
 {
   const mk = (n, extra = {}) => {

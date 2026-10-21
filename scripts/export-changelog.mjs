@@ -23,7 +23,7 @@ const body = `# 変更の記録(版ごと)
 
 | 版 | 日付 | 触れたところ | 変えたこと |
 |---|---|---|---|
-${VERSION_HISTORY.map((h) => `| ${h.version}${h.retro ? "(さかのぼって付けた版)" : ""} | ${h.date} | ${(h.areas ?? []).join("・")} | ${h.summary} |`).join("\n")}
+${VERSION_HISTORY.map((h) => `| ${h.version}${h.name ? `(**${h.name}**)` : ""}${h.retro ? "(さかのぼって付けた版)" : ""} | ${h.date} | ${(h.areas ?? []).join("・")} | ${h.summary} |`).join("\n")}
 `;
 
 if (process.argv.includes("--check")) {

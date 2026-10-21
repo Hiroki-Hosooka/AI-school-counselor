@@ -41,3 +41,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 採点用のログの書き出し(scripts/export-review-logs.mjs)。相談の中身を含むのでコミットしない
+/review-export/
