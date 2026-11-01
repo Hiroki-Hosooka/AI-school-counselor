@@ -1034,7 +1034,8 @@ export async function POST(req: Request) {
       let out = flowDone ? flowDone.out : finalized.out;
       // 返事が空にならないようにする(どの経路でも、必ず1つ以上の返事を返す。2026年10月14日。相談ログ 86130eef の10ターン目)
       const emptyReply = !String(out?.reply ?? "").trim();
-      if (emptyReply) out = { ...out, reply: fallback?.reply ?? EMPTY_REPLY_FALLBACK_PROVISIONAL };
+      // 場面の一言が空(同じ会話で3回目以降の失敗)のときも、空の吹き出しにしない(以前は ?? で空文字が通っていた。2026年11月1日)
+      if (emptyReply) out = { ...out, reply: fallback?.reply || EMPTY_REPLY_FALLBACK_PROVISIONAL };
       const flowChoices = flowDone?.offerChoices ? CHOICES_G_PROVISIONAL : null;
       // 段階1以上で「大丈夫」の直後の返事に「よかった/安心した」があれば記録だけする(作り直さない。嶋先生 10/7。本番の既定でも)
       const stageForNote = plan ? plan.stage
