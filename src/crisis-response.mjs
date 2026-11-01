@@ -216,8 +216,8 @@ export const DAIJOUBU_RULE_PROVISIONAL = `・相談者が「大丈夫」と書�
 export const AFTER_CRISIS_BLOCK_PROVISIONAL = `
 
 # このセッションについて(重要・危機の応答のあと)
-このセッションでは少し前に、相談者の発言に深刻なサインがあり、あらかじめ決めた文面で受け止めました
-(そのあと、話せる窓口の案内や、まわりの大人に話すことについての問いかけをした場合もあります)。
+このセッションでは少し前に、相談者の発言に深刻なサインがあり、受け止めて、話せる窓口を画面に出しました
+(そのあと、まわりの大人に話すことについての問いかけをした場合もあります)。
 ・危機の内容そのもの(なぜそう思うのか、方法・時期・場所など)を深掘りしない
 ・窓口の案内をくり返さない(窓口は画面に表示してある)
 ・この先の対応を約束しない(「もう窓口の話はしない」「誰にも言わない」「秘密にする」など)
@@ -230,7 +230,12 @@ export const AFTER_CRISIS_BLOCK_PROVISIONAL = `
   あなたの限界や負担を理由に区切る言い方をしない(相手は「切られた」と感じる)
 ${DAIJOUBU_RULE_PROVISIONAL}
 ・インテークの質問(相談の種類・つらさの点数など)は続けない
-・本人が話したいことに沿って、ゆっくり会話を続ける。本人が話題を変えたら、それに合わせてよい`;
+・本人が話したいことに沿って、ゆっくり会話を続ける。本人が話題を変えたら、それに合わせてよい
+・相談者が書いたことに返事をする。いまいちばんつらいことを先に聞き、人につなぐ話はそのあとにする
+・まわりの大人や窓口について「思わない」「絶対嫌」「話したくない」と答えたのは、大人や窓口に話すことへの答え。
+  このAIと話すのをやめたいという意味に取らない。会話はそのまま続け、断った相手や窓口を勧め直さない
+・相談者がすでに答えたこと(話しにくい理由など)を、もう一度たずねない
+・相談者が自分から話せそうな人を挙げたら(例:「家政婦さんはいる」)、その人を最初のつなぎ先として扱う。先生や窓口に置き換えない`;
 
 // 危機の応答のあとのセッションで、クロージングの最後に添える一言の趣旨(本番の既定。「いつでも」を外す。CLAUDE.md 5.6 の例外)
 export const AFTER_CRISIS_CLOSING_LINE_PROVISIONAL = "「しんどくなったら、こういうところに頼っていいよ」";
@@ -983,7 +988,9 @@ export function planSafetyTurn({
   const watching = s.watch_turns_left > 0;
   const paused = s.crisis_state === "paused1";
   let escalated = false;
-  if (watching && isSign && !(paused && s.reentry_used)) {
+  // 気がかりの積み重なりでは段階2に上げない(2026年11月1日・危機の作り直し 第2部。人が確認。相談ログ 1d0a0511 15:47 の T5・T8 で、
+  // 文中に危機の言葉が無いのに段階2の固定の文が出た)。設定 CRISIS_ACCUMULATION=on のときだけ以前の動き(比べるため)
+  if (accumulationEnabled() && watching && isSign && !(paused && s.reentry_used)) {
     stage = 2;
     escalated = true;
     rules.push("watch_repeat");
@@ -1222,6 +1229,9 @@ export function assessFlowChoiceTurn(state, reason = "flow_choice", declined = [
   const plan = planSafetyTurn({ staged, state: s, text: "", declined });
   return { staged, withdrawal: null, teacher: null, plan, choice: null };
 }
+
+// 見守り中の再サインで段階2に上げるか(以前の積み重なり)。既定は上げない(2026年11月1日・第2部)
+export const accumulationEnabled = () => process.env.CRISIS_ACCUMULATION === "on";
 
 // choice: resolveChoice で受け取ったチップ(route.ts)。文字列なら以前と同じく状態だけで確かめる(validateChoice。テスト用)。
 // opts.declined: 本人が断った相手(src/declined.mjs の declinedPeopleFrom)。3通目への答えの判定が返した相手もこのターンから足す

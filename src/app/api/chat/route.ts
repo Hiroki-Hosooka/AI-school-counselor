@@ -56,6 +56,11 @@ import {
 } from "@/classify.mjs";
 import { categoryOfSafety } from "@/crisis-keywords-v3.mjs";
 import { crisisTypesOf, crisisTypesFlag, crisisTypesFromFlags } from "@/crisis-types.mjs";
+import {
+  crisisReplyMode, needsSafetyLine, needsCrisisCard, crisisCardFlag, angerIn, confidantsFrom, connectAskDue,
+  CRISIS_SAFETY_LINE_PROVISIONAL, SAFETY_LINE_FLAG, CRISIS_GEN_FLAG,
+} from "@/crisis-turn.mjs";
+import { buildCrisisReply } from "@/crisis-texts.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.mjs";
 import {
   loadKnowledge, clearKnowledgeCache, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
@@ -75,8 +80,8 @@ import {
   declinedPeopleFrom, declinedNg, declinedEstimateFlag,
 } from "@/crisis-response.mjs";
 import {
-  flowStats, flowCheck, flowFixHint, finalizeFlow, LOST_MEANING_RE,
-  CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET, annotateForAdmin, DISCOMFORT_REASONS, aiEndingCheck,
+  flowStats, flowCheck, flowFixHint, finalizeFlow,
+  CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET, annotateForAdmin, DISCOMFORT_REASONS, aiEndingCheck, questionNotes,
 } from "@/flow.mjs";
 
 // 安全判定(classify)・人単位の記憶の要約用のモデル一覧、危機判定ロジック本体は src/classify.mjs、
@@ -187,6 +192,7 @@ function withCareLine(m: Row) {
     ...m, care_line: m.safety_card === "care" ? CARE_LINE_PROVISIONAL : null,
     // 危機の種類(窓口のカードの並び。2026年11月1日・1-3)。列は足さず、記録の印から読む
     crisis_types: crisisTypesFromFlags(m.flags),
+    safety_line: Array.isArray(m.flags) && (m.flags as string[]).includes(SAFETY_LINE_FLAG) ? CRISIS_SAFETY_LINE_PROVISIONAL : null,
     choice_note: Array.isArray(m.choices) && m.choices.length ? CHOICE_NOTE_PROVISIONAL : null,
   };
 }
@@ -558,7 +564,11 @@ export async function POST(req: Request) {
           .eq("session_id", s.id).order("seq"),
       );
       // 参照したナレッジ・出力チェック・評価は開発用の表示のときだけ返す
-      const shown = msgs.map(withCareLine).map((m) => (devPanel() ? m : withoutKeys(m, ["used", "flags", "rating"])));
+      // 本人が先生・保健室を断っていたら、危機カードの「先生に見せるだけでも」の一文を出さない(第3部)
+      const declinedAtResume = declinedPeopleFrom(msgs as { role: string; body: string; flags?: unknown }[]);
+      const teacherNote = !declinedAtResume.includes("teacher") && !declinedAtResume.includes("nurse");
+      const shown = msgs.map(withCareLine).map((m) => ({ ...m, card_teacher_note: teacherNote }))
+        .map((m) => (devPanel() ? m : withoutKeys(m, ["used", "flags", "rating"])));
       return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel(), app_version: APP_VERSION, ...(devPanel() ? { version: versionInfo() } : {}) });
     }
 
@@ -701,6 +711,8 @@ export async function POST(req: Request) {
       // 本番の既定(段階ごとの応答が無効)で、本人の危機を指示つきの生成で受けるターン(2回目の短い1通も出し終えた・
       // 状態の保存に失敗した会話。CLAUDE.md 5.2。2026年10月14日)
       let defaultCrisisGen = false;
+      // 本人の危機を生成で受けるターンの情報(種類・この会話で初めてか・怒りの中か。2026年11月1日・第3部)
+      let crisisTurnInfo: { types: string[]; first: boolean; anger: boolean } | null = null;
       if (crisisDetectionVersion() === "v2") {
         // 直近のやりとり(分類器の文脈)。以前は DB から読み直していたが、上で読んだ会話の記録から取る(往復を1回減らす)
         const classifierContext = prior.slice(-CLASSIFIER_CONTEXT_MESSAGES)
@@ -842,7 +854,13 @@ export async function POST(req: Request) {
         // 本人の危機(Tier A・self)なら生成をスキップして固定応答(CLAUDE.md 5.2)。
         // 同じ固定応答を1回の会話で2回出さない(2026年10月14日に人が決めた): 2回目は短い別の固定の1通(危機カードつき)、
         // 3回目からは危機の状態の指示つきの生成。状態の保存に失敗した会話も生成。どれも断った相手は挙げない
-        if (isSelfCrisis) {
+        // 2026年11月1日(危機の作り直し 第3部。人が確認): 本人の危機も、強く縛った生成で受ける。固定のまま残すのは、
+        // 種類ごとの窓口のカード・条件つきの安全の一行・職員への通知と記録だけ(src/crisis-turn.mjs)。
+        // 設定 CRISIS_REPLY_MODE=fixed のときだけ、以前の固定応答(下)に戻る
+        if (isSelfCrisis && crisisReplyMode() === "generate") {
+          defaultCrisisGen = true;
+          crisisTurnInfo = { types: crisisTypes, first: !hadCrisisReply(prior), anger: angerIn(text) };
+        } else if (isSelfCrisis) {
           // 「〜が、とても心配です」は、当たった語の種類で組む(src/crisis-texts.mjs。2026年10月9日。「重い」は使わない)
           const decided = defaultCrisisReplyFor(prior, crisisTypes.length ? crisisTypes : categoryOfSafety(safety), declinedNow);
           if (decided.kind !== "generate" && decided.text) {
@@ -882,6 +900,9 @@ export async function POST(req: Request) {
       // 以後の生成に危機のあとの指示を付ける(2026年10月5日。CLAUDE.md 5.17)。固定応答の次のターンで
       // 「なんでもない」と書くと、ふつうの会話に戻ってしまっていたため。判定と固定応答の分岐は変えていない
       const afterCrisis = !plan && aftercareEnabled() && hadCrisisReply(hist);
+      // 危機の流れの中か(本人の危機のターン・危機のあと)と、相談者が自分から挙げた話せそうな人(src/crisis-turn.mjs)
+      const inCrisisFlow = !!crisisTurnInfo || afterCrisis || !!plan?.safetyContexts?.includes("afterCrisis");
+      const confidants = confidantsFrom(prior, text);
       // 段階ごとの応答のときは、終わり方(本人が終わりの合図を出したとき)も段階で変える(嶋先生 10/7。仮):
       // 危機のあと = 決まった締めの文面を足す(下)/ 段階1 = 労い+「またここに来てね」+窓口の場所
       const planContexts: string[] = plan ? [...plan.safetyContexts] : [];
@@ -891,11 +912,12 @@ export async function POST(req: Request) {
       }
       // 本番の既定で本人の危機を生成で受けるターンは、段階ごとの応答と同じ「危機の状態の指示」を付ける(2026年10月14日)
       const baseContext: string[] = plan ? planContexts
+        : crisisTurnInfo ? ["crisisTurn"]
         : defaultCrisisGen ? ["crisisGeneration", "afterCrisis"]
           : defaultSafetyContexts({ risk: safety.risk, subject: safety.subject, afterCrisis });
       // トップ画面から始めたインテーク(sessions.intake_step。2026年10月14日)。次に何を聞くかはコードが決める(src/intake.mjs)。
       // 危機の応答のあとは、今までどおり台本を止める(CLAUDE.md 5.13 の例外)
-      const intakePaused = baseContext.includes("afterCrisis") || baseContext.includes("crisisGeneration");
+      const intakePaused = baseContext.includes("afterCrisis") || baseContext.includes("crisisGeneration") || baseContext.includes("crisisTurn");
       const intakeTurn = intakePaused ? null
         : planIntakeTurn({ sess, picked, text, lastOffered: lastAiChoices(prior)?.set ?? null });
       const safetyContext = intakeTurn ? [...baseContext, ...intakeTurn.contexts] : baseContext;
@@ -906,7 +928,7 @@ export async function POST(req: Request) {
       const stats = flowStats(hist, sess, { choiceId: flowChoice?.id ?? null, stage: turnStage, contexts: safetyContext });
       // まとめが要るとき(区切り・意味を見失った言葉・整理を選んだ・前のターンでまとめた)は、IS8・T16 を必ず参照させる
       const summaryKnowledge = flowPhase === "phase2" && !stats.crisis
-        && ((sess.turns_since_summary ?? 0) >= 6 || LOST_MEANING_RE.test(text) || flowChoice?.id === "G2" || stats.lastWasSummary)
+        && (stats.summaryAllowed || flowChoice?.id === "G2" || stats.lastWasSummary)
         ? ["IS8", "T16"] : undefined;
       const rows = await loadKnowledge(db);
       timer.mark("knowledge");
@@ -919,7 +941,8 @@ export async function POST(req: Request) {
       const messages = hist
         // 危機の固定応答(CRISIS_REPLY)は、今まで通り生成の会話履歴に含めない。段階ごとの応答で分けた文面
         // (crisis_step あり)は、短い受け止めや案内なので、外すと会話がつながらなくなるため含める(第2段階)
-        .filter((h) => !h.crisis || h.crisis_step != null)
+        .filter((h) => !h.crisis || h.crisis_step != null
+          || (Array.isArray(h.flags) && (h.flags as string[]).includes(CRISIS_GEN_FLAG)))
         .map((h) => ({ role: h.role === "user" ? "user" : "model", parts: [{ text: String(h.body ?? "") }] }));
       // このセッションで既に何回、生成失敗の固定応答を返しているか(2026年9月・2-2)。
       // 同じ文言を繰り返さないよう generateReply() に渡す(嶋先生「同じメッセージが
@@ -937,7 +960,13 @@ export async function POST(req: Request) {
       // buildSystem/applyIntakeUpdateが期待する形と一致するように選択している)。
       const system = buildSystem(
         rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
-        safetyContext, sess, { stats, text, declined: declinedNow, intakeTurn },
+        safetyContext, sess, {
+          stats, text, declined: declinedNow, intakeTurn,
+          // 危機のターン・危機のあと(2026年11月1日・第3部): 指示・相談者が挙げた話せそうな人・人につなぐ問いの時期
+          crisisTurn: crisisTurnInfo,
+          confidants: inCrisisFlow ? confidants : [],
+          connectAsk: inCrisisFlow && !crisisTurnInfo?.first && connectAskDue(hist, declinedNow),
+        },
       );
 
       // 危機の状態で、固定の文面を出さずに生成で受けるターン(段階ごとの応答・仮。CLAUDE.md 5.2)は、出力チェックを
@@ -952,7 +981,9 @@ export async function POST(req: Request) {
       const declinedHint = declinedChecks.length ? "相談者が断った相手に話すこと・相談することを勧めない。" : "";
       // 危機の状態で生成するターンは、問いか続きを促す一言で終えることも確かめる(受け止めて終わるだけにしない。2026年10月15日)
       const endCheck = (o: Record<string, unknown>) =>
-        aiEndingCheck(o, { text, closingState: sess.closing_state, requireNext: crisisGenerated });
+        // 「ありがとう」だけ・受け止めだけで終えない(第4部): フェーズ2と危機の状態の生成では、問いか続きを促す一言で終える。
+        // インテークの決まった問いをサーバが続けるターンは除く
+        aiEndingCheck(o, { text, closingState: sess.closing_state, requireNext: crisisGenerated || (flowPhase === "phase2" && !intakeTurn?.after) });
       const generated = await generateReply(
         system, messages, undefined, undefined, undefined, priorFailureCount,
         crisisGenerated
@@ -967,6 +998,13 @@ export async function POST(req: Request) {
       const finalized = crisisGenerated
         ? finalizeCrisisGeneration(generated, priorCrisisFallbacks)
         : { out: generated.out, flags: generated.flags };
+      // 初めての本人の危機で生成できなかった・出力チェックを通らなかったときは、以前の固定応答(確かめてある文)で受ける
+      if (crisisTurnInfo?.first && "fallback" in finalized && finalized.fallback) {
+        finalized.out = {
+          ...finalized.out,
+          reply: buildCrisisReply(crisisTurnInfo.types.length ? crisisTurnInfo.types : categoryOfSafety(safety), declinedNow),
+        };
+      }
       // 生成に失敗した(安全フィルターのブロック・すべてのモデルの失敗)とき、危機のあと・気がかり・第三者の場面なら、
       // ふつうの固定の返事(「もう少し聞かせて」)ではなく、場面ごとの一言とカードで受ける(2026年10月11日。仮。
       // docs/proposal-safety-filter-fallback.md)。危機の状態で生成したターン(段階ごとの応答)は上の固定の返事のまま
@@ -1011,8 +1049,17 @@ export async function POST(req: Request) {
       const trailFlag = modelTrailFlag(generated.attempts);
       if (trailFlag) flags.push(trailFlag);
       if (typesFlag) flags.push(typesFlag);
+      // あいまいな問い・前にした問いのくり返し(記録のみ。第3部 3-5・第4部)
+      if (!generated.generationFailed) flags.push(...questionNotes(out.reply, prior));
       // 第三者だけの危機(本人の危機ではない)も、生成した返事に第三者向けの窓口のカードを添える(2026年11月1日・1-3。人が決めた)
       const thirdPartyCard = !plan && !fallbackCard && safety.risk === "crisis" && safety.subject === "other" ? "crisis" : null;
+      // 本人の危機を生成で受けたターン(第3部): 種類ごとの窓口のカード(初めて・まだ出していない種類があるとき)と、
+      // 条件つきの安全の一行(希死念慮・自傷・種類不明。直近に出していなければ)は固定で添える
+      const selfCrisisCard = crisisTurnInfo && !fallbackCard && needsCrisisCard(crisisTurnInfo.types, prior) ? "crisis" : null;
+      const safetyLine = crisisTurnInfo && needsSafetyLine(crisisTurnInfo.types, prior) ? CRISIS_SAFETY_LINE_PROVISIONAL : null;
+      if (crisisTurnInfo) flags.push(CRISIS_GEN_FLAG);
+      if (selfCrisisCard && crisisTurnInfo) flags.push(crisisCardFlag(crisisTurnInfo.types));
+      if (safetyLine) flags.push(SAFETY_LINE_FLAG);
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);
@@ -1040,6 +1087,8 @@ export async function POST(req: Request) {
 
       const aiRow = {
         session_id: sessionId, role: "ai", body: out.reply,
+        // 本人の危機を生成で受けた返事も、危機の応答として記録する(危機のあとの状態・管理画面。第3部)
+        ...(crisisTurnInfo ? { crisis: true } : {}),
         weight, relation, question_level: out.question_level, role_kind: out.role,
         summarized: out.did_summarize === true,
         hypothesis: out.hypothesis ?? null, why: out.why ?? null,
@@ -1054,6 +1103,7 @@ export async function POST(req: Request) {
         // 生成失敗の場面の一言に添えるカード(本番の既定でも。safety_card は db/schema.sql 11節の列)
         ...(fallbackCard ? { safety_card: fallbackCard } : {}),
         ...(thirdPartyCard ? { safety_card: thirdPartyCard } : {}),
+        ...(selfCrisisCard ? { safety_card: selfCrisisCard } : {}),
         // 整理・作業の提案のチップ(組G。仮。14節の列)
         ...(flowChoices ? { choices: flowChoices, choice_set: FLOW_CHOICE_SET } : {}),
         // 研究のための記録(16節。2026年10月14日): 実際に返事をしたモデル・プロンプトの版・ナレッジの版・設定・所要時間
@@ -1069,7 +1119,7 @@ export async function POST(req: Request) {
           .insert(withoutKeys(aiRow, SECTION16_MESSAGE_COLUMNS)).select("seq").single());
       }
       // 11節・14節が未実行の DB で safety_card・choices が無いときも、返事そのものは必ず保存する(カード・チップは画面にだけ出す)
-      if (!aiSave.ok && (fallbackCard || thirdPartyCard || flowChoices) && !plan) {
+      if (!aiSave.ok && (fallbackCard || thirdPartyCard || selfCrisisCard || flowChoices) && !plan) {
         aiSave = await checkedWrite("AIの返事(カード・チップの列なし)", () => db.from("messages")
           .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set"])).select("seq").single());
       }
@@ -1138,8 +1188,10 @@ export async function POST(req: Request) {
           : { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
         closing: justClosed && !endingAppend,
         after,
-        card: fallbackCard ?? thirdPartyCard ?? plan?.card ?? null,
+        card: fallbackCard ?? selfCrisisCard ?? thirdPartyCard ?? plan?.card ?? null,
         crisis_types: crisisTypes.length ? crisisTypes : null,
+        safety_line: safetyLine,
+        card_teacher_note: !declinedNow.includes("teacher") && !declinedNow.includes("nurse"),
         care_line: plan?.card === "care" ? CARE_LINE_PROVISIONAL : null,
         choices: flowChoices, choice_set: flowChoices ? FLOW_CHOICE_SET : null,
         choice_note: flowChoices ? CHOICE_NOTE_PROVISIONAL : null,

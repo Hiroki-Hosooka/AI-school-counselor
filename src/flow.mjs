@@ -93,6 +93,68 @@ const NOTICED_RE = /(ちょっと|少し)?気になった/;
 export const ORGANIZE_SAID_RE = /(整理|まとめ)(して)?み(たい|よう|ようか|るね|ます)/;
 const CONFIRM_RE = /(合ってる|あってる|合ってた|あってた|ずれてない|ズレてない|ずれてる|違ってたら|ちがってたら|違うところ)/;
 // 意味を見失った言葉(ヒントとして使う。決めるのはモデル)
+// ---- 会話を導く(2026年11月1日・危機の作り直し 第4部。docs/design-crisis-rework.md)----
+// まとめは20往復を超えてから(相談者が望んだとき・話に行き詰まったとき・組G で「一緒に整理してみたい」を選んだときは別)。
+// 以前の「区切りから6ターンでまとめを提案」は外した(レビュー: まとめが多すぎる)
+export const SUMMARY_MIN_EXCHANGES = 20;
+export const USER_ASKS_SUMMARY_RE = /(整理|まとめ)(して(ほしい|みたい|みよう|ほし)|たい|てみたい|ようか|てほしい)|まとめて|整理したい/;
+export const STUCK_RE = /何を話せば|なにを話せば|何話せば|なに話せば|話がまとまらな|まとまらな|ぐちゃぐちゃ|整理できな|わけがわから|訳がわから/;
+// 「どうすればいい?」(具体的な一歩を1つ提案する)/ 問いの意味に戸惑っている(問いを具体的に・選択肢を示す)
+export const HOWTO_RE = /どう(すれば|したら|しよう|すりゃ)(いい|良い|よい)?(の|ん|か)?|何を(すれば|したら)|なにを(すれば|したら)|打開するには/;
+export const CONFUSED_RE = /どういうこと|どういう意味|詳しくって何|くわしくって何|って何[?？]|何を話せば|なにを話せば|何話せば|質問の意味/;
+// あいまいな問い(記録のみ。「どんな感じ?」「もう少し詳しく」)
+export const VAGUE_QUESTION_RE = /どんな感じ(が|に)?(して|する|がする)|どんな気持ち(が|に)?(して|なる|する)|どんなふうに感じ|もう少し(詳しく)?(教えて|聞かせて)|詳しく(教えて|聞かせて)|何か(話したい|ある)こと(って)?(ある|あったり)|頭に浮かんで/;
+export const VAGUE_QUESTION_FLAG = "記録のみ:あいまいな問い";
+// 前にした問いのくり返し(記録のみ)
+export const REPEATED_QUESTION_FLAG = "記録のみ:前にした問いのくり返し";
+const lastQuestionOf = (t) => {
+  const qs = String(t ?? "").split(/(?<=[?？])/).map((x) => x.trim()).filter((x) => /[?？]$/.test(x));
+  return qs.at(-1) ?? "";
+};
+const bigrams = (t) => {
+  const n = String(t ?? "").replace(/[\s、。,.!！?？「」『』…ー]/g, "");
+  const set = new Set();
+  for (let i = 0; i < n.length - 1; i++) set.add(n.slice(i, i + 2));
+  return set;
+};
+export function repeatedQuestion(reply, hist) {
+  const q = lastQuestionOf(reply);
+  if (q.length < 6) return false;
+  const a = bigrams(q);
+  return (hist ?? []).filter((m) => m?.role === "ai").some((m) => {
+    const b = bigrams(lastQuestionOf(m.body));
+    if (!b.size) return false;
+    const inter = [...a].filter((x) => b.has(x)).length;
+    return inter / Math.min(a.size, b.size) >= 0.75;
+  });
+}
+// 記録のみの印(あいまいな問い・前にした問いのくり返し)
+export function questionNotes(reply, hist) {
+  const notes = [];
+  if (VAGUE_QUESTION_RE.test(lastQuestionOf(reply))) notes.push(VAGUE_QUESTION_FLAG);
+  if (repeatedQuestion(reply, hist)) notes.push(REPEATED_QUESTION_FLAG);
+  return notes;
+}
+// どの場面でも足す、会話を導く指示(フェーズ・危機のあとに関係なく。buildSystem が足す)
+export function leadBlock(text) {
+  const t = String(text ?? "");
+  const lines = [
+    "",
+    "# 問いの立て方(会話を導く)",
+    "・問いは具体的にする。二択で聞く、または場面・人・時を名指しして聞く(例:「それは家で? 学校で?」「そのとき、まわりに誰がいた?」「いちばん最近はいつ?」)。",
+    "  「どんな感じ?」「もう少し詳しく教えて」「何か話したいことある?」のような、何を答えればよいかわからない問いは避ける。",
+    "・「ありがとう」だけで返事を終えない。受け止めだけの返事でも、最後に次につながる一言(問い・続きを促す一言)を置く。",
+  ];
+  if (HOWTO_RE.test(t)) {
+    lines.push("・★ 相談者が「どうすればいい?」とたずねている。受け止めは1文にして、具体的な一歩を1つ提案する"
+      + "(この人の話に出てきた人・場面・時を使った、今日か明日にできる小さなこと)。問い返しだけで終えない。提案のあとに「やれそうかな?」と1つだけ確かめてよい。");
+  }
+  if (CONFUSED_RE.test(t)) {
+    lines.push("・★ 相談者が、こちらの問いの意味に戸惑っている。謝罪を重ねず、問いを具体的にするか、2〜3の選択肢を示す(例:「家のこと? 学校のこと? それとも別のこと?」)。");
+  }
+  return lines.join("\n");
+}
+
 export const LOST_MEANING_RE = /(わから|わかん|分から|分かん)(ない|ん|なく)|なんで.{0,14}(てる|てん|のか|んだろ|るんだ)|何のため|なんのため|意味(が|ある|ない|わかん)/;
 // 傾聴に切り替えてよい、相談者のはっきりした言葉
 export const LISTEN_ONLY_SAID_RE = /(聞いて(ほしい|欲しい|くれる)だけ|聞いてもらう?だけ|アドバイス(は|とか)?(いらない|要らない|いらん|なしで)|解決(は|とか)?(しなくて|いらない|求めて)|ただ聞いて|吐き出したいだけ|愚痴を?聞いて(ほしい|欲しい))/;
@@ -168,7 +230,7 @@ const isGeneratedAi = (m) => m?.role === "ai" && !m?.crisis;
 export const isReceiveOnly = (m) => !hasQuestion(m?.body) && !(Array.isArray(m?.choices) && m.choices.length);
 const hasMode = (m) => Array.isArray(m?.mode) && m.mode.length > 0;
 // 危機のあと・危機の状態で生成するターン
-export const crisisContext = (contexts) => (contexts ?? []).some((c) => c === "afterCrisis" || c === "crisisGeneration");
+export const crisisContext = (contexts) => (contexts ?? []).some((c) => c === "afterCrisis" || c === "crisisGeneration" || c === "crisisTurn");
 
 // ---- 履歴から数える ----
 // hist: そのセッションの messages(古い順)。role・body・question_level・summarized・flags・crisis・mode・choices・choice_set・choice_id
@@ -226,6 +288,9 @@ export function flowStats(hist, sess, opts = {}) {
   }
   // 傾聴に切り替えてよいか(この3つのときだけ。モデルの推測では切り替えない)
   const userTexts = msgs.filter((m) => m.role === "user" && !m.choice_set).map((m) => String(m.body ?? ""));
+  // 往復の数(相談者の発言の数)と、まとめてよいか(第4部)
+  const exchanges = msgs.filter((m) => m.role === "user").length;
+  const lastUser = String(opts.text ?? msgs.filter((m) => m.role === "user").at(-1)?.body ?? "");
   const goal = String(sess?.user_goal ?? "");
   const goalOrganize = /整理|まとめ|考え|解決|どうしたら|どうすれば/.test(goal);
   const goalVentOnly = /吐き出|聞いて|話したい|聞いてほしい|聞いてもら/.test(goal) && !goalOrganize;
@@ -237,6 +302,8 @@ export function flowStats(hist, sess, opts = {}) {
   const stage = [0, 1, 2].includes(opts.stage) ? opts.stage : 0;
   const crisis = crisisContext(contexts) || stage >= 2;
   // このターンに出してよいか(サーバが判定する)
+  const summaryAllowed = exchanges >= SUMMARY_MIN_EXCHANGES || USER_ASKS_SUMMARY_RE.test(lastUser) || STUCK_RE.test(lastUser)
+    || lastChoice === "G2" || opts.choiceId === "G2";
   const hypothesisAllowed = !crisis && phase2Index > HYPOTHESIS_AFTER && sess?.relation !== "visitor" && sinceHypothesis >= HYPOTHESIS_EVERY;
   const noticedAllowed = !crisis && phase2Index >= 1 && sinceNoticed >= NOTICED_EVERY;
   const linkDue = !crisis && phase2Index >= 2 && sinceLink > LINK_EVERY && userTexts.length >= 3;
@@ -245,7 +312,7 @@ export function flowStats(hist, sess, opts = {}) {
     phase2Index, firstMoveUsed, sinceLink, sinceHypothesis, sinceNoticed,
     offers, lastOfferedG, chosen, lastChoice, ventTurns, lastWasSummary, askedSummaryPermission,
     goal, goalOrganize, workMode, listenOnly, listenOnlyReason, userTexts, modes, stage, crisis,
-    hypothesisAllowed, noticedAllowed, linkDue,
+    hypothesisAllowed, noticedAllowed, linkDue, exchanges, summaryAllowed,
   };
 }
 
@@ -358,9 +425,11 @@ export function buildFlowBlock(stats, intake, text) {
   if (stats.lastWasSummary) {
     lines.push("・前のターンでまとめを返した。本人の返事がまとめを認めるもの(合ってる・うん・そう 等)なら、この返事で「ここまで話してみて、何か感じたことってある?」と聞く。"
       + "本人がまとめを直した(そうじゃなくて・ちょっと違う 等)なら、気づきの問いは出さず、直された内容を受け止めるのを先にする。気づきの問いは、まとめが本人の感覚と合ってから。");
+  } else if (!stats.summaryAllowed) {
+    lines.push(`・まとめ(「一回まとめてみようか」の提案を含む)は、まだしない(いま${stats.exchanges}往復。${SUMMARY_MIN_EXCHANGES}往復を超えるか、本人がまとめを望むか、話に行き詰まったときだけ)。`);
   } else if (stats.askedSummaryPermission && !stats.crisis) {
     lines.push("・★ 前の返事で、まとめてよいかをもうたずねている。もうたずねない。本人が嫌がっていなければ、この返事で「一回まとめてみるね」と断って、まとめの形でまとめる。");
-  } else if (LOST_MEANING_RE.test(String(text ?? "")) && !stats.crisis) {
+  } else if (STUCK_RE.test(String(text ?? "")) && !stats.crisis) {
     lines.push("・★ 相談者が、意味を見失ったような言葉を出している(「わからない」「なんで〜してるのか」など)。受け止めを重ねるより、この返事で「一回まとめてみるね」と断って、まとめる(「まとめの形」)。");
   }
   // 整理・作業の提案(組G)
@@ -407,7 +476,10 @@ export function flowCheck(out, stats) {
   }
   const dupGeneric = genericGroupsIn(reply).filter((k) => stats.usedGeneric.includes(k));
   if (dupGeneric.length) reasons.push(`B汎用の言葉の2回目(${dupGeneric.join("・")})`);
-  if (ORGANIZE_SAID_RE.test(reply) && !isValidSummary(reply)) {
+  // まとめは20往復を超えてから(第4部)。まだなら、まとめ・まとめの提案を作り直す
+  const summaryLike = out?.did_summarize === true || isValidSummary(reply) || asksSummaryPermission(reply) || /一回まとめ|まとめてみ/.test(reply);
+  if (stats.summaryAllowed === false && summaryLike) reasons.push("Iまだまとめない(20往復前)");
+  else if (ORGANIZE_SAID_RE.test(reply) && !isValidSummary(reply)) {
     // まとめてよいかをたずねて終えている(最後の問いが まとめ・整理 について)なら、1回目は当てない
     // (「一回整理してみたいんだけど、どんな場面が多い?」のように、同じ文の中で別の問いに移ったものは当てる)
     if (!asksSummaryPermission(reply)) reasons.push("D整理すると言ってまとめていない");
@@ -424,7 +496,8 @@ export function flowCheck(out, stats) {
 }
 
 const FIX_HINTS = {
-  A: "受け止めだけの返事が続いています。今回は、相談者の直前の言葉を使った問いを1つ置くか、ここまでの話をまとめの形でまとめてください(危険度を確かめる問いはしない)。",
+  A: "受け止めだけの返事が続いています。今回は、相談者の直前の言葉を使った具体的な問いを1つ置いてください(二択か、場面・人・時を名指しする。危険度を確かめる問いはしない)。",
+  I: "まだまとめの時期ではありません(20往復を超えるか、本人が望むか、話に行き詰まったときだけ)。まとめ・まとめの提案をせず、相談者が今回書いた具体的なことに触れて、具体的な問いを1つ置いてください。",
   B: "どの話にも言える受け止めの言葉(しんどいよね・頑張ってきたんだね・無理もないよ など)と同じ意味のものを、この会話ですでに言っています。今回は言わず、相談者が今回書いた具体的な場面や言葉に触れてください。",
   D: "まとめると言った(または、まとめてよいかをもうたずねた)のに、まとめていません。たずねずに「一回まとめてみるね」と断って、このターンでまとめの形(相談者の言葉で2〜4個並べて「合ってるかな?」)にしてください。",
   E: "誰にでもあることとして広げる言い方を、この会話ですでに使っています。今回は使わないでください。",

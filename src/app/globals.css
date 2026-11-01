@@ -196,3 +196,6 @@ input:focus{border-color:var(--indigo)}
 
 /* 画面の右上の版(2026年11月1日)。目立たせない */
 .app-ver{font-size:10.5px;color:var(--ink-faint);letter-spacing:.02em;white-space:nowrap}
+
+/* 条件つきの安全の一行(危機カードの上。2026年11月1日・危機の作り直し 第3部) */
+.crisis-card .safety-line { margin: 0 0 10px; font-weight: 600; line-height: 1.7; }

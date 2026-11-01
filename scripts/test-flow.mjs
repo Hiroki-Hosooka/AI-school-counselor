@@ -95,7 +95,14 @@ check("「整理してみたい」と言っただけでは満たさない", !isV
   check("まとめてよいかをたずねて終えるのは作り直さない", !flowCheck({ reply: "ここまでの話、一回まとめてみてもいい?" }, stats).some((r) => r.startsWith("D")));
   const asked = flowStats([{ role: "user", body: "x" }, { role: "ai", body: "ここまでの話、一回まとめてみてもいい?", question_level: "data" }, { role: "user", body: "y" }], { phase: "phase2" }, {});
   check("まとめてよいかを2回続けてたずねたら作り直す", asked.askedSummaryPermission && flowCheck({ reply: "そっか。一回整理してみてもいいかな?" }, asked).some((r) => r.startsWith("D")));
-  check("たずねたあとは、たずねずにまとめる指示", buildFlowBlock(asked, {}, "y").includes("もうたずねない"));
+  // まとめは20往復を超えてから(2026年11月1日・危機の作り直し 第4部)。本人が望んだときはまとめてよい
+  const askedWant = flowStats([{ role: "user", body: "x" }, { role: "ai", body: "ここまでの話、一回まとめてみてもいい?", question_level: "data" }, { role: "user", body: "一回まとめてほしい" }], { phase: "phase2" }, {});
+  check("たずねたあとは、たずねずにまとめる指示(本人が望んだとき)", askedWant.summaryAllowed && buildFlowBlock(askedWant, {}, "一回まとめてほしい").includes("もうたずねない"));
+  check("20往復前はまとめない指示", !asked.summaryAllowed && buildFlowBlock(asked, {}, "y").includes("まだしない"));
+  check("20往復前のまとめは作り直す(I)", flowCheck({ reply: "一回まとめてみるね。進路を決められること、話を聞いてもらえないこと、このあたりかな。合ってるかな?", did_summarize: true }, asked).some((r) => r.startsWith("I")));
+  const many = Array.from({ length: 20 }, (_, i) => [{ role: "user", body: `話${i}` }, { role: "ai", body: `うん、それで?${i}`, question_level: "data" }]).flat();
+  check("20往復を超えたらまとめてよい", flowStats(many, { phase: "phase2" }, {}).summaryAllowed);
+  check("話に行き詰まったらまとめてよい", flowStats([{ role: "user", body: "何を話せばいいかわからなくなってきた" }], { phase: "phase2" }, {}).summaryAllowed);
 }
 
 console.log("傾聴に切り替えてよいとき(この3つだけ)");
@@ -148,7 +155,8 @@ console.log("見立て・気になったこと・つなぎはサーバが判定�
   check("人間のふりは作り直す", flowCheck({ reply: "わかるよ、わたしもそういうことあった。" }, s4).some((r) => r.startsWith("F")));
   check("「わたしもつらい」「胸が痛い」も作り直す", flowCheck({ reply: "聞いていて胸が痛いよ。" }, s4).some((r) => r.startsWith("F")));
   const block = buildFlowBlock(s2, { recommended_mode: ["LISTEN_ONLY", "CBT"] }, "なんで頑張ってるのかわからない");
-  check("意味を見失った言葉ではまとめを促す", block.includes("意味を見失った"));
+  // 第4部: 「わからない」だけではまとめない(まとめは20往復を超えてから。行き詰まったときは別)
+  check("「わからない」だけではまとめを促さない", !block.includes("意味を見失った") && block.includes("まだしない"));
   check("複合モードは傾聴のあとに CBT の一手", block.includes("傾聴で受け止めたあと") && block.includes("頭の中"));
   check("決まりに人の確認した言い回しが入っている", FLOW_RULES_BLOCK.includes("主役を奪わない") && FLOW_RULES_BLOCK.includes("一言の返事でもよい"));
 }

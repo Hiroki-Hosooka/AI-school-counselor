@@ -16,12 +16,14 @@ import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
 import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
 // 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
+import { leadBlock } from "./flow.mjs";
 import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock, AI_ENDING_FIX_HINT, AI_ENDING_FLAG, AI_ENDING_TAIL_PROVISIONAL } from "./flow.mjs";
 import {
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
   DAIJOUBU_RULE_PROVISIONAL, CHOICE_B1_BLOCK_PROVISIONAL, choiceCBlock, intakeStyleOf, STAGE1_CLOSING_LINE_PROVISIONAL,
 } from "./crisis-response.mjs";
 import { declinedBlock } from "./declined.mjs";
+import { buildCrisisTurnBlock, confidantBlock, connectAskBlock } from "./crisis-turn.mjs";
 import { buildIntakeStepBlock, INTAKE_STEP_OUTPUT_SCHEMA, INTAKE_HIGH_DISTRESS_BLOCK_PROVISIONAL } from "./intake.mjs";
 
 // 本生成用(品質優先)。上から順に試す。
@@ -164,6 +166,8 @@ const SAFETY_KNOWLEDGE_IDS = {
   thirdParty: ["D5", "D6"],
   afterCrisis: ["T31", "T32", "D3"],
   crisisGeneration: ["D1", "D2", "T31", "T32", "D3"],
+  // 本番の既定で本人の危機を生成で受けるターン(2026年11月1日・危機の作り直し 第3部)。指示は buildSystem の flow.crisisTurn で足す
+  crisisTurn: ["D1", "D2", "T31", "T32", "D3"],
 };
 
 // safetyContext は1つの文字列(今までの呼び出し)か、文字列の配列(第2段階。例: 危機の応答のあとの
@@ -259,6 +263,8 @@ ${DAIJOUBU_RULE_PROVISIONAL}`,
 ・相談者自身にも同じようなサインがないかは、詰問にならない範囲でさりげなく気にかけてよい`,
   afterCrisis: AFTER_CRISIS_BLOCK_PROVISIONAL,
   crisisGeneration: CRISIS_GENERATION_BLOCK_PROVISIONAL,
+  // 指示は flow.crisisTurn(src/crisis-turn.mjs の buildCrisisTurnBlock)で足す。ここでは何も足さない
+  crisisTurn: "",
   // 危機の流れの見直し(嶋先生 10/7。段階ごとの応答のときだけ。仮)。組Cの指示は、選んだもの(sessions.crisis_choice_c)と
   // インテークの進め方(共感/解決)で組み立てるので、関数にしている
   choiceB1: CHOICE_B1_BLOCK_PROVISIONAL,
@@ -614,14 +620,22 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   const know = chunks
     .map((k) => `[${k.id}／${k.src}]${k.cat === "verbatim" ? "【逐語】" : ""} ${k.body}`)
     .join("\n") || "(該当なし)";
-  const sum = sinceSummary >= 6
-    ? "★ しばらく区切りがありません。この辺りで「今までの話、一回まとめてみようか」と提案し、出てきたことを並べ直すターンを取ることを検討してください。ズレを直す機会です。"
-    : "いまはまだ区切りのタイミングではありません。";
+  // 区切りのまとめ(2026年11月1日・危機の作り直し 第4部): 以前の「区切りから6ターンで提案」は外した(まとめが多すぎる)。
+  // まとめてよいかはサーバが数えて決める(src/flow.mjs の summaryAllowed: 20往復を超えた・本人が望んだ・話に行き詰まった)
+  const sum = flow?.stats?.summaryAllowed
+    ? "まとめてよい時期です(20往復を超えた、または本人が望んだ・話に行き詰まった)。必要なら「一回まとめてみるね」と断ってまとめる。"
+    : "いまはまとめの時期ではありません(まとめは20往復を超えてから。本人が望んだとき・話に行き詰まったときは別)。まとめの提案もしない。";
   const contexts = toSafetyContexts(safetyContext);
   const safetyBlock = contexts.map((c) => {
     const b = SAFETY_CONTEXT_BLOCKS[c];
     return typeof b === "function" ? b(intake) : b ?? "";
-  }).join("") + declinedBlock(flow?.declined);
+  }).join("") + declinedBlock(flow?.declined)
+    // 本人の危機を生成で受けるターンの指示・相談者が挙げた話せそうな人・人につなぐ問い(2026年11月1日・危機の作り直し 第3部。仮)
+    + (flow?.crisisTurn ? buildCrisisTurnBlock(flow.crisisTurn) : "")
+    + confidantBlock(flow?.confidants)
+    + (flow?.connectAsk ? connectAskBlock(flow?.confidants) : "")
+    // 問いの立て方・「どうすればいい?」・戸惑い(どの場面でも。第4部)
+    + (flow ? leadBlock(flow.text) : "");
   // phase: intake(Turn1〜4のスロットフィリング) | phase2(それ以降)。
   // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
   // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。

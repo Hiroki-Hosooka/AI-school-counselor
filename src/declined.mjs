@@ -11,8 +11,8 @@
 //  このファイルは何も読み込まない(crisis-texts.mjs から読み込むため)。
 // ============================================================================
 
-export const PEOPLE = ["teacher", "parent", "counselor", "nurse"];
-export const PEOPLE_LABELS = { teacher: "先生", parent: "親・おうちの人", counselor: "カウンセラー", nurse: "保健室" };
+export const PEOPLE = ["teacher", "parent", "counselor", "nurse", "hotline"];
+export const PEOPLE_LABELS = { teacher: "先生", parent: "親・おうちの人", counselor: "カウンセラー", nurse: "保健室", hotline: "窓口(電話の相談先)" };
 
 // 相手の語。順番に意味がある(「カウンセラーの先生」「保健室の先生」を先生として数えないよう、先に外す)
 const PERSON_RE = {
@@ -20,6 +20,8 @@ const PERSON_RE = {
   nurse: /保健室|ほけんしつ|養護/,
   parent: /親|おや|お?母さん|お?かあさん|お?父さん|お?とうさん|母|父|ママ|パパ|家族|家の人|おうちの人|うちの人|家の大人/,
   teacher: /先生|せんせい|せんせ|担任|たんにん|教師/,
+  // 窓口(2026年11月1日・危機の作り直し 第3部)。相談ログ 1d0a0511 15:18 で、窓口をためらうと書いたのに勧め直していた
+  hotline: /窓口|まどぐち|相談先|電話|でんわ|ダイヤル|チャイルドライン|ホットライン|そこに相談/,
 };
 const COUNSELOR_TEACHER_RE = /(カウンセラー|かうんせらー|保健室|ほけんしつ|養護)の?(先生|せんせい|せんせ)/g;
 
@@ -61,13 +63,24 @@ export function declineChangesIn(text) {
 export const DECLINED_ESTIMATE_FLAG = "記録のみ:断った相手(推定)";
 export const declinedEstimateFlag = (people) => `${DECLINED_ESTIMATE_FLAG}: ${people.join(",")}`;
 
+// 人につなぐ問いかけ(「誰かと一緒に考えてほしいなと思うんだけど、どう思う?」・以前の3通目「まわりの大人に話してみたいって思う?」)
+export const CONNECT_ASK_RE = /一緒に考えてほしい|話してみたいって思う|まわりの大人に話して|相談してみたい(って|と)?思う|話してみるのはどう|話してみるとしたら/;
+// その問いへのはっきりした断り(「思わない」「絶対嫌」など。2026年11月1日・第3部 3-3)。大人と窓口すべてを断ったものとして扱う。
+// AI と話すのをやめたいという意味には取らない。はっきりしない答え(「まだ怖い」「わからない」等)では決めない
+const CLEAR_REFUSAL_RE = /^(思わない|おもわない|思わん|思えない|全然思わない|嫌|いや|イヤ|やだ|ヤダ|無理|むり|ムリ|絶対(に)?(嫌|いや|イヤ|やだ|無理|むり|話したくない)|話したくない|相談したくない|したくない|いらない|ない)/;
+export const isClearRefusal = (text) => CLEAR_REFUSAL_RE.test(String(text ?? "").trim().replace(/^[、。!！\s]+/, ""));
+const ADULTS_AND_HOTLINES = ["teacher", "parent", "counselor", "nurse", "hotline"];
+
 // 会話の記録(古い順)から、いま断っている相手を求める。hist の行: role・body・flags
 export function declinedPeopleFrom(hist) {
   const declined = new Set();
+  let lastAi = "";
   for (const m of hist ?? []) {
+    if (m?.role === "ai") lastAi = String(m.body ?? "");
     if (m?.role === "user") {
       // チップのラベル(本人の言葉ではない)は数えない
       if (m.choice_id) continue;
+      if (CONNECT_ASK_RE.test(lastAi) && isClearRefusal(m.body)) ADULTS_AND_HOTLINES.forEach((p) => declined.add(p));
       const { add, remove } = declineChangesIn(m.body);
       add.forEach((p) => declined.add(p));
       remove.forEach((p) => declined.delete(p));
@@ -103,5 +116,12 @@ const PERSON_NG_SOURCE = {
   nurse: "(保健室)(の先生)?(に|で|へ|には|にも)",
 };
 export function declinedNg(declined) {
-  return (declined ?? []).filter((p) => PERSON_NG_SOURCE[p]).map((p) => new RegExp(PERSON_NG_SOURCE[p] + RECOMMEND_TAIL));
+  const list = (declined ?? []).filter((p) => PERSON_NG_SOURCE[p]).map((p) => new RegExp(PERSON_NG_SOURCE[p] + RECOMMEND_TAIL));
+  // 窓口を断ったのに勧め直す言い方(「下の窓口にも、あなたの声を届けてほしい」。相談ログ 1d0a0511 15:18 T8)
+  if ((declined ?? []).includes("hotline")) {
+    list.push(/(窓口|相談先|ダイヤル|電話)(に|にも|へ|で|には)[^。！？\n]{0,14}(届け|話して|相談|電話|頼って|かけて|つながって)/);
+  }
+  // 大人と窓口をすべて断ったあとに、人につなぐ問いをくり返す言い方
+  if (ADULTS_AND_HOTLINES.every((p) => (declined ?? []).includes(p))) list.push(CONNECT_ASK_RE);
+  return list;
 }

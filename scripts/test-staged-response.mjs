@@ -19,6 +19,10 @@
 //      本番の固定応答に「重い」を使わず、種類ごとに「〜が、とても心配です」を組むこと
 // ============================================================================
 
+// 積み重なり(見守り中の再サインで段階2)は既定で無効にした(2026年11月1日・危機の作り直し 第2部)。
+// このテストは以前の状態の移り変わりも確かめるので、有効にして流す(既定で上がらないことは scripts/test-crisis-rework.mjs)
+process.env.CRISIS_ACCUMULATION ??= "on";
+
 import {
   planSafetyTurn, judgeWithdrawal, judgeTeacherAnswer, assessSafetyTurn, classifierModeFor, needsWithdrawalJudge, WATCH_TURNS,
   CARE_LINE_PROVISIONAL, CRISIS_STEP1_PROVISIONAL, CRISIS_STEP3_VARIANTS_PROVISIONAL, crisisStep3Text,
@@ -416,6 +420,11 @@ globalThis.fetch = async (_url, opts) => {
   const next = queues[kind]?.shift();
   if (!next) throw new Error(`差し替えの応答が足りない: ${kind}`);
   if (next.status) return { ok: false, status: next.status, text: async () => "差し替えたエラー" };
+  // 分類器の差し替えに根拠の引用が無ければ、判定する発言そのものを引用にする(2026年11月1日・第2部の引用の確かめ)
+  if (kind === "classifier" && next.evidence === undefined) {
+    const input = String(body.contents?.[0]?.parts?.[0]?.text ?? "");
+    next.evidence = input.split("【判定する発言】\n")[1] ?? "";
+  }
   return {
     ok: true, status: 200,
     json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(next) }] } }], usageMetadata: {} }),
@@ -526,12 +535,12 @@ const quiet = async (fn) => { const orig = console.error; console.error = () => 
   check("assessSafetyTurn: 危機の応答の途中でなければ補助判定を呼ばない", c.withdrawal === null && c.teacher === null && c.plan.stage === 0);
   check("assessSafetyTurn: ふつうの状態では通常の分類器", seenClassifierPrompts.splice(0).every((p) => !p.includes("新しい危機のサイン")) && c.staged.classifierMode === "normal");
   queues.classifier.push(vote("none"), vote("none"));
-  const w = await assessSafetyTurn("別に", [], { ...fresh, watch_turns_left: 2, care_shown: true });
+  const w = await assessSafetyTurn("別に何もない日だった", [], { ...fresh, watch_turns_left: 2, care_shown: true });
   check("assessSafetyTurn: 見守り中は見守り中・危機のあと用の分類器", seenClassifierPrompts.splice(0).every((p) => p.includes("新しい危機のサイン"))
     && w.staged.classifierMode === "followup" && w.plan.stage === 0 && w.plan.nextState.watch_turns_left === 1);
   queues.classifier.push(vote("none"), vote("none"));
   queues.withdrawal.push({ reply_type: "other", figurative: false, reason: "a" });
-  const d = await assessSafetyTurn("うん", ctx, step1);
+  const d = await assessSafetyTurn("うん、まあそんな感じ", ctx, step1);
   check("assessSafetyTurn: 危機の応答の途中も見守り中・危機のあと用の分類器", seenClassifierPrompts.splice(0).every((p) => p.includes("新しい危機のサイン"))
     && d.staged.classifierMode === "followup" && d.plan.bubbles?.[0].crisisStep === 2 && !d.plan.notify);
   check("(差し替えの応答が余っていない)", queues.classifier.length === 0 && queues.withdrawal.length === 0 && queues.teacher.length === 0,

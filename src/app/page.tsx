@@ -50,6 +50,10 @@ type Msg = {
   crisisStep?: number | null;
   // 危機の種類の並び(窓口のカードの並びに使う。2026年11月1日・1-3)
   crisisTypes?: string[] | null;
+  // 条件つきの安全の一行(本人の危機。固定の文はサーバから届く。2026年11月1日・危機の作り直し 第3部)
+  safetyLine?: string | null;
+  // 危機カードの「先生に見せるだけでも」の一文を出すか(本人が先生を断っていたら出さない。2026年11月1日・第3部)
+  cardTeacherNote?: boolean;
   choices?: Choice[] | null;
   choiceNote?: string | null;
 };
@@ -199,7 +203,8 @@ export default function Page() {
           r.messages.map((m: {
             role: string; body: string; seq: number; crisis?: boolean; closing?: boolean; rating?: number;
             safety_card?: SafetyCard | null; care_line?: string | null; crisis_step?: number | null;
-            choices?: Choice[] | null; choice_note?: string | null; crisis_types?: string[] | null;
+            choices?: Choice[] | null; choice_note?: string | null; crisis_types?: string[] | null; safety_line?: string | null;
+            card_teacher_note?: boolean;
           }) => ({
             role: m.role === "user" ? "user" : "ai",
             body: m.body,
@@ -211,6 +216,8 @@ export default function Page() {
             careLine: m.care_line ?? null,
             crisisStep: m.crisis_step ?? null,
             crisisTypes: m.crisis_types ?? null,
+            safetyLine: m.safety_line ?? null,
+            cardTeacherNote: m.card_teacher_note !== false,
             choices: m.choices ?? null,
             choiceNote: m.choice_note ?? null,
           })),
@@ -295,7 +302,8 @@ export default function Page() {
       const replyText = typeof r.reply === "string" && r.reply.trim() ? r.reply : SEND_FAILED_NOTICE;
       setMessages((m) => [...m, {
         role: "ai", body: replyText, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
-        card: r.card ?? null, careLine: r.care_line ?? null, crisisTypes: r.crisis_types ?? null,
+        card: r.card ?? null, careLine: r.care_line ?? null, crisisTypes: r.crisis_types ?? null, safetyLine: r.safety_line ?? null,
+        cardTeacherNote: r.card_teacher_note !== false,
         // 整理・作業の提案のチップ(組G。会話の流れ。選ばずに書いてもよい)
         choices: r.choices ?? null, choiceNote: r.choice_note ?? null,
       }]);
@@ -665,6 +673,7 @@ function MessageBubble({ msg, dev, onRate, onChoose }: {
       {msg.body ? <div className="bubble">{msg.body}</div> : null}
       {card === "crisis" && (
         <div className="crisis-card">
+          {msg.safetyLine && <p className="safety-line">{msg.safetyLine}</p>}
           <h4>話せる窓口</h4>
           <dl>
             {hotlinesFor(msg.crisisTypes).map(([name, num]) => (
@@ -673,7 +682,7 @@ function MessageBubble({ msg, dev, onRate, onChoose }: {
               </Fragment>
             ))}
           </dl>
-          <p>どれも無料で、名前を言わなくても話せます。学校の先生や保健室の先生に、この画面を見せるだけでも伝わります。</p>
+          <p>どれも無料で、名前を言わなくても話せます。{msg.cardTeacherNote !== false && "学校の先生や保健室の先生に、この画面を見せるだけでも伝わります。"}</p>
         </div>
       )}
       {(card === "care" || card === "hotlines") && (

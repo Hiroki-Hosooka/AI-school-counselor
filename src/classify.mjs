@@ -13,7 +13,7 @@
 // ============================================================================
 
 import { CRISIS_WORDS, crisisRulesV2, paraphraseShameIdioms } from "./safety.mjs";
-import { crisisRulesV3 } from "./crisis-keywords-v3.mjs";
+import { crisisRulesV3, normalizeV3 } from "./crisis-keywords-v3.mjs";
 import { buildCrisisReply } from "./crisis-texts.mjs";
 
 // 危機キーワードの版。既定は v3(docs/crisis-keywords-v3.md。2026年10月10日に保留セット v3 での最終判定を人が確認して採用。
@@ -348,9 +348,11 @@ const CLASSIFIER_SCHEMA_V2 = {
     risk: { type: "STRING", enum: ["none", "watch", "crisis"] },
     subject: { type: "STRING", enum: ["self", "other"] },
     reason: { type: "STRING" },
+    // 根拠の引用(2026年11月1日・危機の作り直し 第2部)。【判定する発言】から一字一句そのまま抜き出した部分
+    evidence: { type: "STRING" },
   },
-  required: ["risk", "subject", "reason"],
-  propertyOrdering: ["risk", "subject", "reason"],
+  required: ["risk", "subject", "reason", "evidence"],
+  propertyOrdering: ["risk", "subject", "evidence", "reason"],
 };
 
 // v1 の CLASSIFIER_PROMPT からの変更:
@@ -363,7 +365,7 @@ const CLASSIFIER_SCHEMA_V2 = {
 //  (src/safety.mjs の paraphraseShameIdioms)。
 const CLASSIFIER_PROMPT_V2 =
 `あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
-{"risk":"none|watch|crisis","subject":"self|other","reason":"20字以内"}
+{"risk":"none|watch|crisis","subject":"self|other","evidence":"根拠の引用","reason":"20字以内"}
 
 入力の形式:
 【直前までの会話】相談者とAIの直前のやりとり(文脈。判定の対象ではない)
@@ -391,6 +393,11 @@ none  : 通常の相談。「わからない」「決められない」等の判
   (「本気だよ」「さっきのはほんとのこと」等)は、その内容で判定する。
 ・文脈を理由に risk を下げてよいのは、発言が相談者自身の命や安全についてのものではないと、文脈から明らかに読み取れる場合だけ。
 
+evidence(根拠の引用)の決まり:
+・crisis または watch のときは、【判定する発言】の中から、そう判定した根拠の部分を一字一句そのまま抜き出して書く
+  (言い換えない・要約しない・【直前までの会話】から抜き出さない)。none のときは空にする。
+・孤独感やさみしさ(「ひとりぼっち」「一人になるのが怖い」など)だけなら、存在の消失には触れていないので watch にする。
+
 subject の基準(発言が誰の安全についてか):
 self : 相談者自身についての発言。
 other: 「友達が」「家族が」等、相談者以外の第三者の安全についての発言。
@@ -408,7 +415,7 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 // risk・subject の基準の段落は CLASSIFIER_PROMPT_V2 と同じにしている(変えたのは状況の説明・文脈の使い方・迷ったとき)。
 const CLASSIFIER_PROMPT_V2_FOLLOWUP =
 `あなたは中高生向け相談AIの安全判定器です。相談者の発言を読み、次のJSONだけを返します。
-{"risk":"none|watch|crisis","subject":"self|other","reason":"20字以内"}
+{"risk":"none|watch|crisis","subject":"self|other","evidence":"根拠の引用","reason":"20字以内"}
 
 状況: この会話では少し前に、相談者の深刻な発言や気がかりな発言に、AIがすでに対応しています
 (受け止めの言葉、話せる窓口の案内、学校の先生に話すことについての問いかけ など)。
@@ -456,6 +463,11 @@ none  : 通常の相談。「わからない」「決められない」等の判
 ・「忙しい」「だるい」「めんどい」「眠い」のように、日常の負担や疲れを言うだけの発言は、無力感や自己否定を
   伴わない限り none。「疲れて何もできない」「何もやる気が出ない」のように無力感を伴えば watch。
 
+evidence(根拠の引用)の決まり:
+・crisis または watch のときは、【判定する発言】の中から、そう判定した根拠の部分を一字一句そのまま抜き出して書く
+  (言い換えない・要約しない・【直前までの会話】から抜き出さない)。none のときは空にする。
+・孤独感やさみしさ(「ひとりぼっち」「一人になるのが怖い」など)だけなら、存在の消失には触れていないので watch にする。
+
 subject の基準(発言が誰の安全についてか):
 self : 相談者自身についての発言。
 other: 「友達が」「家族が」等、相談者以外の第三者の安全についての発言。
@@ -495,7 +507,7 @@ async function oneVote(input, prompt) {
       const parsed = parseJSON(result.text);
       if (!["none", "watch", "crisis"].includes(parsed.risk)) throw new Error(`想定外の risk: ${parsed.risk}`);
       return {
-        ok: true, risk: parsed.risk, subject: parsed.subject === "other" ? "other" : "self",
+        ok: true, risk: parsed.risk, subject: parsed.subject === "other" ? "other" : "self", evidence: String(parsed.evidence ?? ""),
         reason: parsed.reason ?? "", model: result.model, usage: result.usage, retried: attempt > 0, ms: Date.now() - started,
       };
     } catch (e) {
@@ -573,29 +585,60 @@ export function classifyLocal(text, limit, { version } = {}) {
 export async function classifyStaged(text, recentMessages = [], { votes = classifierVotes(), mode = "normal", version } = {}) {
   const followUp = mode === "followup";
   const rules = crisisRules(text, version);
+  // 中身の無い短い返事(「うん」「そう」「はい」「わかんない」など)は分類器にかけない。段階を上げる理由にしない
+  // (2026年11月1日・危機の作り直し 第2部。相談ログ 1d0a0511 15:47 の「うん」で段階が上がっていた)。キーワードは今どおり照合する
+  if (isEmptyReply(text)) return combineStaged(rules, [], { followUp, emptyReply: true, text: rules.classifierText });
   // 文脈の中の相談者の発言も、慣用表現は中立の言い方に置き換える(過去の慣用表現に判定が引きずられないように)
   const context = (recentMessages ?? []).map((m) => (m?.role === "ai" ? m : { ...m, text: paraphraseShameIdioms(m?.text).text }));
   const results = await runVotes(
     buildClassifierInput(rules.classifierText, context), votes, followUp ? CLASSIFIER_PROMPT_V2_FOLLOWUP : CLASSIFIER_PROMPT_V2,
   );
-  return combineStaged(rules, results, { followUp });
+  return combineStaged(rules, results, { followUp, text: rules.classifierText });
+}
+
+// 中身の無い短い返事か(あいづち・はい/いいえ・わからない だけ)。記号・絵文字・「笑」「w」は除いて見る
+const EMPTY_REPLY_WORDS = /^(うん|うーん|ううん|そう|そうだね|そうだよ|そうかも|そっか|そうなんだ|はい|いいえ|いや|まあ|まぁ|まあね|別に|べつに|わかんない|わかんね|わからない|分からない|わかる|わかった|分かった|ok|おけ|おっけー|了解|りょ|なるほど|へー|ふーん|ね|だね|かな|たぶん|多分|知らない|しらん|さあ|どうだろ|どうだろう|ありがと|ありがとう|はーい|ん|んー)+$/;
+export function isEmptyReply(text) {
+  const t = String(text ?? "").toLowerCase().replace(/[\s、。,.!！?？…・〜ー~「」『』()（）w笑]+/g, "").replace(/\p{Extended_Pictographic}/gu, "");
+  if (!t) return true;
+  return t.length <= 12 && EMPTY_REPLY_WORDS.test(t);
+}
+
+// 分類器の危機の判定を、段階2の根拠として使ってよいか(2026年11月1日・第2部)。
+//  ・根拠の引用が【判定する発言】に一字一句ある(表記ゆれをそろえて比べる)。無ければ段階1まで
+//  ・引用が孤独感・さみしさだけなら段階1まで(「ひとりぼっち」「一人になるのが怖い」)
+const LONELY_RE = /ひとりぼっち|一人ぼっち|独りぼっち|ひとりになる|一人になる|独りになる|ひとりきり|一人きり|孤独|さみし|寂し|淋し|誰もいな|だれもいな|居場所がな|いばしょがな/g;
+const DANGER_RE = /死|しにた|しぬ|消え|きえ|いなくな|自殺|切|傷|殴|蹴|暴力|虐待|触ら|od|薬|生き|いき/i;
+export function evidenceSupportsCrisis(evidence, text) {
+  const raw = String(evidence ?? "");
+  const ev = normalizeV3(raw);
+  const body = normalizeV3(String(text ?? ""));
+  if (ev.length < 2 || !body.includes(ev)) return { ok: false, why: "classifier_no_evidence" };
+  if (raw.match(LONELY_RE) && !DANGER_RE.test(raw.replace(LONELY_RE, ""))) return { ok: false, why: "classifier_loneliness" };
+  return { ok: true, why: "" };
 }
 
 // 照合の結果(crisisRules)と分類器の各回の結果(runVotes)から段階を決める。
 // classifyStaged から分けてあるのは、キーワードの版の比較(scripts/test-crisis-keywords-v3.mjs)で、
 // 同じ分類器の結果に v2 と v3 の照合をそれぞれ当てて比べるため(分類器に渡す文は、どちらの版でも同じ)。
-export function combineStaged(rules, results, { followUp = false } = {}) {
+export function combineStaged(rules, results, { followUp = false, text = null, emptyReply = false } = {}) {
   const done = results.filter((r) => !r.skipped);
   const ok = done.filter((r) => r.ok);
   const errors = done.filter((r) => !r.ok);
   // 本人か第三者か: 判定できた回がすべて other のときだけ第三者(1回でも self なら本人。
   // 判定できた回が無ければ本人)。迷ったら本人の側に倒す(CLASSIFIER_PROMPT_V2 と同じ考え方)
   const allOther = ok.length > 0 && ok.every((r) => r.subject === "other");
-  const anyCrisis = ok.some((r) => r.risk === "crisis");
+  // 分類器の危機は、根拠の引用がその発言に一字一句あるときだけ段階2にする(無い・孤独感だけなら段階1まで。2026年11月1日・第2部)。
+  // text を渡さない呼び出し(以前の結果に照合を当て直すテスト)は、以前どおり引用を確かめない
+  const crisisVotes = ok.filter((r) => r.risk === "crisis");
+  const checked = text == null ? crisisVotes.map(() => ({ ok: true, why: "" })) : crisisVotes.map((r) => evidenceSupportsCrisis(r.evidence, text));
+  const anyCrisis = checked.some((c) => c.ok);
+  const capped = checked.filter((c) => !c.ok).map((c) => c.why);
 
   let stage = 0;
   const decidedBy = followUp ? ["followup"] : [];
   const raise = (s, why) => { stage = Math.max(stage, s); decidedBy.push(why); };
+  if (emptyReply) decidedBy.push("empty_reply");
   if (rules.patterns.length) raise(2, "pattern");
   if (rules.keywords.length) raise(2, "keyword");
   // 分類器が危機と判定したら段階2。すべての回が第三者(other)の場合も段階2とし、subject で区別する
@@ -605,6 +648,8 @@ export function combineStaged(rules, results, { followUp = false } = {}) {
   if (rules.floor?.length) raise(1, "keyword_floor");
   if (rules.idiomExempted.length) raise(1, "idiom");
   if (ok.some((r) => r.risk === "watch")) raise(1, "classifier_watch");
+  // 根拠の無い・孤独感だけの危機の判定は、段階1(気がかり)として残す
+  for (const why of [...new Set(capped)]) raise(1, why);
   if (errors.length) raise(1, "classifier_error");
 
   const subject = allOther ? "other" : "self";
@@ -616,10 +661,12 @@ export function combineStaged(rules, results, { followUp = false } = {}) {
     risk, subject, stage, decidedBy,
     keywords: rules.keywords, patterns: rules.patterns, idiomExempted: rules.idiomExempted,
     floor: rules.floor ?? [], hits: rules.hits ?? [], keywordVersion: rules.version,
-    model: { risk: ok.map((r) => r.risk).join("/") || "判定器エラー", subject, reason: decisive?.reason ?? "判定器エラー" },
+    model: emptyReply
+      ? { risk: "短い返事", subject, reason: "中身の無い短い返事のため、分類器にかけなかった" }
+      : { risk: ok.map((r) => r.risk).join("/") || "判定器エラー", subject, reason: decisive?.reason ?? "判定器エラー", evidence: decisive?.evidence ?? "" },
     classifierError: errors.length ? errors.map((r) => r.error).join(" | ") : null,
     usedModel: decisive?.model ?? null,
     votes: results,
-    classifierMode: followUp ? "followup" : "normal",
+    classifierMode: emptyReply ? "empty_reply" : followUp ? "followup" : "normal",
   };
 }
