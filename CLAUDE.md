@@ -73,7 +73,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │       ├── icon.svg / apple-icon.png  ブラウザのタブ・ホーム画面のアイコン(藍の地に2つの吹き出し。Next.js が自動で読む)
 │       └── api/chat/route.ts   判断ロジック・プロンプト・安全層・DB読み書き
 ├── public/
-│   ├── admin.html         心理士用のログレビュー画面(合言葉で保護。5.9)
+│   ├── admin.html         心理士用のログレビュー画面(合言葉で保護。5.9。会話ログを md・txt・PDF で出力できる。中身は内部の判定つきか、画面に出たやり取りだけ)
 │   └── knowledge.html     心理士用のナレッジ管理画面(同じ合言葉。削除はできない。確かめは src/knowledge-admin.mjs)
 ├── db/
 │   ├── schema.sql                    テーブル定義・トリガ・ビュー

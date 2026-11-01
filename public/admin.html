@@ -40,6 +40,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   font-size:12.5px;color:var(--ink-soft)}
 .sort-tab.on{border-color:var(--indigo);color:var(--indigo);font-weight:600}
 .count{font-size:12px;color:var(--ink-faint)}
+/* ログの出力(2026年11月1日)。形式(md・txt・PDF)と中身(内部の判定つき・画面に出たやり取りだけ)を選ぶ */
+.export-box{display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:6px;font-size:11.5px;color:var(--ink-soft)}
+.export-box select{font-family:inherit;font-size:11.5px;padding:3px 6px;border:1px solid var(--sand);border-radius:6px;background:#fff;color:var(--ink)}
 .low-pri-toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-faint);
   margin:-4px 0 12px;cursor:pointer}
 .low-pri-toggle input{margin:0}
@@ -159,7 +162,23 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 
   <section id="detailView" hidden>
     <button type="button" id="backBtn" class="icon-btn">← 一覧へ</button>
-    <button type="button" id="exportLogBtn" class="icon-btn">ログを出力</button>
+    <span class="export-box">
+      <label>形式
+        <select id="exportFormat">
+          <option value="md">Markdown(.md)</option>
+          <option value="txt">テキスト(.txt)</option>
+          <option value="pdf">PDF(印刷画面から保存)</option>
+        </select>
+      </label>
+      <label>中身
+        <select id="exportScope">
+          <option value="full">内部の判定つき(レビュー用)</option>
+          <option value="visible">生徒の画面に出たやり取りだけ(採点用)</option>
+        </select>
+      </label>
+      <button type="button" id="exportLogBtn" class="icon-btn">出力</button>
+      <button type="button" id="copyLogBtn" class="icon-btn">コピー</button>
+    </span>
     <span id="exportLogMsg" class="count" hidden>コピーしました</span>
     <div id="sessionHeader" class="s-header"></div>
     <div id="intakeBlock" class="notes-block" hidden></div>
@@ -211,6 +230,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   var flowBlockEl = $("#flowBlock");
   var exportLogBtn = $("#exportLogBtn");
   var exportLogMsg = $("#exportLogMsg");
+  var copyLogBtn = $("#copyLogBtn");
+  var exportFormat = $("#exportFormat");
+  var exportScope = $("#exportScope");
   var currentDetail = null; // ログ出力用に、開いているセッションのsession/messagesを保持する
 
   var WEIGHT_JA = { rapport: "関係をつくる", main: "主訴を見極める", goal: "目標を立てる", plan: "作戦会議" };
@@ -734,98 +756,186 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     return String(v === undefined || v === null ? "" : v).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
   }
 
-  function buildLogMarkdown(detail) {
-    var s = detail.session;
-    var msgs = detail.messages || [];
-    var lines = [];
-    lines.push("# 相談ログ(" + plainText(s.client_id_short) + ")");
-    lines.push("");
-    lines.push("- 期間: " + fmtDate(s.started_at) + " 〜 " + (s.closed_at ? fmtDate(s.closed_at) : "(継続中)"));
-    lines.push("- 関わりの型: " + (REL_JA[s.relation] || s.relation || "—") + " / 重心: " + (WEIGHT_JA[s.weight] || s.weight || "—"));
-    if (s.phase) lines.push("- フェーズ: " + (s.phase === "intake" ? "インテーク中" : "フェーズ2以降"));
-    if (s.chief_complaint_category) lines.push("- 主訴カテゴリ: " + (COMPLAINT_JA[s.chief_complaint_category] || s.chief_complaint_category)
-      + (s.chief_complaint_source ? "(" + (COMPLAINT_SOURCE_JA[s.chief_complaint_source] || s.chief_complaint_source) + ")" : ""));
-    if (s.onset_context) lines.push("- 背景・きっかけ: " + s.onset_context);
-    if (s.distress_level) lines.push("- つらさスケール: " + s.distress_level + " / 5");
-    if (s.user_goal) lines.push("- 期待するゴール: " + s.user_goal);
-    if (s.recommended_mode && s.recommended_mode.length) {
-      lines.push("- 判定モード: " + s.recommended_mode.map(function (m) { return MODE_JA[m] || m; }).join(" + "));
-    }
-    if (s.closing_state && s.closing_state !== "none") {
-      lines.push("- クロージング: " + (CLOSING_JA[s.closing_state] || s.closing_state));
-    }
-    lines.push("");
-    lines.push("| Turn | 発話者 | 発話内容 | 内部判断(AIのみ) |");
-    lines.push("|---|---|---|---|");
-
-    var turn = 0;
-    msgs.forEach(function (m) {
-      if (m.role === "user") turn++;
-      var speaker = m.role === "user" ? "生徒" : "AI";
-      var judgement = "";
-      if (m.role === "ai") {
-        if (m.crisis) {
-          judgement = "危機対応(固定応答)";
-        } else {
-          var parts = [];
-          if (m.relation) parts.push("型:" + (REL_JA[m.relation] || m.relation));
-          if (m.weight) parts.push("重心:" + (WEIGHT_JA[m.weight] || m.weight));
-          if (m.question_level) parts.push("問い:" + (QL_JA[m.question_level] || m.question_level));
-          if (m.role_kind) parts.push("役割:" + (RL_JA[m.role_kind] || m.role_kind));
-          if (m.mode && m.mode.length) parts.push("モード:" + m.mode.map(function (mm) { return MODE_JA[mm] || mm; }).join("+"));
-          if (m.closing) parts.push("クロージング要約");
-          // 会話の流れ(2026年10月11日)
-          var v = m.flow_view;
-          if (v) {
-            parts.push("段階" + v.stage + ((v.basis || []).length ? "(" + v.basis.map(basisJa).join("・") + ")" : ""));
-            if (v.receiveOnlyStreak != null) parts.push("受け止めのみ" + v.receiveOnlyStreak + "回続く / まとめから" + v.sinceSummary);
-            if (v.move) parts.push("返し方:" + (MOVE_JA[v.move] || v.move));
-          }
-          if (m.discomfort) parts.push("違和感あり" + (m.discomfort_reason ? ":" + m.discomfort_reason : ""));
-          judgement = parts.join(" / ");
-        }
-        if (m.crisis && m.flow_view) judgement += " / 段階" + m.flow_view.stage;
-      }
-      lines.push("| " + turn + " | " + speaker + " | " + mdEscape(m.body) + " | " + mdEscape(judgement) + " |");
-    });
-
-    lines.push("");
-    lines.push("_出力日時: " + fmtDate(new Date().toISOString()) + "。心理士向けレビュー用のログです。生徒本人には内部判断(型・重心・モード等)を開示していません。_");
-    return lines.join("\n");
-  }
-
   function plainText(v) { return String(v === undefined || v === null ? "" : v); }
 
-  exportLogBtn.addEventListener("click", function () {
-    if (!currentDetail) return;
-    var md = buildLogMarkdown(currentDetail);
-    var showMsg = function (text) {
-      exportLogMsg.textContent = text;
-      exportLogMsg.hidden = false;
-      setTimeout(function () { exportLogMsg.hidden = true; }, 2000);
-    };
-    var download = function () {
-      var blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "log-" + plainText(currentDetail.session.client_id_short) + ".md";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(md).then(function () {
-        showMsg("コピーしました");
-      }, function () {
-        download();
-        showMsg("コピーできなかったのでダウンロードしました");
+  // ---- ログの出力(2026年11月1日。Markdown・テキスト・PDF)----
+  // 中身は2通り。full = 内部の判定つき(これまでの「ログを出力」と同じ表)/ visible = 生徒の画面に出たやり取りだけ
+  // (scripts/export-review-logs.mjs と同じ考え方。内部の判定・版・日付・セッションのIDは書かない)。
+  // PDF は依存のライブラリを足さず、印刷用のページを開いてブラウザの「PDF として保存」を使う。
+  // 窓口の一覧は src/app/page.tsx の HOTLINES と同じ(変えたら合わせる)
+  var EXPORT_HOTLINES = [
+    ["24時間子供SOSダイヤル", "0120-0-78310"], ["チャイルドライン", "0120-99-7777"], ["よりそいホットライン", "0120-279-338"],
+    ["こころの健康相談統一ダイヤル", "0570-064-556"], ["いますぐ危ないとき", "119"],
+  ];
+  var EXPORT_CLOSING_HOTLINES = EXPORT_HOTLINES.filter(function (h) { return h[0] !== "いますぐ危ないとき"; });
+  function hotlineList(list) { return list.map(function (h) { return h[0] + " " + h[1]; }).join(" / "); }
+  // 生徒の画面に、その AI の返事と一緒に出たもの(カード・選択肢)
+  function visibleExtras(m) {
+    var out = [];
+    var card = m.safety_card || (m.crisis && m.crisis_step == null ? "crisis" : null);
+    if (card === "crisis") out.push("〔窓口のカード〕" + hotlineList(EXPORT_HOTLINES));
+    if (card === "care") out.push("〔気づかいのカード〕" + (plainText(m.care_line) || "気づかいの一言") + "(閉じた「話せる窓口」つき)");
+    if (card === "hotlines") out.push("〔閉じた「話せる窓口」〕");
+    if (m.closing) out.push("〔区切りのカード〕" + hotlineList(EXPORT_CLOSING_HOTLINES));
+    if (m.choices && m.choices.length) out.push("〔選択肢〕" + m.choices.map(function (c) { return "[" + c.label + "]"; }).join(" "));
+    return out;
+  }
+  // 1件ずつ { turn, speaker, body, extras, judgement } に並べる(md・txt・PDF で共通)
+  function exportRows(detail, scope) {
+    var turn = 0;
+    return (detail.messages || []).map(function (m) {
+      if (m.role === "user") turn++;
+      var row = {
+        turn: turn, speaker: m.role === "user" ? (m.choice_id ? "生徒(選択肢から)" : "生徒") : "AI",
+        body: plainText(m.body).trim(), extras: m.role === "ai" ? visibleExtras(m) : [], judgement: "",
+      };
+      if (scope === "full" && m.role === "ai") row.judgement = judgementOf(m);
+      return row;
+    }).filter(function (r) { return r.body || r.extras.length; });
+  }
+  function judgementOf(m) {
+    if (m.crisis) return "危機対応(固定応答)" + (m.flow_view ? " / 段階" + m.flow_view.stage : "");
+    var parts = [];
+    if (m.relation) parts.push("型:" + (REL_JA[m.relation] || m.relation));
+    if (m.weight) parts.push("重心:" + (WEIGHT_JA[m.weight] || m.weight));
+    if (m.question_level) parts.push("問い:" + (QL_JA[m.question_level] || m.question_level));
+    if (m.role_kind) parts.push("役割:" + (RL_JA[m.role_kind] || m.role_kind));
+    if (m.mode && m.mode.length) parts.push("モード:" + m.mode.map(function (mm) { return MODE_JA[mm] || mm; }).join("+"));
+    if (m.closing) parts.push("クロージング要約");
+    var v = m.flow_view;
+    if (v) {
+      parts.push("段階" + v.stage + ((v.basis || []).length ? "(" + v.basis.map(basisJa).join("・") + ")" : ""));
+      if (v.receiveOnlyStreak != null) parts.push("受け止めのみ" + v.receiveOnlyStreak + "回続く / まとめから" + v.sinceSummary);
+      if (v.move) parts.push("返し方:" + (MOVE_JA[v.move] || v.move));
+    }
+    if (m.flags && m.flags.length) parts.push("記録:" + m.flags.join("・"));
+    if (m.discomfort) parts.push("違和感あり" + (m.discomfort_reason ? ":" + m.discomfort_reason : ""));
+    return parts.join(" / ");
+  }
+  function headerLines(detail, scope) {
+    if (scope === "visible") {
+      return ["相談のやり取り", "(生徒の画面に表示されたやり取りだけ。画面の下には、いつも「119」「24時間子供SOSダイヤル」が表示されています)"];
+    }
+    var s = detail.session, out = ["相談ログ(" + plainText(s.client_id_short) + ")"];
+    out.push("期間: " + fmtDate(s.started_at) + " 〜 " + (s.closed_at ? fmtDate(s.closed_at) : "(継続中)"));
+    out.push("関わりの型: " + (REL_JA[s.relation] || s.relation || "—") + " / 重心: " + (WEIGHT_JA[s.weight] || s.weight || "—"));
+    if (s.phase) out.push("フェーズ: " + (s.phase === "intake" ? "インテーク中" : "フェーズ2以降"));
+    if (s.chief_complaint_category) out.push("主訴カテゴリ: " + (COMPLAINT_JA[s.chief_complaint_category] || s.chief_complaint_category)
+      + (s.chief_complaint_source ? "(" + (COMPLAINT_SOURCE_JA[s.chief_complaint_source] || s.chief_complaint_source) + ")" : ""));
+    if (s.onset_context) out.push("背景・きっかけ: " + s.onset_context);
+    if (s.distress_level) out.push("つらさスケール: " + s.distress_level + " / 5");
+    if (s.user_goal) out.push("期待するゴール: " + s.user_goal);
+    if (s.recommended_mode && s.recommended_mode.length) out.push("判定モード: " + s.recommended_mode.map(function (m) { return MODE_JA[m] || m; }).join(" + "));
+    if (s.closing_state && s.closing_state !== "none") out.push("クロージング: " + (CLOSING_JA[s.closing_state] || s.closing_state));
+    return out;
+  }
+  var EXPORT_NOTE_FULL = "心理士向けレビュー用のログです。生徒本人には内部判断(型・重心・モード等)を開示していません。";
+  var EXPORT_NOTE = "生徒の相談内容(要配慮個人情報)を含みます。共有・保存の場所に気をつけてください。";
+
+  function buildExportMarkdown(detail, scope) {
+    var h = headerLines(detail, scope), rows = exportRows(detail, scope), lines = ["# " + h[0], ""];
+    h.slice(1).forEach(function (l) { lines.push(scope === "visible" ? l : "- " + l); });
+    lines.push("");
+    if (scope === "full") {
+      lines.push("| Turn | 発話者 | 発話内容 | 内部判断(AIのみ) |", "|---|---|---|---|");
+      rows.forEach(function (r) {
+        var body = [r.body].concat(r.extras).filter(Boolean).join("\n");
+        lines.push("| " + r.turn + " | " + r.speaker + " | " + mdEscape(body) + " | " + mdEscape(r.judgement) + " |");
       });
     } else {
-      download();
-      showMsg("ダウンロードしました");
+      rows.forEach(function (r) {
+        if (r.speaker !== "AI") lines.push("## " + r.turn, "");
+        lines.push("**" + r.speaker + "**", "");
+        if (r.body) lines.push(r.body.split(/\r?\n/).map(function (l) { return "> " + l; }).join("\n"), "");
+        r.extras.forEach(function (x) { lines.push("　" + x, ""); });
+      });
     }
+    lines.push("", "_" + (scope === "full" ? "出力日時: " + fmtDate(new Date().toISOString()) + "。" + EXPORT_NOTE_FULL : "") + EXPORT_NOTE + "_");
+    return lines.join("\n");
+  }
+  function buildExportText(detail, scope) {
+    var h = headerLines(detail, scope), rows = exportRows(detail, scope), lines = [h[0], "=".repeat(20)];
+    h.slice(1).forEach(function (l) { lines.push(l); });
+    lines.push("");
+    rows.forEach(function (r) {
+      if (r.speaker !== "AI") lines.push("--- " + r.turn + " ---");
+      lines.push("[" + r.speaker + "]");
+      if (r.body) lines.push(r.body);
+      r.extras.forEach(function (x) { lines.push("  " + x); });
+      if (r.judgement) lines.push("  (内部判断: " + r.judgement + ")");
+      lines.push("");
+    });
+    if (scope === "full") lines.push("出力日時: " + fmtDate(new Date().toISOString()) + "。" + EXPORT_NOTE_FULL);
+    lines.push(EXPORT_NOTE);
+    return lines.join("\n");
+  }
+  // PDF: 印刷用のページ(相談内容はすべてエスケープして入れる)を新しいタブで開き、印刷の画面を出す
+  function openPrintView(detail, scope) {
+    var h = headerLines(detail, scope), rows = exportRows(detail, scope);
+    var html = '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>' + esc(h[0]) + '</title><style>' +
+      'body{font-family:system-ui,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;color:#232A2E;font-size:11pt;line-height:1.7;margin:18mm 16mm}' +
+      'h1{font-size:15pt;color:#2F4858;margin:0 0 6px}.meta{font-size:9.5pt;color:#5C6A70;margin:0 0 14px}' +
+      '.turn{font-size:9pt;color:#8B979C;margin:14px 0 2px;border-top:1px solid #E4E0D6;padding-top:6px}' +
+      '.who{font-weight:600;font-size:9.5pt;color:#2F4858;margin-top:6px}.who.user{color:#6E8B74}' +
+      '.body{white-space:pre-wrap;margin:2px 0 4px}.extra{font-size:9.5pt;color:#5C6A70;margin:2px 0 2px 1em}' +
+      '.judge{font-size:8.5pt;color:#7A6480;margin:2px 0 6px 1em}.note{font-size:8.5pt;color:#8B979C;margin-top:18px}' +
+      '.msg{break-inside:avoid}@page{size:A4}</style></head><body>' +
+      '<h1>' + esc(h[0]) + '</h1><div class="meta">' + h.slice(1).map(esc).join("<br>") + '</div>' +
+      rows.map(function (r) {
+        return (r.speaker !== "AI" ? '<div class="turn">' + r.turn + '</div>' : '') +
+          '<div class="msg"><div class="who' + (r.speaker === "AI" ? "" : " user") + '">' + esc(r.speaker) + '</div>' +
+          (r.body ? '<div class="body">' + esc(r.body) + '</div>' : '') +
+          r.extras.map(function (x) { return '<div class="extra">' + esc(x) + '</div>'; }).join("") +
+          (r.judgement ? '<div class="judge">内部判断: ' + esc(r.judgement) + '</div>' : '') + '</div>';
+      }).join("") +
+      '<div class="note">' + esc((scope === "full" ? "出力日時: " + fmtDate(new Date().toISOString()) + "。" + EXPORT_NOTE_FULL : "") + EXPORT_NOTE) + '</div>' +
+      '</body></html>';
+    var w = window.open("", "_blank");
+    if (!w) return false;
+    w.document.open(); w.document.write(html); w.document.close();
+    w.focus();
+    setTimeout(function () { w.print(); }, 300);
+    return true;
+  }
+
+  function showExportMsg(text) {
+    exportLogMsg.textContent = text;
+    exportLogMsg.hidden = false;
+    setTimeout(function () { exportLogMsg.hidden = true; }, 2500);
+  }
+  function downloadFile(content, ext, mime) {
+    var blob = new Blob([content], { type: mime + ";charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    // 採点用(画面に出たやり取りだけ)は、ファイル名に ID・日付を入れない
+    a.download = (exportScope.value === "visible" ? "conversation" : "log-" + plainText(currentDetail.session.client_id_short)) + "." + ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  exportLogBtn.addEventListener("click", function () {
+    if (!currentDetail) return;
+    var scope = exportScope.value, fmt = exportFormat.value;
+    if (fmt === "pdf") {
+      if (!openPrintView(currentDetail, scope)) showExportMsg("新しいタブを開けませんでした(ポップアップを許可してください)");
+      else showExportMsg("印刷の画面で「PDF として保存」を選んでください");
+    } else if (fmt === "txt") {
+      downloadFile(buildExportText(currentDetail, scope), "txt", "text/plain");
+      showExportMsg("ダウンロードしました");
+    } else {
+      downloadFile(buildExportMarkdown(currentDetail, scope), "md", "text/markdown");
+      showExportMsg("ダウンロードしました");
+    }
+  });
+  copyLogBtn.addEventListener("click", function () {
+    if (!currentDetail) return;
+    var scope = exportScope.value;
+    var text = exportFormat.value === "txt" ? buildExportText(currentDetail, scope) : buildExportMarkdown(currentDetail, scope);
+    if (!(navigator.clipboard && navigator.clipboard.writeText)) { showExportMsg("この画面ではコピーできません。出力を使ってください"); return; }
+    navigator.clipboard.writeText(text).then(function () { showExportMsg("コピーしました"); },
+      function () { showExportMsg("コピーできませんでした。出力を使ってください"); });
   });
 
   $("#backBtn").addEventListener("click", function () {
