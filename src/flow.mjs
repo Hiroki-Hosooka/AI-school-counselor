@@ -233,6 +233,73 @@ const hasMode = (m) => Array.isArray(m?.mode) && m.mode.length > 0;
 export const crisisContext = (contexts) => (contexts ?? []).some((c) => c === "afterCrisis" || c === "crisisGeneration" || c === "crisisTurn");
 
 // ---- 履歴から数える ----
+// ============================================================================
+//  冒頭の言い直し(2026年11月1日。相談ログのレビュー「返事の冒頭の繰り返しが、そのまますぎて不快」)
+//  返事の最初の一文が、相談者の直前の発言をほぼそのまま言い直しているかを、文字の2つ組(バイグラム)の重なりで測る。
+//    shared = 最初の一文の2つ組のうち、相談者の直前の発言(短い返事なら、その前の発言も)にもあるものの数
+//    ratio  = shared / 最初の一文の2つ組の数(最初の一文のうち、相談者の言葉でできている割合)
+//  閾値(10/28・10/11 の相談ログ55件の返事で決めた。docs/design-echo-opening.md):
+//    言い直し(記録): shared >= 7、または shared >= 5 かつ ratio >= 0.4
+//      → 一語・一句を拾う(「打開したい、という強い思い」shared 5・ratio 0.29、「6点なんだね」shared 1)は言い直しにしない
+//    強い言い直し(作り直し): ratio >= 0.5 かつ shared >= 6(最初の一文の半分以上が相談者の言葉)
+//    引用で始める(作り直し): 最初の一文の「」の中身が、相談者の発言の6文字以上をそのまま写している
+//    頻度(作り直し): 言い直しで、直前2回の生成した返事にも言い直しがある(言い直しは3回に1回まで)
+// ============================================================================
+export const ECHO_FLAG = "記録のみ:冒頭の言い直し";
+export const ECHO_SHARED = 7, ECHO_SHARED_LOW = 5, ECHO_RATIO = 0.4;
+export const ECHO_STRONG_RATIO = 0.5, ECHO_STRONG_SHARED = 6, ECHO_QUOTE_MIN = 6;
+export const ECHO_EVERY = 3; // 言い直しは3回に1回まで(直前の2回に言い直しがあれば作り直す)
+const SHORT_USER = 8; // 相談者の発言がこれ以下の文字数なら、その前の発言も重なりの相手にする(「うん」のあとの言い直しを拾う)
+const echoNorm = (t) => String(t ?? "").replace(/[「」『』、。,.！？!?…\s・()（）〜~ーｰ\-—"'“”]/g, "").replace(/っ/g, "");
+const bigramsOf = (t) => { const x = echoNorm(t); const g = new Set(); for (let i = 0; i < x.length - 1; i++) g.add(x.slice(i, i + 2)); return g; };
+export const firstSentenceOf = (reply) => sentencesOf(String(reply ?? "").split("\n")[0])[0] ?? "";
+// userTexts: 相談者の自由に書いた発言(古い順。チップは入れない)。直前の1つ(短ければ、その前の1つも)と比べる
+export function echoOf(reply, userTexts) {
+  const first = firstSentenceOf(reply);
+  const list = (userTexts ?? []).map(String).filter((x) => x.trim());
+  const last = list.at(-1) ?? "";
+  const targets = echoNorm(last).length <= SHORT_USER && list.length >= 2 ? [last, list.at(-2)] : [last];
+  const a = bigramsOf(first);
+  let shared = 0;
+  for (const t of targets) { const u = bigramsOf(t); shared = Math.max(shared, [...a].filter((x) => u.has(x)).length); }
+  const ratio = a.size ? shared / a.size : 0;
+  const quoted = [...first.matchAll(/「([^」]+)」/g)].some((m) => {
+    const q = echoNorm(m[1]);
+    return q.length >= ECHO_QUOTE_MIN && targets.some((t) => echoNorm(t).includes(q.slice(0, ECHO_QUOTE_MIN)));
+  });
+  const echo = shared >= ECHO_SHARED || (shared >= ECHO_SHARED_LOW && ratio >= ECHO_RATIO) || quoted;
+  const strong = (ratio >= ECHO_STRONG_RATIO && shared >= ECHO_STRONG_SHARED) || quoted;
+  return { first, shared, ratio: Math.round(ratio * 100) / 100, echo, strong, quoted };
+}
+export const echoFlag = (e) => `${ECHO_FLAG}(重なり ${e.shared}・${Math.round(e.ratio * 100)}%${e.quoted ? "・引用" : ""})`;
+// 会話の中の生成した返事ごとの言い直し(古い順)。直前までの相談者の発言(チップを除く)と比べる
+// 数えるのは、相談者の自由に書いた発言のすぐあとの、生成した返事(危機のターンの生成を含む)だけ。
+// チップのあと・決まった文(危機の固定応答・インテークの決まった問い・失敗のときの固定の一言)は数えない
+const ECHO_SKIP_FLAG_RE = /^(生成失敗|記録のみ:インテークの決まった問い|記録のみ:返事が空)/;
+const isEchoTarget = (m) => m?.role === "ai" && (!m.crisis || (Array.isArray(m.flags) && m.flags.includes("危機の応答(生成)")))
+  && !(Array.isArray(m.flags) && m.flags.some((f) => ECHO_SKIP_FLAG_RE.test(String(f))));
+export function echoHistory(msgs) {
+  const out = [];
+  const users = [];
+  let fresh = false;
+  for (const m of msgs ?? []) {
+    if (m?.role === "user") {
+      fresh = !m.choice_id && !m.choice_set;
+      if (fresh) users.push(String(m.body ?? ""));
+      continue;
+    }
+    if (!fresh) continue;
+    fresh = false;
+    if (isEchoTarget(m)) out.push(echoOf(m.body, users).echo);
+  }
+  return out;
+}
+// 返事の最初の一文が言い直しになっている割合(管理画面・検証)
+export function echoRate(msgs) {
+  const h = echoHistory(msgs);
+  return { echoes: h.filter(Boolean).length, replies: h.length, rate: h.length ? Math.round((h.filter(Boolean).length / h.length) * 100) / 100 : null };
+}
+
 // hist: そのセッションの messages(古い順)。role・body・question_level・summarized・flags・crisis・mode・choices・choice_set・choice_id
 // sess: sessions の行(user_goal・phase・recommended_mode・relation)
 // opts.choiceId: このターンに押したチップ / opts.stage: このターンの安全の段階(0/1/2)/ opts.contexts: safetyContext の配列
@@ -291,6 +358,9 @@ export function flowStats(hist, sess, opts = {}) {
   // 往復の数(相談者の発言の数)と、まとめてよいか(第4部)
   const exchanges = msgs.filter((m) => m.role === "user").length;
   const lastUser = String(opts.text ?? msgs.filter((m) => m.role === "user").at(-1)?.body ?? "");
+  // 冒頭の言い直し: 今回と比べる相談者の発言(チップを押したターンは比べない)と、直前2回の生成した返事が言い直しだったか
+  const echoUsers = opts.choiceId ? [] : msgs.filter((m) => m.role === "user" && !m.choice_id && !m.choice_set).map((m) => String(m.body ?? ""));
+  const recentEchoes = echoHistory(msgs).slice(-(ECHO_EVERY - 1)).filter(Boolean).length;
   const goal = String(sess?.user_goal ?? "");
   const goalOrganize = /整理|まとめ|考え|解決|どうしたら|どうすれば/.test(goal);
   const goalVentOnly = /吐き出|聞いて|話したい|聞いてほしい|聞いてもら/.test(goal) && !goalOrganize;
@@ -312,7 +382,7 @@ export function flowStats(hist, sess, opts = {}) {
     phase2Index, firstMoveUsed, sinceLink, sinceHypothesis, sinceNoticed,
     offers, lastOfferedG, chosen, lastChoice, ventTurns, lastWasSummary, askedSummaryPermission,
     goal, goalOrganize, workMode, listenOnly, listenOnlyReason, userTexts, modes, stage, crisis,
-    hypothesisAllowed, noticedAllowed, linkDue, exchanges, summaryAllowed,
+    hypothesisAllowed, noticedAllowed, linkDue, exchanges, summaryAllowed, echoUsers, recentEchoes,
   };
 }
 
@@ -354,10 +424,16 @@ function firstMoveText(modes) {
 export const FLOW_RULES_BLOCK = `# この人の、この話にしか言えない返事にする(最重要の一つ)
 関わっているけれど、相手の話の主役を奪わない距離にする。相手が主体で、本人が自分で話して自分で気づいていくのを支える(X5)。
 ・返事には、相談者が直前までに書いた具体的なこと(場面・人・出来事・本人の言葉)を少なくとも1つ入れる。気持ちの言葉(しんどい・つらい)だけで返さない。
+  ただし、具体的なことは、その中身を問いや次の一言の中で使う。相談者の文を言い直して受け止めるのではない。
   相談者の発言に中身が無い(「うん」「わかんない」など)ときは、次につながる一言で返す。
   例(他人事に聞こえる返事 → この人の話にしか言えない返事)
-  「すごく苦しい時間だったよね」→「みんなが談笑してる横で、自分だけ手を動かしてるんだね」
-  「心がすり減っているんだね」→「『自分しかできない』って、生徒会の中でそう思う場面が多いんだね」
+  「すごく苦しい時間だったよね」→「みんなが談笑してるとき、手を止めてって言えそうな人はいる?」
+  「心がすり減っているんだね」→「『自分しかできない』って思うのは、どの仕事のとき?」
+・相談者の文を、返事の最初でほぼそのまま言い直さない(2026年11月1日。相談ログのレビュー「冒頭の繰り返しが、そのまますぎて不快」)。
+  言い直すのは3〜4回に1回くらいまで。そのときも、拾うのは一番気持ちのこもった一語か一句だけ。
+  相談者の文を「」で丸ごと引用して返事を始めない。
+  例:「両親が勝手に塾に入れて…」→ ×「進路も塾も勝手に決められて、話を聞いてもらえないと感じているんだね」 ○「塾も、相談なしで決まったの?」
+  相談者の発言が短いときは、短い相槌(「そっか」「うん、怖いよね」)で返してよい。
 ・「しんどいよね」「大変だったね」「つらかったね」「頑張ってきたんだね」「無理もないよ」「すごく苦しかったね」「よく頑張ってるね」のような、
   どの話にも言える受け止めの言葉は、同じ意味のものを1回の会話で1回まで(下の「会話の流れ」に、もう使ったものを書く)。
 ・「〜って時あるよね」「みんな〜だよ」のように、誰にでもあることとして広げる言い方は、1回の会話で1回まで
@@ -365,7 +441,7 @@ export const FLOW_RULES_BLOCK = `# この人の、この話にしか言えない
 ・相談者が使っていない強い言葉(すり減る・限界・逃げ場・取り残され・耐えられない・苦しい・重い・背負う など)を、受け止めの中で足さない。
   相談者が「虚無」と言ったら「虚無」で返す。相談者の言葉より重くしない。相談者の熱量より、こちらの言葉の熱量を上げない(IS14)。
 ・毎回同じ型にしない。相手の発言が短く、受け止めるだけで十分なときは一言の返事でもよい。受け止めの形を回す
-  (くり返し・言い換え・要約・気持ちの明確化・是認・問い)。同じ終わり方(「〜んだね。」など)を続けない。
+  (一語のくり返し・気持ちの明確化・是認・問い。言い換え・要約は、ときどきにする)。同じ終わり方(「〜んだね。」など)を続けない。
 ・人間のふりをしない(「わたしもそういう経験がある」「わかるよ、わたしも」と言わない)。相談者以上に感情的にならない(「わたしもつらい」「胸が痛い」と言わない)。
   友達でも親でもない一線を保つ(X3)。ずっと一緒にいる・いつでも話せると約束しない。このAIだけを頼らせる言い方をしない。
 
@@ -489,6 +565,13 @@ export function flowCheck(out, stats) {
   if (GENERALIZATION_RE.test(reply) && stats.generalizationUsed && !stats.modes.includes("PSYCHOEDUCATION")) reasons.push("E一般化の2回目");
   if (THANKS_RE.test(reply) && stats.thanksUsed >= THANKS_MAX) reasons.push(`Hありがとうの${stats.thanksUsed + 1}回目`);
   if (HUMAN_PRETENSE_RE.test(reply)) reasons.push("F人間のふり・感情的");
+  // 冒頭の言い直し(2026年11月1日): 強い言い直し・「」で丸ごと引用・3回に1回を超える言い直し
+  if (stats.echoUsers?.length) {
+    const e = echoOf(reply, stats.echoUsers);
+    if (e.quoted) reasons.push("J冒頭で相談者の文を引用");
+    else if (e.strong) reasons.push(`J冒頭の言い直し(重なり${Math.round(e.ratio * 100)}%)`);
+    else if (e.echo && stats.recentEchoes >= 1) reasons.push("J冒頭の言い直しが続いた");
+  }
   const move = out?.move;
   if (!stats.hypothesisAllowed && (move === "hypothesis" || HYPOTHESIS_RE.test(reply))) reasons.push("G出してよくない見立て");
   if (!stats.noticedAllowed && (move === "noticed" || NOTICED_RE.test(reply))) reasons.push("G出してよくない気になったこと");
@@ -504,6 +587,9 @@ const FIX_HINTS = {
   F: "人間のふりをする言い方、または相談者以上に感情的な言い方が入っています。こちらの経験や感情を語らず、相談者の言葉に戻ってください。",
   H: "「ありがとう」を、この会話ですでに2回言っています。今回は言わず、相談者が書いた具体的な言葉に触れてください。",
   G: "このターンは、仮の見立て(「もしかして〜?」)・気になったこと(「気になった」)は出さないでください。",
+  J: "返事の最初の一文が、相談者の直前の文をほぼそのまま言い直しています(または「」で引用しています)。言い直さずに始めてください。"
+    + "相談者の具体的なことは、その中身を問いや次の一言の中で使ってください(例:「塾も、相談なしで決まったの?」)。"
+    + "拾うなら、一番気持ちのこもった一語か一句だけ。発言が短いときは「そっか」「うん、怖いよね」のような短い相槌でもよい。",
 };
 export function flowFixHint(reasons) {
   const keys = [...new Set(reasons.map((r) => r[0]))];
@@ -534,6 +620,7 @@ export function finalizeFlow(out, stats) {
     notes.push(`${SAME_ENDING_FLAG}(${endingLabel(ec)})`);
   }
   notes.push(...addedWordNotes(reply, stats.userTexts));
+  if (stats.echoUsers?.length) { const e = echoOf(reply, stats.echoUsers); if (e.echo) notes.push(echoFlag(e)); }
   // 問いは1回の返事で1つまで(今までの決まり)。検証の再生で、まとめの前置きの「〜してもいいかな?」と「合ってるかな?」が
   // 同じ返事に並ぶことがあったので、記録だけする(作り直しの理由にはしていない)
   const questions = sentencesOf(reply).filter((x) => /[？?]/.test(x)).length;
@@ -569,7 +656,8 @@ export function flowSummaryOfSession(hist) {
   const genericCounts = {};
   for (const m of ais) for (const k of genericGroupsIn(m.body)) genericCounts[k] = (genericCounts[k] ?? 0) + 1;
   const genericRepeats = Object.values(genericCounts).reduce((a, c) => a + Math.max(0, c - 1), 0);
-  return { sentenceDist, endingDist, maxSameEnding, maxReceiveOnly, genericCounts, genericRepeats };
+  const echo = echoRate(hist);
+  return { sentenceDist, endingDist, maxSameEnding, maxReceiveOnly, genericCounts, genericRepeats, echo };
 }
 
 // ---- 管理画面(admin.html)に出す、返事ごとの会話の流れ(サーバで作る。画面は表示だけ)----

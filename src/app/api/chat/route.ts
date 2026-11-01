@@ -81,7 +81,7 @@ import {
   declinedPeopleFrom, declinedNg, declinedEstimateFlag,
 } from "@/crisis-response.mjs";
 import {
-  flowStats, flowCheck, flowFixHint, finalizeFlow,
+  flowStats, flowCheck, flowFixHint, finalizeFlow, echoOf, echoFlag,
   CHOICES_G_PROVISIONAL, FLOW_CHOICE_SET, annotateForAdmin, DISCOMFORT_REASONS, aiEndingCheck, questionNotes,
 } from "@/flow.mjs";
 
@@ -1046,9 +1046,12 @@ export async function POST(req: Request) {
         : Math.max(safety.risk === "crisis" ? 2 : safety.risk === "watch" ? 1 : 0, afterCrisis ? 1 : 0);
       const note = daijoubuYokattaNote(text, out.reply, stageForNote);
       const declinedNote = distressDeclinedNote(sess, out);
+      // 冒頭の言い直しの記録(フェーズ2は finalizeFlow が付ける。危機のターン・インテークなど、それ以外の生成でも記録だけする。2026年11月1日)
+      const echoOther = !flowDone && !generated.generationFailed && !emptyReply && stats.echoUsers.length
+        ? echoOf(String(out.reply ?? ""), stats.echoUsers) : null;
       const flags: string[] = [
         ...turnFlags, ...finalized.flags, ...(note ? [note] : []), ...(declinedNote ? [declinedNote] : []), ...(flowDone?.notes ?? []),
-        ...(emptyReply ? [EMPTY_REPLY_FLAG] : []),
+        ...(emptyReply ? [EMPTY_REPLY_FLAG] : []), ...(echoOther?.echo ? [echoFlag(echoOther)] : []),
       ];
       // どのモデルを試して、何で失敗したか(429・時間切れ等。2026年11月1日・1-2)。管理画面の状態の行がこれを数える
       const trailFlag = modelTrailFlag(generated.attempts);

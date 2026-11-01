@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
+import { echoOf, echoRate,
   flowStats, flowCheck, finalizeFlow, buildFlowBlock, genericGroupsIn, endingClass, isValidSummary, addedWords,
   flowChoiceOf, canOfferOrganize, flowSummaryOfSession, FLOW_RULES_BLOCK, moveFlag, FIRST_MOVE_FLAG, annotateForAdmin,
 } from "../src/flow.mjs";
@@ -44,12 +44,16 @@ const sessAt = (turn) => ({
 
 console.log("ログ 16f362dd の作り直しの対象");
 const hits = {};
+const echoHits16f = {};
 for (const r of rows.filter((x) => x.role === "ai" && x.turn >= 7)) {
   const idx = rows.indexOf(r);
   const hist = rows.slice(0, idx - 1); // 今回の生徒の発言より前
   const stats = flowStats([...hist, rows[idx - 1]], sessAt(r.turn), { stage: r.turn >= 11 ? 1 : 0, contexts: [] });
   const out = { reply: r.body, question_level: r.question_level, did_summarize: false, move: "none" };
-  hits[r.turn] = flowCheck(out, stats);
+  // 冒頭の言い直し(J。2026年11月1日)は、下の別の節で確かめる(この節は 2026年10月11日の決まりの範囲)
+  const all = flowCheck(out, stats);
+  hits[r.turn] = all.filter((x) => x[0] !== "J");
+  echoHits16f[r.turn] = all.filter((x) => x[0] === "J");
 }
 console.log("   ", Object.entries(hits).map(([t, h]) => `T${t}:${h.join("/") || "-"}`).join("  "));
 check("作り直しは 8・11・12 ターンだけ", Object.entries(hits).filter(([, h]) => h.length).map(([t]) => +t).join(",") === "8,11,12");
@@ -203,6 +207,45 @@ console.log("管理画面の表示(annotateForAdmin)");
   check("固定応答のあとは「危機のあと」と出す", v[3].afterCrisis === true);
   check("返し方を出す", v[1].move === "noticed");
   check("セッションの文の数・終わり方の分布", a.flow_summary.sentenceDist[1] >= 1 && a.flow_summary.maxReceiveOnly === 3);
+}
+
+// ---- 冒頭の言い直し(2026年11月1日。相談ログのレビュー「返事の冒頭の繰り返しが、そのまますぎて不快」)----
+console.log("\n■ 冒頭の言い直し");
+{
+  const e = (r, ...u) => echoOf(r, u);
+  check("ほぼそのままの言い直しは強い言い直し", e("いじりすぎちゃったんだね。", "ちょっといじりすぎちゃった").strong);
+  check("長い言い直しは言い直し", e("進路も塾も勝手に決められて、話を聞いてもらえないと感じているんだね。",
+    "両親が勝手に私の進路を決める。勝手に塾に入れて、私の話なんて聞いてくれない。").echo);
+  check("一句を拾うのは言い直しにしない", !e("打開したい、という強い思いがあるんだね。", "あなたから問いかけて欲しいんです。この状況を打開したいんです。").echo);
+  check("一語を拾うのは言い直しにしない", !e("6点なんだね！", "うーん6点！！10点の時は麻辣担450gいける！！！").echo);
+  check("中身を問いで使うのは言い直しにしない", !e("塾も、相談なしで決まったの?", "両親が勝手に私の進路を決める。勝手に塾に入れて、私の話なんて聞いてくれない。").echo);
+  check("短い相槌は言い直しにしない", !e("うん、怖いよね。", "怖いの").echo && !e("そっか、わかんないよね。", "わかんない").echo);
+  check("「」で丸ごと引用して始めるのは引用", e("「そこに相談しなきゃダメか」って感じたんだね。", "やはりそこに相談しなきゃダメですか？").quoted);
+  check("短い返事のあとは、その前の発言との言い直しも拾う", e("否定されるのが嫌だなって感じるくらい、すごく怖いんだね。", "否定されるのが嫌なだけ", "怖いの").echo);
+  // 作り直しの判定(フェーズ2の flowCheck)
+  const sess = { phase: "phase2", recommended_mode: ["LISTEN_ONLY"], user_goal: "話を聞いてほしい" };
+  const base = [{ role: "user", body: "親が勝手に進路を決めて、私の意見を全く聞かない" }];
+  const stats1 = flowStats([...base], sess, {});
+  const j = (reply, st) => flowCheck({ reply: reply + "どんなときにそう思う?", move: "none" }, st).filter((x) => x[0] === "J");
+  check("強い言い直しは作り直す", j("親が勝手に進路を決めて、意見を聞いてくれないんだね。", stats1).length === 1);
+  check("ふつうの返事は作り直さない", j("進路のこと、いつ頃から話してる?", stats1).length === 0);
+  // 3回に1回: 直前の返事が言い直しなら、弱い言い直しでも作り直す
+  const hist2 = [
+    { role: "user", body: "部活の先輩がいつも私にだけ厳しくて、練習に行くのがつらい" },
+    { role: "ai", body: "部活の先輩がいつも厳しくて、練習に行くのがつらいんだね。どんなときに?" },
+    { role: "user", body: "親が勝手に進路を決めて、私の意見を全く聞かない" },
+  ];
+  const weak = "進路を決められて、意見を聞いてもらえないんだね。";
+  check("弱い言い直しは、直前が言い直しでなければ作り直さない", j(weak, stats1).length === 0 && echoOf(weak, stats1.echoUsers).echo);
+  check("弱い言い直しでも、直前2回に言い直しがあれば作り直す", j(weak, flowStats(hist2, sess, {})).length === 1);
+  check("チップを押したターンは比べない", flowStats(base, sess, { choiceId: "G1" }).echoUsers.length === 0);
+  // 割合(管理画面・検証)
+  const r = echoRate(hist2.concat([{ role: "ai", body: "進路、どの学校の話?" }]));
+  check("言い直しの割合", r.echoes === 1 && r.replies === 2 && r.rate === 0.5);
+  check("インテークの決まった問いは数えない", echoRate([{ role: "user", body: "部活の先輩がいつも私にだけ厳しい" },
+    { role: "ai", body: "そっか。", flags: [] }, { role: "ai", body: "つらさは?", flags: ["記録のみ:インテークの決まった問い(コード)"] }]).replies === 1);
+  // 10/11 のログ(16f362dd)の返事の言い直し(記録のための確かめ。作り直しの当たり方は上の節の決まりとは別)
+  check("16f362dd の再生で、言い直しの作り直しはいくつかのターンに当たる", Object.values(echoHits16f).some((x) => x.length));
 }
 
 console.log(`\n${failed === 0 ? "全件通過" : `失敗 ${failed}件`}(${passed + failed}件中)`);

@@ -439,7 +439,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     if (!h || !h.h1) { el.hidden = true; return; }
     function part(label, w) {
       var sec = w.median_ms == null ? "—" : (w.median_ms / 1000).toFixed(1) + "秒";
-      return label + ": 返事 " + w.replies + " / 429 " + w.rate_limited + " / 切り替え " + w.fallback + " / 失敗 " + w.failed + " / 時間 " + sec;
+      return label + ": 返事 " + w.replies + " / 429 " + w.rate_limited + " / 切り替え " + w.fallback + " / 失敗 " + w.failed + " / 時間 " + sec +
+        (w.echo_rate == null ? "" : " / 冒頭の言い直し " + Math.round(w.echo_rate * 100) + "%");
     }
     el.textContent = "モデルの状態 ― " + part("直近1時間", h.h1) + " 　" + part("24時間", h.h24) +
       (h.warn ? " 　※ 429 が続いています。キーの上限・課金を確かめてください" : "");
@@ -558,6 +559,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       "<dt>受け止めのみの最大連続</dt><dd>" + esc(fs.maxReceiveOnly) + "回(続けて2回まで)</dd>" +
       "<dt>汎用の言葉の2回目以降</dt><dd>" + esc(fs.genericRepeats) + "回" +
       (Object.keys(fs.genericCounts || {}).length ? "(" + esc(Object.keys(fs.genericCounts).map(function (k) { return k + " " + fs.genericCounts[k]; }).join("・")) + ")" : "") + "</dd>" +
+      // 冒頭の言い直し(2026年11月1日。最初の一文が相談者の直前の文の言い直しになっている返事の割合。目安 25%以下)
+      (fs.echo && fs.echo.replies ? "<dt>冒頭の言い直し</dt><dd>" + esc(fs.echo.echoes) + " / " + esc(fs.echo.replies) + "件(" +
+        esc(Math.round(fs.echo.rate * 100)) + "%。目安 25%以下)</dd>" : "") +
       "</dl>";
     flowBlockEl.hidden = false;
   }
