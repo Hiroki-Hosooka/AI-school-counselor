@@ -12,6 +12,7 @@
 //  CRISIS_REPLY もここに置く。
 // ============================================================================
 
+import { geminiKeyGuard, KEY_GUARD_TAG, isProduction, isFreeTierQuotaBody, markFreeTier } from "./key-guard.mjs";
 import { CRISIS_WORDS, crisisRulesV2, paraphraseShameIdioms } from "./safety.mjs";
 import { crisisRulesV3, normalizeV3 } from "./crisis-keywords-v3.mjs";
 import { buildCrisisReply } from "./crisis-texts.mjs";
@@ -104,6 +105,9 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs) {
   // 1回の呼び出しの時間の上限(2026年11月1日・危機の作り直し 1-2。人の確認ずみ)。上限が無いと、混んでいるモデルを
   // 長く待ってから次のモデルへ移るため、返事に30秒〜4分かかっていた。超えたら [TIMEOUT] として次のモデルへ移る
+  // 本番でテスト用・無料枠のキーを使わない(送る前に止める。src/key-guard.mjs。CLAUDE.md 5.10)
+  const guard = geminiKeyGuard();
+  if (guard.block) throw new Error(`${KEY_GUARD_TAG} Gemini(${model}) ${guard.reason}`);
   const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
   try {
     // 本文の読み取りも上限のうち(signal は本文の読み取りまで効く)
@@ -150,7 +154,13 @@ function fetchGemini(model, systemInstruction, contents, maxOutputTokens, thinki
 
 async function readGemini(model, res) {
   if (!res.ok) {
-    const body = (await res.text()).slice(0, 200);
+    const full = await res.text();
+    const body = full.slice(0, 200);
+    // 無料枠の上限の応答なら、本番ではこのインスタンスでは以後送らない(src/key-guard.mjs)
+    if (res.status === 429 && isProduction() && isFreeTierQuotaBody(full)) {
+      markFreeTier();
+      console.error("【重大】本番の GEMINI_API_KEY が無料枠のキーです。以後このインスタンスでは Gemini に送りません。Vercel のキーを課金済みのものに替えてください(CLAUDE.md 5.10)");
+    }
     // レート制限(無料枠は1モデルあたりのRPMが低い)と、それ以外のエラーを区別できるようにしておく。
     // 404はモデルが退役・存在しない場合もここに来るので、フォールバックの対象にする。
     const tag = res.status === 429 ? "[RATE_LIMIT]" : `[HTTP_${res.status}]`;
@@ -192,6 +202,7 @@ async function readGemini(model, res) {
 // 失敗の種類を短く(記録用。2026年11月1日・1-2)
 export function failureTag(message) {
   const m = String(message ?? "");
+  if (m.includes(KEY_GUARD_TAG)) return "本番に無料枠・テスト用のキー";
   if (m.includes("[RATE_LIMIT]")) return "429";
   if (m.includes("[TIMEOUT]")) return "時間切れ";
   if (m.includes("[BLOCKED]")) return "ブロック";

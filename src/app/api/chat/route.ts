@@ -49,6 +49,7 @@
 // ============================================================================
 
 import { APP_VERSION, VERSION_HISTORY } from "@/version.mjs";
+import { geminiKeyGuard } from "@/key-guard.mjs";
 import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -374,7 +375,10 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error("モデルの状態を読めませんでした:", e);
       }
-      return json({ version: versionInfo(), sessions, model_health });
+      // 本番のキーの状態(テスト用・無料枠のキーを使っていないか。src/key-guard.mjs。CLAUDE.md 5.10)。キーの値は返さない
+      const guard = geminiKeyGuard();
+      const key_guard = guard.block || guard.warn ? { block: guard.block, reason: guard.reason, warn: guard.warn } : null;
+      return json({ version: versionInfo(), sessions, model_health, key_guard });
     }
 
     // ------------------------------------------------------------------

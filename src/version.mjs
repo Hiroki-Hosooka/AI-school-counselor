@@ -16,6 +16,12 @@
 // retro: true の版は、版を付ける仕組みができる前の変更に、さかのぼって付けた番号(記録の prompt_version には出てこない)
 export const VERSION_HISTORY = [
   {
+    version: "2026-11-01f", date: "2026-11-01", areas: ["安全層", "管理画面", "テスト"],
+    summary: "本番(VERCEL_ENV=production)でテスト用・無料枠の Gemini のキーを使わないための止め(src/key-guard.mjs。CLAUDE.md 5.10):"
+      + "GEMINI_API_KEY がテスト用のキーと同じなら送らない、無料枠の 429 を受けたら以後送らない。管理画面に【重大】の行。"
+      + "本番の GEMINI_API_KEY にテスト用のキーが入っていたため(キーの入れ替えは人の作業)",
+  },
+  {
     version: "2026-11-01e", date: "2026-11-01", areas: ["危機の流れ", "テスト"],
     summary: "同じ会話で3回目以降の生成の失敗のとき、空の吹き出しが出ていたのを直した(固定の一言にする)。"
       + "危機の状態の生成に失敗したときの固定の返事を「ありがとう」だけで終えない文に(仮)。10/28 のログの再生を数える scripts/analyze-crisis-rework.mjs の数え方を直した",

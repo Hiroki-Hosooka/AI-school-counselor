@@ -67,6 +67,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── declined.mjs       本人が断った相手(先生・親など)を会話の記録から求める・勧めない指示と出力チェック(5.20)
 │   ├── intake.mjs         トップ画面のボタンとインテークをコードの状態で進める(主訴→背景→つらさ→ゴール。5.13)
 │   ├── notices.mjs        上限・エラーのときの文面、画面の下の一行と「くわしく」の説明(仮)
+│   ├── key-guard.mjs      本番でテスト用・無料枠の Gemini のキーを使わないための止め(5.10)
 │   ├── version.mjs        アプリの版(バージョン)と変更の記録。修正するたびに1件足す(6節)
 │   └── app/
 │       ├── layout.tsx     フォント・メタデータ
@@ -95,6 +96,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── test-crisis-rework.mjs        危機の作り直し 第1部〜第4部のオフラインテスト
 │   ├── test-crisis-evidence.mjs      分類器の危機に今の発言からの引用を求める確かめ(無料枠。開発用の文と保留セット。5.12)
 │   ├── analyze-crisis-rework.mjs     10/28 のログ5件を API の経路で流した結果を数える(危機の作り直し 5章)
+│   ├── test-key-guard.mjs            本番でテスト用・無料枠のキーを止める仕組みのオフラインテスト(5.10)
 │   ├── test-version.mjs              版の書き方と docs/changelog.md が最新かの確かめ(6節)
 │   ├── export-review-logs.mjs        採点用のログの書き出し(画面に出たやり取りだけ・1会話1ファイル・版がわからない番号。対応表は別。書き出し先 review-export/ はコミットしない)
 │   ├── test-*.mjs                    そのほかの自動テスト(使い方は README.md「自動テスト一式」)
@@ -440,6 +442,14 @@ Gemini APIの無料枠は、送信データがGoogleの製品改善に利用さ�
 コードやデプロイ設定上、この2つが混同されないようにすること。
 具体的には環境変数を分ける(本番 `GEMINI_API_KEY` / テスト専用 `TEST_GEMINI_API_KEY`)。
 可能であれば本番用キーと検証用キーを別のGoogle Cloudプロジェクトで発行すること。
+
+**2026年11月1日に、本番(Vercel の Production)の `GEMINI_API_KEY` にテスト用(無料枠)のキーが入っていたことを人が見つけた。**
+キーの入れ替えは人の作業(Vercel の環境変数を課金済みの本番用キーに替えて再デプロイ。Vercel に `TEST_GEMINI_API_KEY*` を置かない)。
+同じことが起きても生徒の相談を送らないように、`src/key-guard.mjs` で止める(`VERCEL_ENV=production` のときだけ):
+- 送る前: `GEMINI_API_KEY` が `TEST_GEMINI_API_KEY*` のどれかと同じなら、Gemini に送らない(`callGeminiOnce` が `[KEY_GUARD]` で失敗する。分類器・生成・記憶の要約のすべて)
+- 送ったあと: Google の 429 の本文に無料枠の印(`free_tier`)があれば、そのインスタンスでは以後送らない(無料枠かどうかは上限の応答でしか見分けられないため、1回は送ってしまう)
+- 止まっているあいだも、キーワード・受動パターンの照合・危機の固定応答・職員への通知・画面の下の窓口は動く。管理画面の一覧の上に【重大】の行が出る
+- **この止めを外したり、Preview・Development に広げて手元のテストを止めたりしないこと。** 確かめは `scripts/test-key-guard.mjs`
 
 ### 5.11 Geminiの安全フィルターは、危機系カテゴリで必ず検証する
 
