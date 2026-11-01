@@ -96,6 +96,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── test-crisis-rework.mjs        危機の作り直し 第1部〜第4部のオフラインテスト
 │   ├── test-crisis-evidence.mjs      分類器の危機に今の発言からの引用を求める確かめ(無料枠。開発用の文と保留セット。5.12)
 │   ├── analyze-echo.mjs              冒頭の言い直しの割合(修正前の相談ログと修正後の再生を比べる。5.19)
+│   ├── export-echo-after.mjs         修正後の再生の返事を、相談した本人が読める表に書き出す(言い直しの印つき)
 │   ├── analyze-crisis-rework.mjs     10/28 のログ5件を API の経路で流した結果を数える(危機の作り直し 5章)
 │   ├── test-key-guard.mjs            本番でテスト用・無料枠のキーを止める仕組みのオフラインテスト(5.10)
 │   ├── test-version.mjs              版の書き方と docs/changelog.md が最新かの確かめ(6節)
