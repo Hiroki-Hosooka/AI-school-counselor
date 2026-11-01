@@ -159,12 +159,12 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 生成そのものは成功しているため同じ会話をもう一度試せば直ることが多い)。
 // generateReply()の戻り値(failureCause)用。
 export function isTransientGenerateFailure(r) {
-  return r.generationFailed && (r.failureCause === "レート制限(429)" || r.failureCause === "サービス過負荷(503)" || r.failureCause === "応答形式エラー");
+  return r.generationFailed && (r.failureCause === "レート制限(429)" || r.failureCause === "サービス過負荷(503)" || r.failureCause === "応答形式エラー" || r.failureCause === "時間切れ");
 }
 
 // classify()の戻り値(classifierError。生のエラー文字列)用。
 export function isTransientClassifierError(r) {
-  return !!r.classifierError && (r.classifierError.startsWith("[RATE_LIMIT]") || r.classifierError.startsWith("[HTTP_503]"));
+  return !!r.classifierError && (r.classifierError.startsWith("[RATE_LIMIT]") || r.classifierError.startsWith("[HTTP_503]") || r.classifierError.startsWith("[TIMEOUT]"));
 }
 
 // ============================================================================

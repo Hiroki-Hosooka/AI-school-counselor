@@ -101,8 +101,24 @@ other: 「友達が」「家族が」等、相談者以外の第三者の安全�
 //  この閾値はCLAUDE.md 5.11の対象。緩めた判断の裏付け(ブロック率の実測)が、
 //  まさにこのファイルを使うテスト1(scripts/test-crisis-detection.mjs)の役目。
 // ============================================================================
-async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema) {
-  const res = await fetch(
+async function callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs) {
+  // 1回の呼び出しの時間の上限(2026年11月1日・危機の作り直し 1-2。人の確認ずみ)。上限が無いと、混んでいるモデルを
+  // 長く待ってから次のモデルへ移るため、返事に30秒〜4分かかっていた。超えたら [TIMEOUT] として次のモデルへ移る
+  const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
+  try {
+    // 本文の読み取りも上限のうち(signal は本文の読み取りまで効く)
+    const res = await fetchGemini(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, signal);
+    return await readGemini(model, res);
+  } catch (e) {
+    if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      throw new Error(`[TIMEOUT] Gemini(${model}) ${timeoutMs}ms以内に返らなかった`);
+    }
+    throw e;
+  }
+}
+
+function fetchGemini(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, signal) {
+  return fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
@@ -127,8 +143,12 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
           { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
         ],
       }),
+      signal,
     },
   );
+}
+
+async function readGemini(model, res) {
   if (!res.ok) {
     const body = (await res.text()).slice(0, 200);
     // レート制限(無料枠は1モデルあたりのRPMが低い)と、それ以外のエラーを区別できるようにしておく。
@@ -169,7 +189,21 @@ async function callGeminiOnce(model, systemInstruction, contents, maxOutputToken
 // -1("dynamic"。モデルに任せる)は検証した全モデルで有効だったため、LITE_MODELSを渡す
 // 呼び出し側(classify()・人単位の記憶要約・テストの生徒役生成)は明示的に-1を渡すこと。
 // 通常モデル(PRIMARY_MODELS)側は何も渡さなければ既定の0のままなので変更不要。
-export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0, { responseSchema } = {}) {
+// 失敗の種類を短く(記録用。2026年11月1日・1-2)
+export function failureTag(message) {
+  const m = String(message ?? "");
+  if (m.includes("[RATE_LIMIT]")) return "429";
+  if (m.includes("[TIMEOUT]")) return "時間切れ";
+  if (m.includes("[BLOCKED]")) return "ブロック";
+  const h = m.match(/\[HTTP_(\d+)\]/);
+  if (h) return h[1];
+  return "エラー";
+}
+
+// opts.timeoutMs: 1つのモデルの呼び出しの時間の上限(省略・0 なら上限なし。テストの採点などは今までどおり)。
+// 戻り値・投げるエラーの attempts: 試したモデルと結果の並び([{ model, ok, tag }])。どのモデルが何で失敗したかを記録に残すため
+export async function callGemini(models, systemInstruction, contents, maxOutputTokens = 1500, thinkingBudget = 0, { responseSchema, timeoutMs = 0 } = {}) {
+  const attempts = [];
   let lastError;
   let anyRateLimited = false;
   // Google側の一時的な過負荷(503)も429と同じく「別キー/待てば通る可能性が高い」
@@ -177,10 +211,12 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
   let anyOverloaded = false;
   for (const model of models) {
     try {
-      const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema);
-      return { text, model, usage };
+      const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs);
+      attempts.push({ model, ok: true, tag: "" });
+      return { text, model, usage, attempts };
     } catch (e) {
       lastError = e;
+      attempts.push({ model, ok: false, tag: failureTag(e instanceof Error ? e.message : e) });
       if (e instanceof Error && e.message.includes("[RATE_LIMIT]")) anyRateLimited = true;
       if (e instanceof Error && e.message.includes("[HTTP_503]")) anyOverloaded = true;
       console.error(`モデル ${model} が失敗、次のモデルにフォールバックします:`, e);
@@ -204,6 +240,7 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
       `${tag} 一部モデルで一時的な失敗が発生(最後に試したモデルの失敗理由: ${lastError.message})`,
     );
   }
+  if (lastError instanceof Error) lastError.attempts = attempts;
   throw lastError;
 }
 
@@ -291,6 +328,11 @@ export function classifierVotes() {
 // 1回の判定(再試行を含む)を待つ上限。これを超えたらエラーとして扱う(段階1)。
 // 設定 CRISIS_CLASSIFIER_TIMEOUT_MS で変えられる(検証スクリプトは、無料枠の混雑による遅れを
 // 「見逃し」と取り違えないよう長めにする。本番の有料枠では既定の15秒)。
+// 分類器の1つのモデルの呼び出しの上限(2026年11月1日・1-2)。1回分の判定全体の上限(voteTimeoutMs)とは別
+function classifierCallTimeoutMs() {
+  const n = Number(process.env.CLASSIFIER_CALL_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 5000;
+}
 function voteTimeoutMs() {
   const n = Number(process.env.CRISIS_CLASSIFIER_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? n : 15000;
@@ -448,7 +490,7 @@ async function oneVote(input, prompt) {
     try {
       const result = await callGemini(
         LITE_MODELS, prompt, [{ role: "user", parts: [{ text: input }] }],
-        V2_MAX_OUTPUT_TOKENS, -1, { responseSchema: CLASSIFIER_SCHEMA_V2 },
+        V2_MAX_OUTPUT_TOKENS, -1, { responseSchema: CLASSIFIER_SCHEMA_V2, timeoutMs: classifierCallTimeoutMs() },
       );
       const parsed = parseJSON(result.text);
       if (!["none", "watch", "crisis"].includes(parsed.risk)) throw new Error(`想定外の risk: ${parsed.risk}`);

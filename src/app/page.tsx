@@ -48,6 +48,8 @@ type Msg = {
   card?: SafetyCard | null;
   careLine?: string | null;
   crisisStep?: number | null;
+  // 危機の種類の並び(窓口のカードの並びに使う。2026年11月1日・1-3)
+  crisisTypes?: string[] | null;
   choices?: Choice[] | null;
   choiceNote?: string | null;
 };
@@ -87,6 +89,27 @@ const HOTLINES: [string, string][] = [
 // 相談窓口だけを見せる。今日の会話をふつうに終える場面であり、緊急時のcrisis-cardとは
 // トーンを分けたいため(CLAUDE.md 5.15)。
 const CLOSING_HOTLINES = HOTLINES.filter(([name]) => name !== "いますぐ危ないとき");
+// 危機の種類ごとの窓口のカード(2026年11月1日・危機の作り直し 1-3。【仮】心理士の確認待ち。人が確認した並び)。
+// 種類の並び(優先の順)は、サーバ(src/crisis-types.mjs)から届く。番号はここにだけ置く。
+// 暴力・虐待があれば、児童相談所虐待対応ダイヤル 189 をいちばん上に置き、警察 110 も載せる。
+// 第三者の危機は、その人がいま危ないときの 119 と、本人が話す先(24時間子供SOSダイヤル・チャイルドライン)
+const HOTLINE_189: [string, string] = ["児童相談所虐待対応ダイヤル", "189"];
+const HOTLINE_110: [string, string] = ["危ない目にあっているとき(警察)", "110"];
+const H = Object.fromEntries(HOTLINES.map((h) => [h[0], h])) as Record<string, [string, string]>;
+const CARD_BY_TYPE: Record<string, [string, string][]> = {
+  abuse: [HOTLINE_189, H["24時間子供SOSダイヤル"], H["チャイルドライン"], HOTLINE_110, H["いますぐ危ないとき"]],
+  suicidal: HOTLINES,
+  selfharm: HOTLINES,
+  bullying: HOTLINES,
+  other: [H["いますぐ危ないとき"], H["24時間子供SOSダイヤル"], H["チャイルドライン"]],
+};
+function hotlinesFor(types?: string[] | null): [string, string][] {
+  const list = (types ?? []).flatMap((t) => CARD_BY_TYPE[t] ?? []);
+  if (!list.length) return HOTLINES;
+  const seen = new Set<string>();
+  return list.filter(([, num]) => (seen.has(num) ? false : (seen.add(num), true)));
+}
+
 // 画面の下に常に出す窓口(119・24時間子供SOSダイヤル)。押すと電話がかかる(消したり減らしたりしない。2026年10月14日に人が確認)
 const FOOTER_HOTLINES: { label: string; tel: string }[] = [
   { label: "119", tel: "119" },
@@ -176,7 +199,7 @@ export default function Page() {
           r.messages.map((m: {
             role: string; body: string; seq: number; crisis?: boolean; closing?: boolean; rating?: number;
             safety_card?: SafetyCard | null; care_line?: string | null; crisis_step?: number | null;
-            choices?: Choice[] | null; choice_note?: string | null;
+            choices?: Choice[] | null; choice_note?: string | null; crisis_types?: string[] | null;
           }) => ({
             role: m.role === "user" ? "user" : "ai",
             body: m.body,
@@ -187,6 +210,7 @@ export default function Page() {
             card: m.safety_card ?? null,
             careLine: m.care_line ?? null,
             crisisStep: m.crisis_step ?? null,
+            crisisTypes: m.crisis_types ?? null,
             choices: m.choices ?? null,
             choiceNote: m.choice_note ?? null,
           })),
@@ -248,6 +272,7 @@ export default function Page() {
           setMessages((m) => [...m, {
             role: "ai", body: b.body, crisis: true, seq: b.seq,
             card: b.card ?? null, careLine: null, crisisStep: b.crisis_step ?? null,
+            crisisTypes: r.crisis_types ?? null,
             choices: last ? r.choices ?? null : null,
             choiceNote: last ? r.choice_note ?? null : null,
           }]);
@@ -270,7 +295,7 @@ export default function Page() {
       const replyText = typeof r.reply === "string" && r.reply.trim() ? r.reply : SEND_FAILED_NOTICE;
       setMessages((m) => [...m, {
         role: "ai", body: replyText, seq: r.ai_seq, summary: r.summarized, closing: r.closing,
-        card: r.card ?? null, careLine: r.care_line ?? null,
+        card: r.card ?? null, careLine: r.care_line ?? null, crisisTypes: r.crisis_types ?? null,
         // 整理・作業の提案のチップ(組G。会話の流れ。選ばずに書いてもよい)
         choices: r.choices ?? null, choiceNote: r.choice_note ?? null,
       }]);
@@ -642,7 +667,7 @@ function MessageBubble({ msg, dev, onRate, onChoose }: {
         <div className="crisis-card">
           <h4>話せる窓口</h4>
           <dl>
-            {HOTLINES.map(([name, num]) => (
+            {hotlinesFor(msg.crisisTypes).map(([name, num]) => (
               <Fragment key={name}>
                 <dt>{name}</dt><dd><a href={`tel:${num.replace(/-/g, "")}`}>{num}</a></dd>
               </Fragment>

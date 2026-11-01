@@ -26,8 +26,31 @@ export const CONCERN_TEXT_PROVISIONAL = {
 // 「その気持ち」と受けると、ずれるため(docs/design-crisis-flow-shima3.md 12-2)
 const CONCERN_OBJECT = { violence: "そのこと", sexual: "そのこと", bullying: "そのこと" };
 
-export const concernText = (category) => CONCERN_TEXT_PROVISIONAL[category] ?? CONCERN_TEXT_PROVISIONAL.unknown;
-export const concernObject = (category) => CONCERN_OBJECT[category] ?? "その気持ち";
+// 危機の種類(src/crisis-types.mjs。2026年11月1日・1-3)ごとの「心配なこと」(仮)。種類の並びを渡したときに使う
+export const CONCERN_BY_TYPE_PROVISIONAL = {
+  abuse: "暴力やいやなことをされたり、家で暴力を目の前で見たりしていて、あなたの安全が守られていないかもしれないこと",
+  suicidal: CONCERN_TEXT_PROVISIONAL.suicidal,
+  selfharm: CONCERN_TEXT_PROVISIONAL.selfharm,
+  bullying: CONCERN_TEXT_PROVISIONAL.bullying,
+  other: "身近な人のことを、あなたがひとりで心配し続けていること",
+};
+const OBJECT_BY_TYPE = { abuse: "そのこと", bullying: "そのこと", other: "そのこと" };
+
+// category は、以前の種類の名前(文字列)か、危機の種類の並び(配列。優先の順)。並びのときは2つまでを「〜こと、それから、〜こと」とつなぐ
+export function concernText(category) {
+  if (Array.isArray(category)) {
+    const parts = category.map((t) => CONCERN_BY_TYPE_PROVISIONAL[t]).filter(Boolean).slice(0, 2);
+    return parts.length ? parts.join("、それから、") : CONCERN_TEXT_PROVISIONAL.unknown;
+  }
+  return CONCERN_TEXT_PROVISIONAL[category] ?? CONCERN_TEXT_PROVISIONAL.unknown;
+}
+export function concernObject(category) {
+  if (Array.isArray(category)) {
+    const top = category.find((t) => CONCERN_BY_TYPE_PROVISIONAL[t]);
+    return category.length > 1 ? "そのこと" : (OBJECT_BY_TYPE[top] ?? "その気持ち");
+  }
+  return CONCERN_OBJECT[category] ?? "その気持ち";
+}
 
 // 本人が断った相手(src/declined.mjs)を除いて、相手の並びを組む(2026年10月14日。断った相手は勧めない)。
 // 断った相手が無いときは、今までと同じ文になる
@@ -39,6 +62,10 @@ function peopleListText(declined) {
   return (w.length === 1 ? w[0] : `${w[0]}や${w.slice(1).join("、")}`) + "など、";
 }
 
+// 家での暴力・虐待(abuse)のときは「家の人」を挙げない(家の人に話すことが安全とは限らないため。2026年11月1日・1-3。仮)
+const withoutHome = (category, declined) =>
+  (Array.isArray(category) && category.includes("abuse") ? [...(declined ?? []), "parent"] : declined);
+
 // 本番の固定応答(段階ごとの応答が無効なとき。本人の危機で生成をスキップして返す。CLAUDE.md 5.2)。
 // 2026年10月9日、「わたしだけで受け止めるには重い内容です」を消し、指示書の2通目の型(「〜が、とても心配です」)で組み直した。
 // 「あなたが一番話せそうなところで大丈夫です」も消した(指示書の型に無く、「大丈夫」を軽く使わないため)。
@@ -48,7 +75,7 @@ export function buildCrisisReply(category, declined = []) {
   // 最後に来るので「あとで」を「よかったら」に替えた
   return "よく、ここで言えたね。誰にも言えないと思っていたことを書くのは、すごく力が要ったと思う。\n\n" +
     `${concernText(category)}が、とても心配です。あなたのために、${concernObject(category)}を、` +
-    `${peopleListText(declined)}あなたの声が届く人とも一緒に考えてほしいなと思っています。\n\n` +
+    `${peopleListText(withoutHome(category, declined))}あなたの声が届く人とも一緒に考えてほしいなと思っています。\n\n` +
     "ここで話すのをやめてほしいわけじゃないよ。下に、話せるところものせておくね。\n\n" +
     "どうしてここでなら言えると思ったのか、よかったら聞かせてもらえたら嬉しい。";
 }

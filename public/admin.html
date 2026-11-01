@@ -112,6 +112,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 
 .foot-note{max-width:920px;margin:26px auto 0;font-size:11px;color:var(--ink-faint);
   border-top:1px solid var(--sand);padding-top:12px}
+  .model-health { font-size:12px; color:var(--ink-soft); background:var(--sand); border-radius:6px; padding:6px 10px; margin:6px 0 10px; line-height:1.6; }
+  .model-health.warn { color:var(--alert); background:var(--alert-bg); font-weight:600; }
 </style>
 </head>
 <body>
@@ -156,6 +158,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       <input type="checkbox" id="showSynthetic">
       <span id="syntheticLabel">合成データ(ペルソナテスト)を表示する</span>
     </label>
+    <div id="modelHealth" class="model-health" hidden title="生成のモデルの状態(直近1時間・24時間)。429 はキーの上限、切り替えは予備のモデルへ移った回数、失敗は固定の一言で受けた回数、時間は返事にかかった時間の中央値"></div>
     <div id="sessionList" class="s-list"></div>
     <div id="listEmpty" class="empty" hidden>まだセッションがありません。</div>
   </section>
@@ -408,11 +411,26 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       // いま動いているアプリの版(src/version.mjs)
       var v = body && body.version;
       document.getElementById("appVersion").textContent = v ? "いまの版 " + v.app_version + (v.commit ? "・" + v.commit : "") : "";
+      renderModelHealth(body && body.model_health);
       listView.hidden = false;
       renderList();
     }, function (e) {
       if (e.message !== "unauthorized") showLoadError(e.message);
     });
+  }
+
+  // モデルの状態の1行(2026年11月1日・危機の作り直し 1-2)。直近1時間の 429 が3回を超えたら警告の色にする
+  function renderModelHealth(h) {
+    var el = document.getElementById("modelHealth");
+    if (!h || !h.h1) { el.hidden = true; return; }
+    function part(label, w) {
+      var sec = w.median_ms == null ? "—" : (w.median_ms / 1000).toFixed(1) + "秒";
+      return label + ": 返事 " + w.replies + " / 429 " + w.rate_limited + " / 切り替え " + w.fallback + " / 失敗 " + w.failed + " / 時間 " + sec;
+    }
+    el.textContent = "モデルの状態 ― " + part("直近1時間", h.h1) + " 　" + part("24時間", h.h24) +
+      (h.warn ? " 　※ 429 が続いています。キーの上限・課金を確かめてください" : "");
+    el.className = "model-health" + (h.warn ? " warn" : "");
+    el.hidden = false;
   }
 
   // 構造化面接AI統合 手順5。フェーズ1(インテーク)で集めた情報とモード判定結果を表示する。

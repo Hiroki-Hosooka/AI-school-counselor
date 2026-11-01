@@ -50,7 +50,47 @@ import { buildIntakeStepBlock, INTAKE_STEP_OUTPUT_SCHEMA, INTAKE_HIGH_DISTRESS_B
 // 組み立てた文そのもののハッシュも一緒に残すので、上げ忘れても見分けられる
 export const PROMPT_VERSION = APP_VERSION;
 
-export const PRIMARY_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"];
+// 2026年11月1日(危機の作り直し 1-2。人の確認ずみ): 本番の一覧からプレビュー版(gemini-3-flash-preview)を外し、安定版だけにした。
+// 相談ログ 55932e90 で、本番のキーの上限(429)のときに最後のプレビュー版まで試して失敗していた。
+// Gemini 3.x の flash には版を固定した名前(-001 など)が無い(2026-11-01 にモデルの一覧で確かめた)ので、安定版の名前を使う
+export const PRIMARY_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+
+// 本生成の1つのモデルの呼び出しの上限(2026年11月1日・1-2)。超えたら次のモデルへ。設定 GEMINI_TIMEOUT_MS で変えられる
+export function generationCallTimeoutMs() {
+  const n = Number(process.env.GEMINI_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 8000;
+}
+// どのモデルを試して、何で失敗したかの記録(messages.flags。管理画面の状態の行がこれを数える)
+export const MODEL_FALLBACK_FLAG = "モデルの切り替え";
+export function modelTrailFlag(attempts) {
+  const failed = (attempts ?? []).filter((a) => !a.ok);
+  if (!failed.length) return null;
+  const ok = (attempts ?? []).find((a) => a.ok);
+  return `${MODEL_FALLBACK_FLAG}: ${failed.map((a) => `${a.model} ${a.tag}`).join(" → ")}${ok ? ` → 応答 ${ok.model}` : " → 応答なし"}`;
+}
+
+// 管理画面の一覧の上に出す、モデルの状態の1行(直近1時間・24時間。2026年11月1日・1-2)。
+// rows は AI の発言の { created_at, flags, timings }。Google 側の「残りの枠」を読む API は無いので、こちらで数えた失敗で代わりに見る。
+// 直近1時間の 429 が warnOver 回を超えたら warn を立てる(画面で警告の色にする)
+export function modelHealth(rows, now = Date.now(), warnOver = 3) {
+  const win = (ms) => {
+    const list = (rows ?? []).filter((r) => now - new Date(r.created_at).getTime() <= ms);
+    const flagsOf = (r) => (Array.isArray(r.flags) ? r.flags.map(String) : []);
+    const has = (r, pred) => flagsOf(r).some(pred);
+    const totals = list.map((r) => Number(r.timings?.total)).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+    const median = totals.length ? totals[Math.floor((totals.length - 1) / 2)] : null;
+    return {
+      replies: list.length,
+      rate_limited: list.filter((r) => has(r, (f) => f.includes("429"))).length,
+      fallback: list.filter((r) => has(r, (f) => f.startsWith(MODEL_FALLBACK_FLAG))).length,
+      failed: list.filter((r) => has(r, (f) => f.startsWith("生成失敗→") || f.startsWith("生成失敗の場面"))).length,
+      median_ms: median,
+    };
+  };
+  const h1 = win(60 * 60 * 1000);
+  const h24 = win(24 * 60 * 60 * 1000);
+  return { h1, h24, warn: h1.rate_limited > warnOver };
+}
 
 // ----------------------------------------------------------------------------
 // DBクライアント。route.ts自身の(型付きの)getDb()とは別に、テストスクリプトからも
@@ -797,10 +837,24 @@ export async function generateReply(
   // 実際に消費したトークン(初回+再生成があれば合算。2026年9月・モデル比較検証)。
   let usage = null;
 
+  // 試したモデルと結果(作り直しの呼び出しも含む。2026年11月1日・1-2)
+  const attempts = [];
+  const timeoutMs = generationCallTimeoutMs();
+  async function call(modelList, sys) {
+    try {
+      const r = await callGemini(modelList, sys, messages, maxOutputTokens, thinkingBudget, { timeoutMs });
+      attempts.push(...(r.attempts ?? []));
+      return r;
+    } catch (e) {
+      attempts.push(...((e && e.attempts) ?? []));
+      throw e;
+    }
+  }
   async function attempt(modelList) {
-    const result = await callGemini(modelList, system, messages, maxOutputTokens, thinkingBudget);
+    const result = await call(modelList, system);
     return { parsed: parseJSON(result.text), result };
   }
+  const startedAt = Date.now();
 
   try {
     const { parsed, result } = await attempt(models);
@@ -810,9 +864,12 @@ export async function generateReply(
     // 直前に失敗したモデルは外し、リストに複数あれば次のモデル(フォールバック)で試す
     // (単純にmodels[0]から再試行すると、同じモデルに同じ失敗をもう一度求めるだけになる)。
     console.error("生成に失敗しました。再試行します:", firstErr);
-    await sleep(3000);
+    // 1回目で20秒以上かかったとき(時間切れが続いた等)は、待たせすぎないよう再試行しない(2026年11月1日・1-2)
+    const skipRetry = Date.now() - startedAt > 20000;
+    if (!skipRetry) await sleep(3000);
     const retryModels = models.length > 1 ? models.slice(1) : models;
     try {
+      if (skipRetry) throw firstErr;
       const { parsed, result } = await attempt(retryModels);
       out = parsed; usedModel = result.model; usage = result.usage;
     } catch (secondErr) {
@@ -826,6 +883,8 @@ export async function generateReply(
         // 頻発することを確認。数十秒後の直接curl再現テストでは成功しており、
         // リクエスト内容ではなくGoogle側の一時的な状態によるものと判断した)。
         : msg.includes("[HTTP_503]") ? "サービス過負荷(503)"
+        // 1つのモデルの呼び出しの上限を超えた(2026年11月1日・1-2)
+        : msg.includes("[TIMEOUT]") ? "時間切れ"
         // 応答本文がJSONとして読み取れなかった場合(2026年9月・ペルソナ多ターン回帰
         // テストのfull×2実行で複数回確認。会話履歴が長くなるほど起きやすい様子)。
         // 生徒役の発言生成では同じ症状を既に再試行対象にしていた(test-persona-
@@ -849,7 +908,7 @@ export async function generateReply(
       "\n\n# 修正指示\n直前の案は禁止表現に触れました。頑張れ系の励まし、断定的な保証、相手を悪者にする同調、技法名、無制限に開いている言い方を避け、受け止めと確かめだけで書き直してください。" +
       (fixHint ? `\n${fixHint}` : "");
     try {
-      const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
+      const retryResult = await call(models, fix);
       const retry = parseJSON(retryResult.text);
       // 再生成の呼び出し自体にも課金は発生している(採用されなくても)ので必ず加算する。
       usage = addUsage(usage, retryResult.usage);
@@ -874,7 +933,7 @@ export async function generateReply(
       const fix = system + "\n\n" + (flowFixFn ? flowFixFn(reasons) : "# 修正指示\n" + reasons.join("\n"));
       let note = `会話の流れで作り直し(${reasons.join("・")})→作り直しても残った`;
       try {
-        const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
+        const retryResult = await call(models, fix);
         const retry = parseJSON(retryResult.text);
         usage = addUsage(usage, retryResult.usage);
         if (checkAll(retry.reply ?? "").length === 0) {
@@ -903,7 +962,7 @@ export async function generateReply(
     let fixedEnd = false;
     try {
       const fix = system + "\n\n" + AI_ENDING_FIX_HINT;
-      const retryResult = await callGemini(models, fix, messages, maxOutputTokens, thinkingBudget);
+      const retryResult = await call(models, fix);
       const retry = parseJSON(retryResult.text);
       usage = addUsage(usage, retryResult.usage);
       if (checkAll(retry.reply ?? "").length === 0 && !endCheckFn(retry) && String(retry.reply ?? "").trim()) {
@@ -913,7 +972,7 @@ export async function generateReply(
     if (!fixedEnd) out = { ...out, reply: `${String(out.reply ?? "").trim()}\n${AI_ENDING_TAIL_PROVISIONAL}` };
     flags = [...flags, `${AI_ENDING_FLAG}(${fixedEnd ? "解消" : "残ったので続きを促す一言を足した"})`];
   }
-  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens, endRegens };
+  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens, endRegens, attempts };
 }
 
 // ============================================================================

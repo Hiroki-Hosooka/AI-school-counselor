@@ -55,11 +55,12 @@ import {
   classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES,
 } from "@/classify.mjs";
 import { categoryOfSafety } from "@/crisis-keywords-v3.mjs";
+import { crisisTypesOf, crisisTypesFlag, crisisTypesFromFlags } from "@/crisis-types.mjs";
 import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.mjs";
 import {
   loadKnowledge, clearKnowledgeCache, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
-  DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION,
+  DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION, modelTrailFlag, modelHealth,
 } from "@/generate.mjs";
 import { validateKnowledgeInput } from "@/knowledge-admin.mjs";
 import { planIntakeTurn, finishIntakeTurn, topScreenChoice } from "@/intake.mjs";
@@ -184,6 +185,8 @@ async function selectRowsWithFallback(...attempts: SelectAttempt[]): Promise<Row
 function withCareLine(m: Row) {
   return {
     ...m, care_line: m.safety_card === "care" ? CARE_LINE_PROVISIONAL : null,
+    // 危機の種類(窓口のカードの並び。2026年11月1日・1-3)。列は足さず、記録の印から読む
+    crisis_types: crisisTypesFromFlags(m.flags),
     choice_note: Array.isArray(m.choices) && m.choices.length ? CHOICE_NOTE_PROVISIONAL : null,
   };
 }
@@ -285,7 +288,10 @@ async function overLimitCrisisReply(
     const touchedOk = (await checkedWrite("セッションの状態(上限)", () => db.from("sessions").update(touched).eq("id", sessionId))).ok;
     stateSaved = !staged && touchedOk;
   }
+  const types = crisisTypesOf(text, local);
+  const typesFlag = crisisTypesFlag(types);
   const flags = [
+    ...(typesFlag ? [typesFlag] : []),
     ...(stateSaved ? [] : [`${STATE_SAVE_FAILED_FLAG}(上限を超えた発言の危機の応答)`]),
     ...(eventSaved ? [] : ["記録のみ:安全の記録の保存に失敗"]),
   ];
@@ -293,7 +299,7 @@ async function overLimitCrisisReply(
     session_id: sessionId, role: "ai", body: reply, crisis: true, ...(flags.length ? { flags } : {}),
   }).select("seq").single());
   return chatJson({
-    reply, crisis: true,
+    reply, crisis: true, crisis_types: types,
     safety: { risk: "crisis", subject: "self", keywords: local.keywords.length, model: local.model.risk },
     user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
   });
@@ -350,7 +356,19 @@ export async function POST(req: Request) {
         // 合成データ(ペルソナテスト)の識別。admin.htmlの表示切替に使う(2026年9月)。
         is_synthetic: s.is_synthetic, persona_id: s.persona_id, run_id: s.run_id,
       }));
-      return json({ version: versionInfo(), sessions });
+      // モデルの状態(直近1時間・24時間の 429・切り替え・失敗・時間。2026年11月1日・1-2)。読めなくても一覧は返す
+      let model_health: unknown = null;
+      try {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const rows = await selectRowsWithFallback(
+          () => db.from("messages").select("created_at,flags,timings").eq("role", "ai").gte("created_at", since).limit(5000),
+          () => db.from("messages").select("created_at,flags").eq("role", "ai").gte("created_at", since).limit(5000),
+        );
+        model_health = modelHealth(rows);
+      } catch (e) {
+        console.error("モデルの状態を読めませんでした:", e);
+      }
+      return json({ version: versionInfo(), sessions, model_health });
     }
 
     // ------------------------------------------------------------------
@@ -573,7 +591,8 @@ export async function POST(req: Request) {
           // 同じ固定の文を1回の会話で2回出さない(2026年10月14日)。1回目は固定応答・2回目は短い別の1通。
           // 3回目からは、上限を超えていても、ふだんの流れ(危機の状態の指示つきの生成)で受ける(危機の返事を止めないため)
           const limitHist = await loadHistForLimit(db, sessionId);
-          const decided = defaultCrisisReplyFor(limitHist, categoryOfSafety(local), declinedPeopleFrom(limitHist));
+          const limitTypes = crisisTypesOf(text, local);
+          const decided = defaultCrisisReplyFor(limitHist, limitTypes.length ? limitTypes : categoryOfSafety(local), declinedPeopleFrom(limitHist));
           if (decided.kind !== "generate" && decided.text) return await overLimitCrisisReply(db, sessionId, text, local, decided.text);
           overLimitCrisis = true;
         }
@@ -730,6 +749,11 @@ export async function POST(req: Request) {
         eventReason = safety.model.reason;
       }
       timer.mark("classify");
+      // 危機の種類(本人の暴力・虐待/希死念慮/自傷/いじめ/第三者。複数可。2026年11月1日・1-3。仮)。
+      // 受け止めの一言と窓口のカードの並びに使い、記録にも残す。段階・通知は変えない
+      const crisisTypes: string[] = safety.risk === "crisis" && !skipReason ? crisisTypesOf(text, safety) : [];
+      const typesFlag = crisisTypesFlag(crisisTypes);
+      if (crisisTypes.length) eventReason = `${eventReason}(種類: ${crisisTypes.join(",")})`;
 
       if (plan) {
         // ---- 段階ごとの応答(第2段階・仮)----
@@ -820,12 +844,13 @@ export async function POST(req: Request) {
         // 3回目からは危機の状態の指示つきの生成。状態の保存に失敗した会話も生成。どれも断った相手は挙げない
         if (isSelfCrisis) {
           // 「〜が、とても心配です」は、当たった語の種類で組む(src/crisis-texts.mjs。2026年10月9日。「重い」は使わない)
-          const decided = defaultCrisisReplyFor(prior, categoryOfSafety(safety), declinedNow);
+          const decided = defaultCrisisReplyFor(prior, crisisTypes.length ? crisisTypes : categoryOfSafety(safety), declinedNow);
           if (decided.kind !== "generate" && decided.text) {
             const reply = decided.text;
             const row: Record<string, unknown> = {
               session_id: sessionId, role: "ai", body: reply, crisis: true,
-              ...(turnFlags.length ? { flags: turnFlags } : {}), timings: timer.done(), settings: settingsSnapshot(),
+              ...(turnFlags.length || typesFlag ? { flags: [...turnFlags, ...(typesFlag ? [typesFlag] : [])] } : {}),
+              timings: timer.done(), settings: settingsSnapshot(),
             };
             let saved = await checkedWrite("危機の固定応答", () => db.from("messages").insert(row).select("seq").single());
             if (!saved.ok) {
@@ -835,7 +860,7 @@ export async function POST(req: Request) {
             if (!saved.ok) await markUserRow(db, userMsg?.seq, `${STATE_SAVE_FAILED_FLAG}(危機の固定応答を保存できなかった)`);
             await checkedWrite("最後の時刻", () => db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId));
             return chatJson({
-              reply, crisis: true,
+              reply, crisis: true, crisis_types: crisisTypes,
               safety: { risk: safety.risk, subject: safety.subject, keywords: safety.keywords.length, model: safety.model.risk },
               user_seq: userMsg?.seq, ai_seq: (saved.data as { seq?: number } | null)?.seq,
               ...(devPanel() ? { timings: timer.done() } : {}),
@@ -982,6 +1007,12 @@ export async function POST(req: Request) {
         ...turnFlags, ...finalized.flags, ...(note ? [note] : []), ...(declinedNote ? [declinedNote] : []), ...(flowDone?.notes ?? []),
         ...(emptyReply ? [EMPTY_REPLY_FLAG] : []),
       ];
+      // どのモデルを試して、何で失敗したか(429・時間切れ等。2026年11月1日・1-2)。管理画面の状態の行がこれを数える
+      const trailFlag = modelTrailFlag(generated.attempts);
+      if (trailFlag) flags.push(trailFlag);
+      if (typesFlag) flags.push(typesFlag);
+      // 第三者だけの危機(本人の危機ではない)も、生成した返事に第三者向けの窓口のカードを添える(2026年11月1日・1-3。人が決めた)
+      const thirdPartyCard = !plan && !fallbackCard && safety.risk === "crisis" && safety.subject === "other" ? "crisis" : null;
 
       // ---- セッション状態の更新(記憶フィルタ含む。src/generate.mjs で共通化) ----
       const { weight, relation, turns_since_summary: since, notes } = applyTurnUpdate(sess, out);
@@ -1022,6 +1053,7 @@ export async function POST(req: Request) {
         ...(plan ? { safety_stage: plan.stage, safety_card: plan.card, crisis_generated: crisisGenerated } : {}),
         // 生成失敗の場面の一言に添えるカード(本番の既定でも。safety_card は db/schema.sql 11節の列)
         ...(fallbackCard ? { safety_card: fallbackCard } : {}),
+        ...(thirdPartyCard ? { safety_card: thirdPartyCard } : {}),
         // 整理・作業の提案のチップ(組G。仮。14節の列)
         ...(flowChoices ? { choices: flowChoices, choice_set: FLOW_CHOICE_SET } : {}),
         // 研究のための記録(16節。2026年10月14日): 実際に返事をしたモデル・プロンプトの版・ナレッジの版・設定・所要時間
@@ -1037,7 +1069,7 @@ export async function POST(req: Request) {
           .insert(withoutKeys(aiRow, SECTION16_MESSAGE_COLUMNS)).select("seq").single());
       }
       // 11節・14節が未実行の DB で safety_card・choices が無いときも、返事そのものは必ず保存する(カード・チップは画面にだけ出す)
-      if (!aiSave.ok && (fallbackCard || flowChoices) && !plan) {
+      if (!aiSave.ok && (fallbackCard || thirdPartyCard || flowChoices) && !plan) {
         aiSave = await checkedWrite("AIの返事(カード・チップの列なし)", () => db.from("messages")
           .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set"])).select("seq").single());
       }
@@ -1106,7 +1138,8 @@ export async function POST(req: Request) {
           : { risk: safety.risk, keywords: safety.keywords.length, model: safety.model.risk },
         closing: justClosed && !endingAppend,
         after,
-        card: fallbackCard ?? plan?.card ?? null,
+        card: fallbackCard ?? thirdPartyCard ?? plan?.card ?? null,
+        crisis_types: crisisTypes.length ? crisisTypes : null,
         care_line: plan?.card === "care" ? CARE_LINE_PROVISIONAL : null,
         choices: flowChoices, choice_set: flowChoices ? FLOW_CHOICE_SET : null,
         choice_note: flowChoices ? CHOICE_NOTE_PROVISIONAL : null,
