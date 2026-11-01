@@ -136,6 +136,8 @@ export default function Page() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   // アプリの版(src/version.mjs)。開発用の表示のときだけサーバが返す
   const [version, setVersion] = useState<VersionInfo | null>(null);
+  // 画面の右上に小さく出す版(2026年11月1日に人が依頼。開発用の表示が無くても出す。中身は版の名前だけ)
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   async function api(action: string, body?: Record<string, unknown>) {
     const res = await fetch("/api/chat", {
@@ -163,6 +165,7 @@ export default function Page() {
       const r = await api("resume");
       setDev(r.dev === true);
       setVersion(r.version ?? null);
+      setAppVersion(typeof r.app_version === "string" ? r.app_version : null);
       if (r.session && r.messages && r.messages.length) {
         sessionIdRef.current = r.session.id;
         if (r.session.weight) setWeight(r.session.weight);
@@ -193,6 +196,7 @@ export default function Page() {
         sessionIdRef.current = s.session.id;
         setDev(s.dev === true);
         setVersion(s.version ?? null);
+        setAppVersion(typeof s.app_version === "string" ? s.app_version : null);
       }
       setSub("接続済み");
       setBanner("");
@@ -411,6 +415,7 @@ export default function Page() {
             </div>
           )}
           <div className="spacer" />
+          {!dev && appVersion && <div className="app-ver" title="この画面の版">版 {appVersion}</div>}
           {!isTop && (
             <button className="icon-btn" disabled={busy} onClick={() => newSession(true)}>新しく話す</button>
           )}

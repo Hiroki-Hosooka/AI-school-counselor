@@ -508,7 +508,7 @@ export async function POST(req: Request) {
           .select("id,weight,relation,turns_since_summary,notes").single();
       }
       if (created.error) throw new Error(created.error.message);
-      return json({ session: created.data, knowledge_count: rows.length, dev: devPanel(), ...(devPanel() ? { version: versionInfo() } : {}) });
+      return json({ session: created.data, knowledge_count: rows.length, dev: devPanel(), app_version: APP_VERSION, ...(devPanel() ? { version: versionInfo() } : {}) });
     }
 
     // ------------------------------------------------------------------
@@ -541,7 +541,7 @@ export async function POST(req: Request) {
       );
       // 参照したナレッジ・出力チェック・評価は開発用の表示のときだけ返す
       const shown = msgs.map(withCareLine).map((m) => (devPanel() ? m : withoutKeys(m, ["used", "flags", "rating"])));
-      return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel(), ...(devPanel() ? { version: versionInfo() } : {}) });
+      return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel(), app_version: APP_VERSION, ...(devPanel() ? { version: versionInfo() } : {}) });
     }
 
     // ------------------------------------------------------------------

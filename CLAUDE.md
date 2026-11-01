@@ -930,7 +930,8 @@ AI側から一方的に「もう十分話せた」と判断して締めくくら
   1件(版・日付・触れたところ・変えたこと)を足し、`node scripts/export-changelog.mjs` で `docs/changelog.md` を作り直す。
   版の形は「日付+その日の何回目か」(例: `2026-10-14b`)。プロンプトの版(`PROMPT_VERSION`)も同じ値になる。
   AIの返事ごとに版とコミット(`messages.prompt_version`・`messages.settings`)が残り、開発用の表示(DEV_PANEL=on)と管理画面に出る。
-  確かめは `node scripts/test-version.mjs`。生徒の画面には版を出さない
+  確かめは `node scripts/test-version.mjs`。生徒の画面にも、右上に小さく版の名前だけを出す(2026年11月1日に人が依頼。
+  以前は出していなかった。コミットや変更の記録は、開発用の表示と管理画面だけ)
 
 ### 変更時に必ず確認すること
 
