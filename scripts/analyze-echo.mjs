@@ -20,6 +20,8 @@ const arg = (k, d = "") => (process.argv.find((a) => a.startsWith(`--${k}=`)) ??
 const afterFiles = arg("after").split(",").filter(Boolean);
 const RATE = process.argv.includes("--rate");
 const outPath = arg("out");
+// 生成できずに固定の文になった返事(危機の状態の生成の失敗・出力チェックで固定の返事になったものも)
+const FAILED_RE = /^(生成失敗|危機の状態の生成→固定の返事で継続)/;
 
 // ---- 修正前: 相談ログ(Markdown の表)を会話の行に直す ----
 const LOGS = ["1d0a0511-1518", "1d0a0511-1541", "1d0a0511-1547", "86130eef", "55932e90"];
@@ -74,7 +76,7 @@ async function concreteRate(convs) {
     let t = 0, pending = null;
     for (const m of c.msgs) {
       if (m.role === "user") { if (pending) turns.push(pending); t++; pending = { turn: t, student: m.body, counselor: null }; continue; }
-      if (pending && pending.counselor == null && !m.crisis && !(m.flags ?? []).some((f) => /^(生成失敗|記録のみ:インテークの決まった問い)/.test(f))) pending.counselor = m.body;
+      if (pending && pending.counselor == null && !m.crisis && !(m.flags ?? []).some((f) => FAILED_RE.test(String(f)) || /^記録のみ:インテークの決まった問い/.test(f))) pending.counselor = m.body;
     }
     if (pending) turns.push(pending);
     const res = await rateConversation(turns, pool, rot);
@@ -97,7 +99,7 @@ for (const [label, convs] of groups) {
   for (const c of convs) {
     const items = echoDetail(c.msgs);
     const h = echoHistory(c.msgs);
-    failed += c.msgs.filter((m) => m.role === "ai" && (m.flags ?? []).some((f) => String(f).startsWith("生成失敗"))).length;
+    failed += c.msgs.filter((m) => m.role === "ai" && (m.flags ?? []).some((f) => FAILED_RE.test(String(f)))).length;
     echoes += h.filter(Boolean).length; total += h.length;
     say(`  ${c.name}#${c.rep}: ${h.filter(Boolean).length} / ${h.length}`);
     for (const it of items.filter((x) => x.echo)) say(`     - 「${it.first.slice(0, 50)}」 ← 「${String(it.user).replace(/\n/g, " ").slice(0, 40)}」(重なり ${it.shared}・${Math.round(it.ratio * 100)}%${it.quoted ? "・引用" : ""})`);

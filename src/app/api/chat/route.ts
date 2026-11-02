@@ -1047,7 +1047,9 @@ export async function POST(req: Request) {
       const note = daijoubuYokattaNote(text, out.reply, stageForNote);
       const declinedNote = distressDeclinedNote(sess, out);
       // 冒頭の言い直しの記録(フェーズ2は finalizeFlow が付ける。危機のターン・インテークなど、それ以外の生成でも記録だけする。2026年11月1日)
-      const echoOther = !flowDone && !generated.generationFailed && !emptyReply && stats.echoUsers.length
+      // 危機の状態の生成が出力チェック・失敗で固定の返事になったターンは数えない(2026年11月2日)
+      const fixedFallback = "fallback" in finalized && Boolean(finalized.fallback);
+      const echoOther = !flowDone && !generated.generationFailed && !fixedFallback && !emptyReply && stats.echoUsers.length
         ? echoOf(String(out.reply ?? ""), stats.echoUsers) : null;
       const flags: string[] = [
         ...turnFlags, ...finalized.flags, ...(note ? [note] : []), ...(declinedNote ? [declinedNote] : []), ...(flowDone?.notes ?? []),

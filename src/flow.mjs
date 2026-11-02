@@ -275,7 +275,8 @@ export const echoFlag = (e) => `${ECHO_FLAG}(重なり ${e.shared}・${Math.roun
 // 会話の中の生成した返事ごとの言い直し(古い順)。直前までの相談者の発言(チップを除く)と比べる
 // 数えるのは、相談者の自由に書いた発言のすぐあとの、生成した返事(危機のターンの生成を含む)だけ。
 // チップのあと・決まった文(危機の固定応答・インテークの決まった問い・失敗のときの固定の一言)は数えない
-const ECHO_SKIP_FLAG_RE = /^(生成失敗|記録のみ:インテークの決まった問い|記録のみ:返事が空)/;
+// 生成できずに固定の文になった返事(危機の状態の生成の失敗も。src/crisis-response.mjs の CRISIS_FALLBACK_FLAG)は数えない
+const ECHO_SKIP_FLAG_RE = /^(生成失敗|危機の状態の生成→固定の返事で継続|記録のみ:インテークの決まった問い|記録のみ:返事が空)/;
 const isEchoTarget = (m) => m?.role === "ai" && (!m.crisis || (Array.isArray(m.flags) && m.flags.includes("危機の応答(生成)")))
   && !(Array.isArray(m.flags) && m.flags.some((f) => ECHO_SKIP_FLAG_RE.test(String(f))));
 export function echoHistory(msgs) {

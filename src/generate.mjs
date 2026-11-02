@@ -85,7 +85,9 @@ export function modelHealth(rows, now = Date.now(), warnOver = 3) {
       replies: list.length,
       rate_limited: list.filter((r) => has(r, (f) => f.includes("429"))).length,
       fallback: list.filter((r) => has(r, (f) => f.startsWith(MODEL_FALLBACK_FLAG))).length,
-      failed: list.filter((r) => has(r, (f) => f.startsWith("生成失敗→") || f.startsWith("生成失敗の場面"))).length,
+      // 危機の状態の生成の失敗(src/crisis-response.mjs の CRISIS_FALLBACK_FLAG。生成失敗のときだけ)も数える(2026年11月2日)
+      failed: list.filter((r) => has(r, (f) => f.startsWith("生成失敗→") || f.startsWith("生成失敗の場面")
+        || f.startsWith("危機の状態の生成→固定の返事で継続(生成失敗"))).length,
       median_ms: median,
       // 冒頭の言い直し(src/flow.mjs の ECHO_FLAG)の印が付いた返事の割合。2026年11月1日より前の返事には印が無いので、全体の目安
       echo_rate: list.length ? Math.round((list.filter((r) => has(r, (f) => f.startsWith("記録のみ:冒頭の言い直し"))).length / list.length) * 100) / 100 : null,
