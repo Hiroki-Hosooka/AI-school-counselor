@@ -42,6 +42,10 @@
 //   CRISIS_DETECTION         任意  v1 にすると危機検知を以前の判定に戻す(既定は v2)
 //   CRISIS_RESPONSE          任意  staged にすると段階ごとの応答(第2段階・仮の文面。心理士の確認待ち)。
 //                                  本番では設定しない。有効にする前に db/schema.sql 11節〜14節を実行すること
+//   BATCH_MODE               任意  on にすると連投と、まとめての返事(2026年11月3日。試行中。docs/design-batch-messages.md)。
+//                                  db/schema.sql 17節を実行してから。CRISIS_RESPONSE=staged と一緒には使わない(両方あれば連投は無効)
+//   BATCH_TIMING             任意  連投の返事の時機(JSON。例 {"idle_ms":1500,"typing_ms":3000,"max_ms":20000,"crisis_idle_ms":1000,"crisis_max_ms":5000})
+//   BATCH_POST_LIMIT_PER_HOUR 任意 連投の発言の数の上限(既定 200)。返事の数は RATE_LIMIT_PER_HOUR で数える
 //   CRISIS_STEP3_VARIANT     任意  段階ごとの応答の3通目(相談先や大人に話したいか)の候補 A / B / C(既定 A。仮)
 //   CRISIS_KEYWORDS          任意  v2 にすると以前の危機キーワード。既定は v3(2026年10月10日に採用。CLAUDE.md 5.12)
 //   CRISIS_AFTERCARE         任意  off にすると、固定応答を出したあとの生成に危機のあとの指示を付けない
@@ -451,6 +455,10 @@ export async function POST(req: Request) {
         : withSource.data) as Record<string, unknown> | null;
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        // 17節(連投のまとまり・1通ごとの判定。2026年11月3日)の列
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings,batch_id,safety")
+          .eq("session_id", sessionId).order("seq"),
         // 16節(版・モデル・設定)の列
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings")
@@ -1051,7 +1059,7 @@ export async function POST(req: Request) {
             if (stop) return batchStop(stop);
             const row: Record<string, unknown> = {
               session_id: sessionId, role: "ai", body: reply, crisis: true,
-              ...(batchReply ? { batch_id: batchRows[batchRows.length - 1]?.batch_id ?? null } : {}),
+              ...(batchReply ? { batch_id: batchRows[0]?.batch_id ?? null } : {}),
               ...(turnFlags.length || typesFlag ? { flags: [...turnFlags, ...(typesFlag ? [typesFlag] : [])] } : {}),
               timings: timer.done(), settings: settingsSnapshot(),
             };
@@ -1307,8 +1315,8 @@ export async function POST(req: Request) {
         prompt_version: promptVersionOf(system), knowledge_version: knowledgeVersion(rows),
         settings: settingsSnapshot(), timings: timer.done(),
         intake_step: intakeTurn?.step ?? null,
-        // 連投のまとまり(db/schema.sql 17節)
-        ...(batchReply ? { batch_id: batchRows[batchRows.length - 1]?.batch_id ?? null } : {}),
+        // 連投のまとまり(db/schema.sql 17節)。まとまりの最初の発言の番号にそろえる(下で発言の行も同じ番号に付け直す)
+        ...(batchReply ? { batch_id: batchRows[0]?.batch_id ?? null } : {}),
       };
       // 連投: 返事と状態を保存する直前に、新しい発言が届いていないか(届いていたら、何も保存せずに捨てる)
       const stopBeforeSave = await batchCheck();
@@ -1325,6 +1333,13 @@ export async function POST(req: Request) {
           .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set"])).select("seq").single());
       }
       const aiMsg = aiSave.data as { seq?: number } | null;
+      // 連投: このまとまりの発言の行を、返事と同じまとまりの番号にそろえる(画面は返事を待つあいだに次の番号で送ることがあるため)
+      if (batchReply && aiSave.ok && batchRows[0]?.batch_id) {
+        const bid = batchRows[0].batch_id;
+        for (const r of batchRows.filter((x) => x.batch_id !== bid)) {
+          await checkedWrite("まとまりの番号", () => db.from("messages").update({ batch_id: bid }).eq("seq", r.seq));
+        }
+      }
       // 返事を記録に残せなかったら、その会話では固定の文を出さない(同じ文のくり返しを記録から見つけられないため)
       if (!aiSave.ok) await markUserRow(db, userMsg?.seq, `${STATE_SAVE_FAILED_FLAG}(AIの返事を保存できなかった)`);
 

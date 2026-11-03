@@ -76,6 +76,14 @@ type VersionInfo = {
 
 type SafetyInfo = { risk: string; keywords: number; model: string } | null;
 
+// 連投と、まとめての返事(2026年11月3日。docs/design-batch-messages.md)。サーバが start / resume で秒数を返したときだけ使う
+// (設定 BATCH_MODE=on。無いときは今までどおり1通ごとに返事を待つ)。秒数は仮で、サーバの設定 BATCH_TIMING で変える
+type BatchCfg = { idle_ms: number; typing_ms: number; max_ms: number; crisis_idle_ms: number; crisis_max_ms: number };
+// まとまりの発言の数の上限(サーバの src/batch.mjs の BATCH_MAX_MESSAGES と同じ。超えたら入力中でも返事を求める)
+const BATCH_MAX_MESSAGES = 20;
+const newId = () => (typeof crypto !== "undefined" && crypto.randomUUID
+  ? crypto.randomUUID().replace(/-/g, "") : Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+
 const WEIGHT_FILL: Record<Weight, string> = { rapport: "#6E8B74", main: "#2F4858", goal: "#7A6480", plan: "#A8794A" };
 const WEIGHT_JA: Record<Weight, string> = { rapport: "関係をつくる", main: "主訴を見極める", goal: "目標を立てる", plan: "作戦会議" };
 const REL_JA: Record<Relation, string> = { visitor: "ビジター", complainant: "コンプレイナント", customer: "カスタマー" };
@@ -165,6 +173,22 @@ export default function Page() {
   const [version, setVersion] = useState<VersionInfo | null>(null);
   // 画面の右上に小さく出す版(2026年11月1日に人が依頼。開発用の表示が無くても出す。中身は版の名前だけ)
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  // 連投(2026年11月3日)。batchCfg があるときは、書く欄と「送る」は返事を待つあいだも使える。
+  // waiting = まだ返事をしていない発言がある・返事を待っている(チップと「新しく話す」は押せない)
+  const [batchCfg, setBatchCfg] = useState<BatchCfg | null>(null);
+  const [waiting, setWaiting] = useState(false);
+  const batchCfgRef = useRef<BatchCfg | null>(null);
+  const inputValueRef = useRef("");
+  // pending: 保存できた、まだ返事をしていない発言(番号 → 段階2か・送った時刻)。chain: post を1通ずつ順番に送るための列
+  const bt = useRef({
+    chain: Promise.resolve() as Promise<unknown>, batchId: "", inflightPosts: 0, lastSentAt: 0, lastTypedAt: 0,
+    replying: false, rebuilt: 0, pending: new Map<number, { urgent: boolean; at: number }>(),
+  });
+  const applyBatchCfg = (cfg: BatchCfg | null | undefined) => {
+    const v = cfg && typeof cfg.idle_ms === "number" ? cfg : null;
+    batchCfgRef.current = v;
+    setBatchCfg(v);
+  };
 
   async function api(action: string, body?: Record<string, unknown>) {
     const res = await fetch("/api/chat", {
@@ -195,6 +219,15 @@ export default function Page() {
       setAppVersion(typeof r.app_version === "string" ? r.app_version : null);
       if (r.session && r.messages && r.messages.length) {
         sessionIdRef.current = r.session.id;
+        applyBatchCfg(r.batch);
+        // 連投: 最後が返事のない発言なら、開いてすぐ返事を求める(ページを閉じた・再読み込みした)
+        if (r.batch) {
+          const tail: number[] = [];
+          for (let i = r.messages.length - 1; i >= 0 && r.messages[i].role === "user"; i--) tail.push(r.messages[i].seq);
+          const old = Date.now() - 600000;
+          for (const seq of tail) bt.current.pending.set(seq, { urgent: false, at: old });
+          if (tail.length) setWaiting(true);
+        }
         if (r.session.weight) setWeight(r.session.weight);
         if (r.session.relation) setRelation(r.session.relation);
         if (r.session.weight) setTrail([r.session.weight]);
@@ -225,6 +258,7 @@ export default function Page() {
       } else {
         const s = await api("start");
         sessionIdRef.current = s.session.id;
+        applyBatchCfg(s.batch);
         setDev(s.dev === true);
         setVersion(s.version ?? null);
         setAppVersion(typeof s.app_version === "string" ? s.app_version : null);
@@ -257,12 +291,26 @@ export default function Page() {
     if (mainRef.current) mainRef.current.scrollTop = mainRef.current.scrollHeight;
   }, [messages, thinking]);
 
-  async function turn(text: string, choiceId?: string) {
-    setMessages((m) => [...m, { role: "user", body: text }]);
+  async function turn(text: string, choiceId?: string, bubbleShown = false) {
+    if (!bubbleShown) setMessages((m) => [...m, { role: "user", body: text }]);
     setThinking(true);
     try {
       const r = await api("chat", choiceId ? { text, choice_id: choiceId } : { text });
       setThinking(false);
+      await showResult(r);
+    } catch (e) {
+      setThinking(false);
+      // 生徒には技術的な中身(ブラウザの英語のメッセージなど)を見せない(2026年10月7日)
+      console.error("送れませんでした:", e);
+      const notice = (e as { notice?: unknown })?.notice;
+      setMessages((m) => [...m, { role: "ai", body: typeof notice === "string" ? notice : SEND_FAILED_NOTICE, error: true }]);
+    }
+  }
+
+  // 返事を画面に出す(1通ごとの返事と、連投のまとまりへの返事で共通)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function showResult(r: any) {
+    {
       if (r.crisis) {
         // 吹き出しが複数(2通目の「心配」+3通目など)のときは、間をおいて1つずつ出す。チップは最後の吹き出しの下
         const replies: { body: string; card: SafetyCard | null; crisis_step: number | null; seq?: number }[] =
@@ -334,14 +382,96 @@ export default function Page() {
       setUsed(r.used || []);
       setSafety(r.safety);
       setFlags(r.flags || []);
-    } catch (e) {
-      setThinking(false);
-      // 生徒には技術的な中身(ブラウザの英語のメッセージなど)を見せない(2026年10月7日)
-      console.error("送れませんでした:", e);
-      const notice = (e as { notice?: unknown })?.notice;
-      setMessages((m) => [...m, { role: "ai", body: typeof notice === "string" ? notice : SEND_FAILED_NOTICE, error: true }]);
     }
   }
+
+  // ---- 連投(2026年11月3日)----
+  // 1通を送る: 吹き出しはすぐ出し、post は列に入れて1通ずつ順番に送る(失敗したら同じ番号で3回まで送り直す)
+  function submitBatch(text: string, choiceId?: string) {
+    const b = bt.current;
+    setMessages((m) => [...m, { role: "user", body: text }]);
+    const sentAt = Date.now();
+    b.lastSentAt = sentAt;
+    if (!b.batchId) b.batchId = newId();
+    const batchId = b.batchId;
+    const msgId = newId();
+    b.inflightPosts++;
+    setWaiting(true);
+    b.chain = b.chain.then(async () => {
+      for (let i = 0; i < 3; i++) {
+        try {
+          const r = await api("post", { text, client_msg_id: msgId, batch_id: batchId, ...(choiceId ? { choice_id: choiceId } : {}) });
+          b.pending.set(r.seq, { urgent: r.urgent === true, at: sentAt });
+          return;
+        } catch (e) {
+          const notice = (e as { notice?: unknown })?.notice;
+          // 字数・回数の上限: 送り直さずに、サーバの文面を出す
+          if (typeof notice === "string") { setMessages((m) => [...m, { role: "ai", body: notice, error: true }]); return; }
+          console.error("送れませんでした(連投):", e);
+          await wait(800 * (i + 1));
+        }
+      }
+      setMessages((m) => [...m, { role: "ai", body: SEND_FAILED_NOTICE, error: true }]);
+    }).finally(() => { b.inflightPosts--; });
+    // チップ・選択肢は待たずにすぐ次に進む(インテークの流れはコードで決めているため)
+    if (choiceId) void b.chain.then(() => requestReply());
+  }
+
+  // まだ返事をしていない発言のまとまりに、返事を1回求める
+  async function requestReply() {
+    const b = bt.current;
+    if (b.replying) return;
+    b.replying = true;
+    await b.chain;   // 判定が終わっていない発言で返事を作らない
+    if (!b.pending.size) { b.replying = false; setWaiting(b.inflightPosts > 0); return; }
+    const toSeq = Math.max(...b.pending.keys());
+    b.batchId = "";   // このあとに送る発言は次のまとまり(サーバが返事を保存するときに番号をそろえる)
+    setThinking(true);
+    try {
+      const r = await api("chat", { to_seq: toSeq, rebuilt: b.rebuilt });
+      if (r.superseded) {
+        // 作っている途中に新しい発言が届いた: 新しい発言も含めたまとまりで、時機をやり直す
+        b.rebuilt++;
+        setThinking(false);
+        return;
+      }
+      for (const k of [...b.pending.keys()]) if (k <= toSeq) b.pending.delete(k);
+      b.rebuilt = 0;
+      setThinking(false);
+      if (!r.already) await showResult(r);
+    } catch (e) {
+      setThinking(false);
+      console.error("返事を受け取れませんでした(連投):", e);
+      const notice = (e as { notice?: unknown })?.notice;
+      setMessages((m) => [...m, { role: "ai", body: typeof notice === "string" ? notice : SEND_FAILED_NOTICE, error: true }]);
+      // 返事のない発言はサーバに残っている。次に送ったときのまとまりに入る
+      for (const k of [...b.pending.keys()]) if (k <= toSeq) b.pending.delete(k);
+    } finally {
+      b.replying = false;
+      setWaiting(b.pending.size > 0 || b.inflightPosts > 0);
+    }
+  }
+
+  // 返事をする時機(入力中かどうかは画面の中だけで判断する。書きかけの文字はサーバに送らない)
+  useEffect(() => {
+    if (!batchCfg) return;
+    const timer = setInterval(() => {
+      const b = bt.current;
+      const cfg = batchCfgRef.current;
+      if (!cfg || b.replying || !b.pending.size) return;
+      const now = Date.now();
+      const urgent = [...b.pending.values()].some((p) => p.urgent);
+      const firstAt = Math.min(...[...b.pending.values()].map((p) => p.at));
+      const quiet = urgent ? cfg.crisis_idle_ms : cfg.typing_ms;
+      const hasText = inputValueRef.current.trim().length > 0;
+      const overMax = now - firstAt >= (urgent ? cfg.crisis_max_ms : cfg.max_ms) || b.pending.size >= BATCH_MAX_MESSAGES;
+      const settled = hasText ? now - b.lastTypedAt >= quiet : now - b.lastSentAt >= (urgent ? cfg.crisis_idle_ms : cfg.idle_ms);
+      if (overMax || settled) void requestReply();
+    }, 200);
+    return () => clearInterval(timer);
+    // 秒数が変わったときだけ作り直す(関数は ref 経由で最新を読む)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchCfg]);
 
   async function submit(overrideText?: string, choiceId?: string) {
     const v = (overrideText ?? inputValue).trim();
@@ -350,8 +480,14 @@ export default function Page() {
       setBanner(NOT_CONNECTED_NOTICE);
       return;
     }
-    setInputValue("");
+    if (overrideText == null) { setInputValue(""); inputValueRef.current = ""; }
     if (textareaRef.current) textareaRef.current.style.height = "auto";
+    // 連投: 返事を待たずに次も送れる
+    if (batchCfgRef.current) {
+      submitBatch(v, choiceId);
+      textareaRef.current?.focus();
+      return;
+    }
     setBusy(true);
     await turn(v, choiceId);
     setBusy(false);
@@ -369,6 +505,10 @@ export default function Page() {
 
   function resetView() {
     setMessages([]);
+    bt.current.pending.clear();
+    bt.current.batchId = "";
+    bt.current.rebuilt = 0;
+    setWaiting(false);
     setWeight("rapport");
     setRelation("visitor");
     setTrail([]);
@@ -391,7 +531,7 @@ export default function Page() {
   // 今の会話はサーバ側で閉じて、人単位の記憶(要約)に畳み込まれる(route.ts の start)。押し間違いで会話が消えたように
   // 見えないよう、ヘッダのボタンからは一度たずねる
   async function newSession(ask = false) {
-    if (busy) return;
+    if (busy || waiting) return;
     if (ask && !window.confirm("いまの会話を終えて、新しく話しはじめますか?")) return;
     try {
       resetView();
@@ -399,6 +539,7 @@ export default function Page() {
       setBanner("");
       const s = await api("start");
       sessionIdRef.current = s.session.id;
+      applyBatchCfg(s.batch);
       setPanelOpen(false);
     } catch (e) {
       setBanner(e instanceof Error ? e.message : String(e));
@@ -420,6 +561,8 @@ export default function Page() {
         value={inputValue}
         onChange={(e) => {
           setInputValue(e.target.value);
+          inputValueRef.current = e.target.value;
+          bt.current.lastTypedAt = Date.now();
           e.target.style.height = "auto";
           e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
         }}
@@ -450,7 +593,7 @@ export default function Page() {
           <div className="spacer" />
           {!dev && appVersion && <div className="app-ver" title="この画面の版">版 {appVersion}</div>}
           {!isTop && (
-            <button className="icon-btn" disabled={busy} onClick={() => newSession(true)}>新しく話す</button>
+            <button className="icon-btn" disabled={busy || waiting} onClick={() => newSession(true)}>新しく話す</button>
           )}
           {dev && <button className="icon-btn" onClick={() => setPanelOpen(true)}>開発用の表示</button>}
         </div>
@@ -486,7 +629,7 @@ export default function Page() {
             </h1>
             <div className="top-choices" role="group" aria-label="相談したいことに近いもの">
               {CATEGORY_CHOICES_PROVISIONAL.map((c) => (
-                <button key={c.id} type="button" className="top-choice" disabled={busy}
+                <button key={c.id} type="button" className="top-choice" disabled={busy || waiting}
                   onClick={() => submit(c.label, c.id)}>{c.label}</button>
               ))}
             </div>
@@ -497,7 +640,7 @@ export default function Page() {
           <div className="thread">
             {messages.map((m, i) => (
               <MessageBubble key={i} msg={m} dev={dev} onRate={rate}
-                onChoose={i === messages.length - 1 && !busy ? (c) => submit(c.label, c.id) : undefined} />
+                onChoose={i === messages.length - 1 && !busy && !waiting ? (c) => submit(c.label, c.id) : undefined} />
             ))}
             {thinking && (
               <div className="msg ai"><div className="thinking"><i /><i /><i /></div></div>

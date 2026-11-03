@@ -83,6 +83,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 
 .thread{display:flex;flex-direction:column;gap:20px}
 .msg.user{display:flex;justify-content:flex-end}
+.batch-head{font-size:11px;color:var(--ink-faint, #8a8a8a);text-align:right;margin:10px 0 2px}
+.batch-meta{font-size:10.5px;color:var(--ink-faint, #8a8a8a);text-align:right;margin:-4px 0 6px}
 .msg.user .bubble{background:var(--indigo);color:#F4F6F5;border-radius:12px 12px 2px 12px;
   padding:9px 14px;font-size:13.5px;max-width:80%;white-space:pre-wrap}
 .msg.ai{border-left:2px solid var(--sand-deep);padding-left:14px}
@@ -675,10 +677,38 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     );
   }
 
+  // 連投のまとまり(2026年11月3日。db/schema.sql 17節): 続いた生徒の発言のうち、何通目か・全部で何通か
+  function batchPositions(messages) {
+    var pos = {};
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].role !== "user") continue;
+      var j = i;
+      while (j + 1 < messages.length && messages[j + 1].role === "user") j++;
+      for (var k = i; k <= j; k++) pos[k] = { n: k - i + 1, of: j - i + 1 };
+      i = j;
+    }
+    return pos;
+  }
+  function timeOf(m) {
+    if (!m.created_at) return "";
+    var d = new Date(m.created_at);
+    return isNaN(d) ? "" : d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  var RISK_JA = { crisis: "危機", watch: "気がかり", none: "なし" };
   function renderMessages(messages) {
-    threadEl.innerHTML = messages.map(function (m) {
+    var pos = batchPositions(messages);
+    threadEl.innerHTML = messages.map(function (m, i) {
       if (m.role === "user") {
-        return '<div class="msg user"><div class="bubble">' + esc(m.body) + '</div></div>';
+        // 連投のまとまり(2通以上)は、最初の発言の上に見出しを出し、1通ずつの時刻と判定を並べる
+        var p = pos[i];
+        var head = p && p.of > 1 && p.n === 1 ? '<div class="batch-head">連投のまとまり ' + p.of + '通(返事は1回)</div>' : "";
+        var s = m.safety || null;
+        var info = (p && p.of > 1) || s
+          ? '<div class="batch-meta">' + (p && p.of > 1 ? p.n + "/" + p.of + "通目 " : "") + esc(timeOf(m)) +
+            (s ? " ・判定 " + esc(RISK_JA[s.risk] || s.risk) + (s.subject === "other" ? "(第三者)" : "") +
+              (s.notify_handled ? " ・通知" : "") + (s.skip ? " ・分類器にかけない(" + esc(s.skip) + ")" : "") : "") + '</div>'
+          : "";
+        return head + '<div class="msg user"><div class="bubble">' + esc(m.body) + '</div></div>' + info;
       }
       var flags = (m.flags && m.flags.length)
         ? '<div class="flags">' + m.flags.map(function (f) { return '<span class="tag warn">' + esc(f) + '</span>'; }).join("") + '</div>'
@@ -819,10 +849,15 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
   // 1件ずつ { turn, speaker, body, extras, judgement } に並べる(md・txt・PDF で共通)
   function exportRows(detail, scope) {
     var turn = 0;
-    return (detail.messages || []).map(function (m) {
-      if (m.role === "user") turn++;
+    var list = detail.messages || [];
+    var pos = batchPositions(list);
+    return list.map(function (m, i) {
+      // 連投のまとまり(続いた生徒の発言)は1往復と数える(2026年11月3日)
+      if (m.role === "user" && (i === 0 || list[i - 1].role !== "user")) turn++;
+      var p = pos[i];
+      var batchNote = p && p.of > 1 ? "・連投 " + p.n + "/" + p.of : "";
       var row = {
-        turn: turn, speaker: m.role === "user" ? (m.choice_id ? "生徒(選択肢から)" : "生徒") : "AI",
+        turn: turn, speaker: m.role === "user" ? (m.choice_id ? "生徒(選択肢から" + batchNote + ")" : batchNote ? "生徒(" + batchNote.slice(1) + ")" : "生徒") : "AI",
         body: plainText(m.body).trim(), extras: m.role === "ai" ? visibleExtras(m) : [], judgement: "",
       };
       if (scope === "full" && m.role === "ai") row.judgement = judgementOf(m);
