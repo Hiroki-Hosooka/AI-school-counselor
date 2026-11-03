@@ -1,0 +1,29 @@
+分類器の思考の設定を変えたときの、思考トークンと判定(2026年11月3日・無料枠のテスト用キー・gemini-3.5-flash-lite)
+送ったのは、scripts/test-api-path.mjs --model=mock --capture で書き出した分類器へのリクエストそのもの(台本 log-1d0a0511-1547・log-55932e90 の
+生徒の発言。リポジトリの docs/review-logs/ にあるもの)。generationConfig.thinkingConfig だけを差し替えた。各1回(少数の確かめ。判定の精度の検証ではない)。
+文1 =「…死んでやる」(1547)/ 文2 =「…クズすぎて死にたい」(55932e90)/ 文3 = 食べ物の雑談(55932e90)/ 文4 =「本当に嫌。もうどうすればいいの？…死んでやる」(1547)
+
+文1 今(-1 動的): risk=crisis 入力 859 出力 25 思考 733
+文1 上限512: risk=crisis 入力 859 出力 48 思考 0
+文1 上限128: risk=crisis 入力 859 出力 48 思考 0
+文1 thinkingLevel=low: risk=crisis 入力 859 出力 48 思考 0
+文1 thinkingLevel=minimal: risk=crisis 入力 859 出力 46 思考 0
+文2 今(-1 動的): risk=crisis 入力 894 出力 26 思考 645
+文2 上限512: risk=crisis 入力 894 出力 26 思考 0
+文2 上限128: risk=crisis 入力 894 出力 26 思考 0
+文2 thinkingLevel=low: risk=crisis 入力 894 出力 25 思考 0
+文2 thinkingLevel=minimal: risk=crisis 入力 894 出力 25 思考 0
+文3 今(-1 動的): risk=none 入力 874 出力 22 思考 466
+文3 上限512: risk=none 入力 874 出力 24 思考 0
+文3 上限128: risk=none 入力 874 出力 25 思考 0
+文3 thinkingLevel=low: risk=none 入力 874 出力 25 思考 0
+文3 thinkingLevel=minimal: risk=none 入力 874 出力 27 思考 0
+文4 今(-1 動的): risk=crisis 入力 859 出力 26 思考 237
+文4 上限512: risk=crisis 入力 859 出力 25 思考 0
+文4 上限128: risk=crisis 入力 859 出力 25 思考 0
+文4 thinkingLevel=low: risk=crisis 入力 859 出力 25 思考 0
+文4 thinkingLevel=minimal: risk=crisis 入力 859 出力 25 思考 0
+
+読み方: gemini-3.5-flash-lite は thinkingBudget に 0 以外の上限(128・512)や thinkingLevel を渡すと受け付け(400 にならない)、この4文では思考が 0 になった。
+判定はこの4文では変わらなかった。ただし4文・各1回なので、判定の精度が保たれるかはわからない(保留セットと開発用の文で確かめる必要がある)。
+gemini-3.1-flash-lite(フォールバック先)は試していない。

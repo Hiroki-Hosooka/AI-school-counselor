@@ -1,0 +1,383 @@
+{
+  "prices": {
+    "gemini-3.8-flash": {
+      "input": 0.75,
+      "output": 3.75,
+      "cached": 0.075
+    },
+    "gemini-3.7-flash": {
+      "input": 0.75,
+      "output": 3.75,
+      "cached": 0.075,
+      "assumed": true
+    },
+    "gemini-3.6-flash": {
+      "input": 0.75,
+      "output": 3.75,
+      "cached": 0.075
+    },
+    "gemini-3.5-flash": {
+      "input": 0.75,
+      "output": 3.75,
+      "cached": 0.075,
+      "assumed": true
+    },
+    "gemini-3.5-flash-lite": {
+      "input": 0.3,
+      "output": 2.5,
+      "cached": 0.03
+    },
+    "gemini-3.1-flash-lite": {
+      "input": 0.25,
+      "output": 1.5,
+      "cached": 0.025
+    }
+  },
+  "jpy_per_usd": 150,
+  "by_label": {
+    "generate": {
+      "calls": 72,
+      "ok": 72,
+      "prompt": 517782,
+      "output": 21240,
+      "thoughts": 0,
+      "cached": 0,
+      "usd": 0.46798649999999997
+    },
+    "classifier": {
+      "calls": 100,
+      "ok": 100,
+      "prompt": 88894,
+      "output": 2800,
+      "thoughts": 69000,
+      "cached": 0,
+      "usd": 0.20616820000000005
+    },
+    "classifier_followup": {
+      "calls": 26,
+      "ok": 26,
+      "prompt": 36136,
+      "output": 884,
+      "thoughts": 27976,
+      "cached": 0,
+      "usd": 0.08299080000000002
+    },
+    "regen_est": {
+      "calls": 72,
+      "ok": 72,
+      "prompt": 48464.395200000006,
+      "output": 1911.5999999999979,
+      "thoughts": 0,
+      "cached": 0,
+      "usd": 0.04351679639999999
+    }
+  },
+  "conversations": [
+    {
+      "name": "log-1d0a0511-1518",
+      "staged": false,
+      "turns": 10,
+      "total": {
+        "calls": 38,
+        "ok": 38,
+        "prompt": 108638.67840000002,
+        "output": 3815.500000000002,
+        "thoughts": 18596,
+        "cached": 0,
+        "usd": 0.1306038338
+      },
+      "by": {
+        "generate": {
+          "calls": 10,
+          "ok": 10,
+          "prompt": 77144,
+          "output": 2950,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0689205
+        },
+        "classifier": {
+          "calls": 2,
+          "ok": 2,
+          "prompt": 1842,
+          "output": 56,
+          "thoughts": 1380,
+          "cached": 0,
+          "usd": 0.004142600000000001
+        },
+        "classifier_followup": {
+          "calls": 16,
+          "ok": 16,
+          "prompt": 22432,
+          "output": 544,
+          "thoughts": 17216,
+          "cached": 0,
+          "usd": 0.0511296
+        },
+        "regen_est": {
+          "calls": 10,
+          "ok": 10,
+          "prompt": 7220.678400000001,
+          "output": 265.50000000000006,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0064111338000000006
+        }
+      },
+      "failedTurns": 0,
+      "generated": 10
+    },
+    {
+      "name": "log-1d0a0511-1541",
+      "staged": false,
+      "turns": 4,
+      "total": {
+        "calls": 14,
+        "ok": 14,
+        "prompt": 36413.5632,
+        "output": 1478.1999999999998,
+        "thoughts": 5684,
+        "cached": 0,
+        "usd": 0.0435582224
+      },
+      "by": {
+        "generate": {
+          "calls": 4,
+          "ok": 4,
+          "prompt": 26662,
+          "output": 1180,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.024421500000000002
+        },
+        "classifier": {
+          "calls": 2,
+          "ok": 2,
+          "prompt": 1750,
+          "output": 56,
+          "thoughts": 1380,
+          "cached": 0,
+          "usd": 0.004115
+        },
+        "classifier_followup": {
+          "calls": 4,
+          "ok": 4,
+          "prompt": 5506,
+          "output": 136,
+          "thoughts": 4304,
+          "cached": 0,
+          "usd": 0.012751799999999999
+        },
+        "regen_est": {
+          "calls": 4,
+          "ok": 4,
+          "prompt": 2495.5632,
+          "output": 106.2,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0022699224
+        }
+      },
+      "failedTurns": 0,
+      "generated": 4
+    },
+    {
+      "name": "log-1d0a0511-1547",
+      "staged": false,
+      "turns": 14,
+      "total": {
+        "calls": 48,
+        "ok": 48,
+        "prompt": 127336.28240000001,
+        "output": 5073.700000000003,
+        "thoughts": 14572,
+        "cached": 0,
+        "usd": 0.1417403868
+      },
+      "by": {
+        "generate": {
+          "calls": 14,
+          "ok": 14,
+          "prompt": 99159,
+          "output": 4130,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.08985675
+        },
+        "classifier": {
+          "calls": 18,
+          "ok": 18,
+          "prompt": 16202,
+          "output": 504,
+          "thoughts": 12420,
+          "cached": 0,
+          "usd": 0.037170600000000005
+        },
+        "classifier_followup": {
+          "calls": 2,
+          "ok": 2,
+          "prompt": 2694,
+          "output": 68,
+          "thoughts": 2152,
+          "cached": 0,
+          "usd": 0.0063582
+        },
+        "regen_est": {
+          "calls": 14,
+          "ok": 14,
+          "prompt": 9281.282399999998,
+          "output": 371.7000000000001,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0083548368
+        }
+      },
+      "failedTurns": 0,
+      "generated": 14
+    },
+    {
+      "name": "log-86130eef-1028",
+      "staged": false,
+      "turns": 9,
+      "total": {
+        "calls": 32,
+        "ok": 32,
+        "prompt": 73898.2624,
+        "output": 3285.9500000000016,
+        "thoughts": 9660,
+        "cached": 0,
+        "usd": 0.08599790930000001
+      },
+      "by": {
+        "classifier": {
+          "calls": 14,
+          "ok": 14,
+          "prompt": 12018,
+          "output": 392,
+          "thoughts": 9660,
+          "cached": 0,
+          "usd": 0.0287354
+        },
+        "generate": {
+          "calls": 9,
+          "ok": 9,
+          "prompt": 56584,
+          "output": 2655,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.052394249999999996
+        },
+        "regen_est": {
+          "calls": 9,
+          "ok": 9,
+          "prompt": 5296.2624000000005,
+          "output": 238.95000000000005,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0048682593
+        }
+      },
+      "failedTurns": 0,
+      "generated": 9
+    },
+    {
+      "name": "log-e2da1e5b",
+      "staged": false,
+      "turns": 5,
+      "total": {
+        "calls": 14,
+        "ok": 14,
+        "prompt": 23425.307199999996,
+        "output": 1454.1999999999998,
+        "thoughts": 4140,
+        "cached": 0,
+        "usd": 0.030840230400000005
+      },
+      "by": {
+        "generate": {
+          "calls": 4,
+          "ok": 4,
+          "prompt": 16702,
+          "output": 1180,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0169515
+        },
+        "classifier": {
+          "calls": 6,
+          "ok": 6,
+          "prompt": 5160,
+          "output": 168,
+          "thoughts": 4140,
+          "cached": 0,
+          "usd": 0.012318000000000003
+        },
+        "regen_est": {
+          "calls": 4,
+          "ok": 4,
+          "prompt": 1563.3072,
+          "output": 106.2,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.0015707304000000001
+        }
+      },
+      "failedTurns": 0,
+      "generated": 4
+    },
+    {
+      "name": "log-55932e90",
+      "staged": false,
+      "turns": 31,
+      "total": {
+        "calls": 124,
+        "ok": 124,
+        "prompt": 321564.3016,
+        "output": 11728.049999999977,
+        "thoughts": 44324,
+        "cached": 0,
+        "usd": 0.3679217137000001
+      },
+      "by": {
+        "classifier": {
+          "calls": 58,
+          "ok": 58,
+          "prompt": 51922,
+          "output": 1624,
+          "thoughts": 40020,
+          "cached": 0,
+          "usd": 0.11968659999999999
+        },
+        "generate": {
+          "calls": 31,
+          "ok": 31,
+          "prompt": 241531,
+          "output": 9145,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.21544200000000002
+        },
+        "classifier_followup": {
+          "calls": 4,
+          "ok": 4,
+          "prompt": 5504,
+          "output": 136,
+          "thoughts": 4304,
+          "cached": 0,
+          "usd": 0.012751199999999999
+        },
+        "regen_est": {
+          "calls": 31,
+          "ok": 31,
+          "prompt": 22607.301600000006,
+          "output": 823.0499999999996,
+          "thoughts": 0,
+          "cached": 0,
+          "usd": 0.020041913700000004
+        }
+      },
+      "failedTurns": 0,
+      "generated": 31
+    }
+  ]
+}
