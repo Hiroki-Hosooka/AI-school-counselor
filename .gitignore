@@ -44,3 +44,7 @@ next-env.d.ts
 
 # 採点用のログの書き出し(scripts/export-review-logs.mjs)。相談の中身を含むのでコミットしない
 /review-export/
+
+# Claude Code の作業用(エージェントの作業コピー・手元の設定。コミットしない)
+/.claude/worktrees/
+/.claude/settings.local.json
