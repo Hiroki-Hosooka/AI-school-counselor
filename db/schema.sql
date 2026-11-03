@@ -735,3 +735,30 @@ alter table messages add constraint messages_intake_step_check
 -- 確かめ(読むだけ): 状態の制約が14節の版になっているか(相談ログ 86130eef の原因の確認。docs/design-shima4-part1-topscreen.md 1-1-3)
 -- select conname, pg_get_constraintdef(oid) from pg_constraint
 -- where conname in ('sessions_crisis_state_check','sessions_pending_choice_set_check','messages_crisis_step_check');
+
+-- ============================================================================
+-- 17. 連投と、まとめての返事(2026年11月3日。docs/design-batch-messages.md。設定 BATCH_MODE=on のときだけ使う)
+--
+--  発言は送られたらすぐ1通ずつ保存し、危機の判定もその1通ごとに行う(route.ts の post)。返事はまとまりに1回。
+--  messages.client_msg_id  画面が付ける発言の番号(送り直したときに2回保存しないため。同じ会話で同じ番号は1つだけ)
+--  messages.batch_id       どのまとまりか(生徒の発言と、そのまとまりへの AI の返事に同じ値)
+--  messages.safety         1通ごとの危機の判定の結果(段階・risk・subject・種類・根拠・通知を受け持ったか)
+--  recent_batch_count      直近の返事の数(回数の上限 RATE_LIMIT_PER_HOUR を、連投ではまとまりの数で数える)
+--  この節が未実行の DB では、BATCH_MODE=on でも連投を使わない(今までの1通ごとの返事のまま)
+-- ============================================================================
+alter table messages add column if not exists client_msg_id text;
+alter table messages add column if not exists batch_id text;
+alter table messages add column if not exists safety jsonb;
+create unique index if not exists messages_client_msg_id_key
+  on messages(session_id, client_msg_id) where client_msg_id is not null;
+create index if not exists messages_batch_id_idx on messages(batch_id) where batch_id is not null;
+
+create or replace function recent_batch_count(p_client_id text, p_minutes int default 60)
+returns int language sql stable as $$
+  select count(distinct coalesce(m.batch_id, m.seq::text))::int
+  from messages m
+  join sessions s on s.id = m.session_id
+  where s.client_id = p_client_id
+    and m.role = 'user'
+    and m.created_at > now() - make_interval(mins => p_minutes);
+$$;

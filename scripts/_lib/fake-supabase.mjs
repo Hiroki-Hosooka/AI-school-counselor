@@ -2,7 +2,7 @@
 //  メモリ上の偽の Supabase(画面と同じ API の経路のテスト用。2026年10月14日。scripts/test-api-path.mjs)
 //
 //  route.ts と src/generate.mjs が使う呼び方だけをまねる(from / select / insert / update / upsert / eq / lt / is / not / in /
-//  order / limit / single / maybeSingle / rpc)。本物の DB にはつながない(生徒の会話は使わない。台本は合成)。
+//  order / limit / single / maybeSingle / rpc。rpc は recent_turn_count・recent_batch_count)。本物の DB にはつながない(生徒の会話は使わない。台本は合成)。
 //
 //  本番の DB の状態をまねるための設定
 //   constraints: "v14"(db/schema.sql 14節の制約)/ "v13"(13節の版のまま。状態の値・危機の文面の番号が狭い)
@@ -175,6 +175,14 @@ export function createFakeDb(opts = {}) {
         const ids = new Set(tables.sessions.filter((s) => s.client_id === args.p_client_id).map((s) => s.id));
         const n = tables.messages.filter((m) => ids.has(m.session_id) && m.role === "user" && Date.parse(m.created_at) > since).length;
         return { data: n, error: null };
+      }
+      if (name === "recent_batch_count") {
+        if ((missing.messages ?? []).includes("batch_id")) return { data: null, error: { message: `function ${name} does not exist` } };
+        const since = Date.now() - 3600_000;
+        const ids = new Set(tables.sessions.filter((s) => s.client_id === args.p_client_id).map((s) => s.id));
+        const keys = new Set(tables.messages.filter((m) => ids.has(m.session_id) && m.role === "user" && Date.parse(m.created_at) > since)
+          .map((m) => m.batch_id ?? `s${m.seq}`));
+        return { data: keys.size, error: null };
       }
       return { data: null, error: { message: `function ${name} does not exist` } };
     },

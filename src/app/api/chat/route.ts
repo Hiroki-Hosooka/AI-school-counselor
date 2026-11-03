@@ -71,6 +71,10 @@ import {
 import { validateKnowledgeInput } from "@/knowledge-admin.mjs";
 import { planIntakeTurn, finishIntakeTurn, topScreenChoice } from "@/intake.mjs";
 import {
+  batchModeRequested, batchTiming, batchPostLimit, cleanId, batchOf, joinBatch, mergeUserRuns, safetyToStore,
+  aggregateBatchSafety, notifiedInBatch, shouldSupersede,
+} from "@/batch.mjs";
+import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
   aftercareEnabled, hadCrisisReply, defaultSafetyContexts, SAFETY_STATE_COLUMNS,
@@ -168,6 +172,19 @@ const chatJson = (body: Record<string, unknown>, status = 200) => json(devPanel(
 async function markUserRow(db: SupabaseClient, seq: number | undefined, flag: string) {
   if (seq == null) { console.error("印を残す行がありません:", flag); return; }
   await checkedWrite("相談者の発言の印", () => db.from("messages").update({ flags: [flag] }).eq("seq", seq));
+}
+
+// 連投と、まとめての返事(2026年11月3日。src/batch.mjs・docs/design-batch-messages.md)を使えるか。
+// 設定 BATCH_MODE=on・段階ごとの応答が無効・DB の17節の列がある、のすべてがそろったときだけ。列があると確かめたら覚えておく
+let batchColumnsOk = false;
+async function batchAvailable(db: SupabaseClient): Promise<boolean> {
+  if (!batchModeRequested() || stagedResponseEnabled()) return false;
+  if (!batchColumnsOk) {
+    const r = await db.from("messages").select("client_msg_id,batch_id,safety").limit(1);
+    if (r.error) console.error("連投の列がありません(db/schema.sql 17節が未実行?)。連投を使いません:", r.error.message);
+    batchColumnsOk = !r.error;
+  }
+  return batchColumnsOk;
 }
 
 // 段階ごとの応答(第2段階。src/crisis-response.mjs)で足した列(db/schema.sql 11節〜13節)も読む。
@@ -536,7 +553,11 @@ export async function POST(req: Request) {
           .select("id,weight,relation,turns_since_summary,notes").single();
       }
       if (created.error) throw new Error(created.error.message);
-      return json({ session: created.data, knowledge_count: rows.length, dev: devPanel(), app_version: APP_VERSION, ...(devPanel() ? { version: versionInfo() } : {}) });
+      return json({
+        session: created.data, knowledge_count: rows.length, dev: devPanel(), app_version: APP_VERSION,
+        batch: (await batchAvailable(db)) ? batchTiming() : null,
+        ...(devPanel() ? { version: versionInfo() } : {}),
+      });
     }
 
     // ------------------------------------------------------------------
@@ -573,19 +594,156 @@ export async function POST(req: Request) {
       const teacherNote = !declinedAtResume.includes("teacher") && !declinedAtResume.includes("nurse");
       const shown = msgs.map(withCareLine).map((m) => ({ ...m, card_teacher_note: teacherNote }))
         .map((m) => (devPanel() ? m : withoutKeys(m, ["used", "flags", "rating"])));
-      return json({ session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]), messages: shown, dev: devPanel(), app_version: APP_VERSION, ...(devPanel() ? { version: versionInfo() } : {}) });
+      return json({
+        session: devPanel() ? s : withoutKeys(s as Record<string, unknown>, ["weight", "relation", "turns_since_summary", "notes"]),
+        messages: shown, dev: devPanel(), app_version: APP_VERSION,
+        batch: (await batchAvailable(db)) ? batchTiming() : null,
+        ...(devPanel() ? { version: versionInfo() } : {}),
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // 連投の1通(2026年11月3日。docs/design-batch-messages.md)。
+    // 発言を保存し、その1通の危機の判定をすぐ行い、段階2なら職員に通知して記録する(返事の待ち時間に関係なく)。
+    // 返事は作らない(画面が入力の止まったときに chat を to_seq つきで呼ぶ)。通知は同じまとまりの中で最初の1回だけ(人が確認)
+    // ------------------------------------------------------------------
+    if (action === "post") {
+      const clientId = String(payload.client_id ?? "").trim();
+      const sessionId = String(payload.session_id ?? "").trim();
+      const text = String(payload.text ?? "").trim();
+      const clientMsgId = cleanId(payload.client_msg_id);
+      const batchId = cleanId(payload.batch_id);
+      const choiceId = typeof payload.choice_id === "string" ? payload.choice_id.slice(0, 8) : null;
+      if (!clientId || !sessionId || !text || !clientMsgId || !batchId) return json({ error: "パラメータが不足しています" }, 400);
+      if (!(await batchAvailable(db))) return json({ error: "連投は使えません", batch_unavailable: true }, 400);
+      const timer = makeTimer();
+
+      // 同じ番号の発言は2回保存しない(画面が送り直したとき)
+      const dup = await db.from("messages").select("seq,safety")
+        .eq("session_id", sessionId).eq("client_msg_id", clientMsgId).maybeSingle();
+      if (dup.data) {
+        const prev = dup.data as { seq: number; safety?: { risk?: string } | null };
+        return json({ seq: prev.seq, urgent: prev.safety?.risk === "crisis", duplicate: true });
+      }
+
+      // 字数・発言の数の上限。超えていても、AI を使わない照合で本人のはっきりした危機のサインがあれば、保存して判定・通知する(CLAUDE.md 5.2)
+      let overLimit: "too_long" | "rate_limited" | null = text.length > MAX_TEXT_LENGTH ? "too_long" : null;
+      if (!overLimit) {
+        const { data: used } = await db.rpc("recent_turn_count", { p_client_id: clientId });
+        if ((used ?? 0) >= batchPostLimit()) overLimit = "rate_limited";
+      }
+      const local = overLimit ? classifyLocal(text, overLimit) : null;
+      if (overLimit && local && local.stage < 2) {
+        return overLimit === "too_long"
+          ? json({ error: "長すぎます", notice: TOO_LONG_NOTICE }, 400)
+          : json({ error: "しばらく時間をおいてから、またどうぞ。", notice: RATE_LIMIT_NOTICE, rate_limited: true }, 429);
+      }
+
+      const { data: sess } = await db.from("sessions").select("id,phase").eq("id", sessionId).single();
+      if (!sess) return json({ error: "セッションが見つかりません" }, 404);
+      // この発言より前の会話(チップの受け取り・分類器の文脈・危機のあとか・同じまとまりで通知したか)
+      const prior = (await selectRowsWithFallback(
+        () => db.from("messages").select("seq,role,body,crisis,flags,choices,choice_set,choice_id,batch_id,safety").eq("session_id", sessionId).order("seq"),
+      )) as { seq: number; role: string; body: string; crisis?: boolean; flags?: unknown; choices?: unknown; choice_set?: string | null; choice_id?: string | null; batch_id?: string | null; safety?: { notify_handled?: boolean } | null }[];
+      const saved = await checkedWrite("相談者の発言(連投)", () => db.from("messages")
+        .insert({ session_id: sessionId, role: "user", body: text, client_msg_id: clientMsgId, batch_id: batchId }).select("seq").single());
+      if (!saved.ok) return json({ error: "発言を保存できませんでした" }, 500);
+      const seq = (saved.data as { seq: number }).seq;
+      timer.mark("saved");
+
+      // チップ・インテークの数字は分類器にかけない(今までと同じ。src/crisis-response.mjs の resolveChoice)
+      const picked = topScreenChoice(prior, choiceId, text) ?? resolveChoice(prior, choiceId, text);
+      if (picked) {
+        await checkedWrite("チップの記録", () => db.from("messages")
+          .update({ choice_set: picked.set, choice_id: picked.id, choice_input: picked.input }).eq("seq", seq));
+      }
+      const intakeAnswer = !picked && sess.phase === "intake" && typedScale(text) != null;
+      const skipReason = picked ? (picked.set === FLOW_CHOICE_SET ? "flow_choice" : "choice") : intakeAnswer ? "intake_answer" : null;
+
+      // 危機の判定(1通ごと)。分類器の「根拠は今の発言の中」の決まりは classifyStaged の中で、この1通に当てはめる。
+      // 同じまとまりの前の発言も、直近の会話として文脈に入る
+      let safety: Awaited<ReturnType<typeof classify>>;
+      if (local) {
+        safety = local as unknown as Awaited<ReturnType<typeof classify>>;
+      } else if (skipReason) {
+        safety = assessFlowChoiceTurn(sess, skipReason).staged as Awaited<ReturnType<typeof classify>>;
+      } else if (crisisDetectionVersion() === "v2") {
+        const classifierContext = prior.slice(-CLASSIFIER_CONTEXT_MESSAGES)
+          .map((m) => ({ role: m.role === "ai" ? "ai" : "user", text: String(m.body ?? "") }));
+        const afterFixedReply = aftercareEnabled() && hadCrisisReply(prior);
+        safety = await classifyStaged(text, classifierContext, afterFixedReply ? { mode: "followup" } : undefined);
+      } else {
+        safety = await classify(text);
+      }
+      timer.mark("classify");
+      const types: string[] = safety.risk === "crisis" && !skipReason ? crisisTypesOf(text, safety) : [];
+      // 職員への通知: 段階2なら、その時点で。同じまとまりの中では最初の1回だけ(記録は1通ごと)
+      const handled = safety.risk === "crisis" && !notifiedInBatch(prior, batchId);
+      const notified = handled ? await notifyCrisis(sessionId, safety.subject) : false;
+      if (safety.risk !== "none") {
+        const staged = safety as unknown as Parameters<typeof keywordLog>[0] & { stage?: number; decidedBy?: string[] };
+        const reasonTail = staged.decidedBy ? `(段階${staged.stage ?? "-"}: ${staged.decidedBy.join(",") || "なし"})` : "";
+        const typesTail = types.length ? `(種類: ${types.join(",")})` : "";
+        const batchTail = safety.risk === "crisis" ? (handled ? "(連投のまとまりで最初の段階2)" : "(連投のまとまりで2通目以降の段階2。通知は済み)") : "(連投の1通)";
+        const ev = await checkedWrite("安全の記録(連投)", () => db.from("safety_events").insert({
+          session_id: sessionId, risk: safety.risk, subject: safety.subject,
+          keywords: Array.isArray(staged.patterns) ? keywordLog(staged) : safety.keywords,
+          model_risk: safety.model.risk, model_reason: `${safety.model.reason}${reasonTail}${typesTail}${batchTail}`, notified,
+        }));
+        if (!ev.ok) console.error("安全の記録を保存できませんでした(連投)", sessionId);
+      }
+      await checkedWrite("判定の記録(連投)", () => db.from("messages")
+        .update({ safety: safetyToStore(safety, { types, notified, notify_handled: handled, skip: skipReason }) }).eq("seq", seq));
+      await checkedWrite("最後の時刻", () => db.from("sessions").update({ last_at: new Date().toISOString() }).eq("id", sessionId));
+      return json({
+        seq, urgent: safety.risk === "crisis",
+        ...(devPanel() ? { safety: { risk: safety.risk, subject: safety.subject, model: safety.model.risk }, timings: timer.done() } : {}),
+      });
     }
 
     // ------------------------------------------------------------------
     // 会話本体
+    // (連投のときは、to_seq までのまとまりに返事を1回作る。判定・通知は post で済んでいる)
     // ------------------------------------------------------------------
     if (action === "chat") {
       const clientId = String(payload.client_id ?? "").trim();
       const sessionId = String(payload.session_id ?? "").trim();
-      const text = String(payload.text ?? "").trim();
+      let text = String(payload.text ?? "").trim();
       // 押したチップ(段階ごとの応答のときだけ意味を持つ。直前の返事に付けた組のものかは assessSafetyTurn が確かめる)
-      const choiceId = typeof payload.choice_id === "string" ? payload.choice_id.slice(0, 8) : null;
+      let choiceId = typeof payload.choice_id === "string" ? payload.choice_id.slice(0, 8) : null;
       const timer = makeTimer();
+      // 連投のまとまりへの返事(2026年11月3日): to_seq までの、まだ返事をしていない発言のまとまりに1回だけ返事をする
+      const replyTo = payload.to_seq != null && Number.isFinite(Number(payload.to_seq)) ? Number(payload.to_seq) : null;
+      const batchReply = replyTo != null && sessionId !== "" && (await batchAvailable(db));
+      if (replyTo != null && !batchReply) return json({ error: "連投は使えません", batch_unavailable: true }, 400);
+      type BatchRow = { seq: number; role: string; body: string; safety?: Record<string, unknown> | null; batch_id?: string | null; choice_id?: string | null };
+      let batchRows: BatchRow[] = [];
+      let batchAgg: ReturnType<typeof aggregateBatchSafety> | null = null;
+      // 返事を保存する直前(と、生成を始める前)に、新しい発言が届いていないかを確かめる。
+      // 届いていたら作った返事を捨てて、画面にまとまりを広げて求め直してもらう(段階2のまとまりでは作り直しは1回まで)
+      const batchCheck = async (): Promise<"superseded" | "already" | null> => {
+        if (!batchReply || replyTo == null) return null;
+        const r = await db.from("messages").select("seq,role").eq("session_id", sessionId).order("seq");
+        const b = batchOf((r.data ?? []) as BatchRow[], replyTo);
+        if (b.replied) return "already";
+        return shouldSupersede({ newer: b.newer.length > 0, crisis: !!batchAgg?.crisis, rebuilt: payload.rebuilt }) ? "superseded" : null;
+      };
+      const batchStop = (why: "superseded" | "already") => json(why === "already" ? { already: true } : { superseded: true });
+      if (batchReply && replyTo != null) {
+        const all = await db.from("messages").select("seq,role,body,safety,batch_id,choice_id").eq("session_id", sessionId).order("seq");
+        if (all.error) throw new Error(all.error.message);
+        const b = batchOf((all.data ?? []) as BatchRow[], replyTo);
+        if (b.replied) return batchStop("already");
+        if (!b.batch.length) return json({ error: "返事をする発言がありません" }, 400);
+        batchRows = b.batch as BatchRow[];
+        batchAgg = aggregateBatchSafety(batchRows);
+        if (shouldSupersede({ newer: b.newer.length > 0, crisis: batchAgg.crisis, rebuilt: payload.rebuilt })) return batchStop("superseded");
+        text = joinBatch(batchRows.map((r) => r.body));
+        // チップを押したまとまり(画面はチップを押すとすぐ返事を求める)は、最後の1通のチップとして受け取る
+        choiceId = batchRows[batchRows.length - 1]?.choice_id ?? null;
+      }
+      // まとまりの判定を post で済ませているか(判定が残っていない発言があれば、ここで判定し直す)
+      const batchSafetyFromPosts = batchReply && !!batchAgg?.safety && !batchAgg.missing;
       if (!clientId || !sessionId || !text) return json({ error: "パラメータが不足しています" }, 400);
 
       // 字数・回数の上限(2026年10月7日)。上限を超えた発言でも、止める前に AI を使わない照合
@@ -593,13 +751,19 @@ export async function POST(req: Request) {
       // あれば、いつもの固定応答・通知・記録を出す(CLAUDE.md 5.2)。以前は上限の判定が危機の判定より前にあり、
       // 長い打ち明けほど判定も通知もされなかった。サインが無ければ、今までどおり止めて、生徒向けの文面
       // (src/notices.mjs。notice)を返す(error は記録・開発用)。
-      let overLimit: "too_long" | "rate_limited" | null = text.length > MAX_TEXT_LENGTH ? "too_long" : null;
+      let overLimit: "too_long" | "rate_limited" | null = !batchReply && text.length > MAX_TEXT_LENGTH ? "too_long" : null;
       if (!overLimit) {
-        const { data: used } = await db.rpc("recent_turn_count", { p_client_id: clientId });
+        // 連投のときは、返事の数(まとまりの数)で数える(db/schema.sql 17節の recent_batch_count。無い DB では数えない)
+        const { data: used } = batchReply
+          ? await db.rpc("recent_batch_count", { p_client_id: clientId })
+          : await db.rpc("recent_turn_count", { p_client_id: clientId });
         if ((used ?? 0) >= RATE_LIMIT) overLimit = "rate_limited";
       }
       let overLimitCrisis = false;
-      if (overLimit) {
+      // 連投: 発言は post で保存・判定・通知済み。危機のまとまりなら上限を超えていても返事をする
+      if (overLimit && batchReply) {
+        if (batchAgg?.crisis) overLimitCrisis = true;
+      } else if (overLimit) {
         const local = classifyLocal(text, overLimit);
         if (local.stage === 2) {
           // 同じ固定の文を1回の会話で2回出さない(2026年10月14日)。1回目は固定応答・2回目は短い別の1通。
@@ -643,23 +807,30 @@ export async function POST(req: Request) {
       const turnFlags: string[] = [];
 
       // 発言を保存(失敗しても会話は続ける。下で記録の印を残し、その会話では固定の文を出さない)
-      const userSave = await checkedWrite("相談者の発言", () => db.from("messages")
-        .insert({ session_id: sessionId, role: "user", body: text }).select("seq").single());
+      // 連投のときは、発言は post で保存してある
+      const userSave = batchReply
+        ? { ok: true, data: { seq: replyTo as number }, error: null }
+        : await checkedWrite("相談者の発言", () => db.from("messages")
+          .insert({ session_id: sessionId, role: "user", body: text }).select("seq").single());
       const userMsg = userSave.data as { seq: number } | null;
       if (!userSave.ok) turnFlags.push(`${STATE_SAVE_FAILED_FLAG}(相談者の発言を保存できなかった)`);
 
       // これまでの会話(今回の発言を含む)。会話の流れ(src/flow.mjs)を数えるため、判定より前に読む(2026年10月11日)。
       // 14節の列(choices・choice_set・choice_id)が無い DB では、無いまま読む
       type HistRow = {
-        role: string; body: string; crisis?: boolean; flags?: unknown; crisis_step?: number | null;
+        seq?: number; role: string; body: string; crisis?: boolean; flags?: unknown; crisis_step?: number | null;
         question_level?: string | null; summarized?: boolean | null; mode?: string[] | null;
         choices?: unknown; choice_set?: string | null; choice_id?: string | null;
       };
-      const hist = (await selectRowsWithFallback(
-        () => db.from("messages").select("role,body,crisis,flags,crisis_step,question_level,summarized,mode,choices,choice_set,choice_id").eq("session_id", sessionId).order("seq"),
-        () => db.from("messages").select("role,body,crisis,flags,crisis_step,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
-        () => db.from("messages").select("role,body,crisis,flags,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
+      const histRead = (await selectRowsWithFallback(
+        () => db.from("messages").select("seq,role,body,crisis,flags,crisis_step,question_level,summarized,mode,choices,choice_set,choice_id").eq("session_id", sessionId).order("seq"),
+        () => db.from("messages").select("seq,role,body,crisis,flags,crisis_step,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
+        () => db.from("messages").select("seq,role,body,crisis,flags,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
       )) as unknown as HistRow[];
+      // 連投: このまとまりより後に届いた発言は次のまとまり。続いた生徒の発言は1つにまとめる(生成と、会話の流れの数え方。1往復と数える)
+      const hist: HistRow[] = batchReply
+        ? mergeUserRuns(histRead.filter((h) => (h.seq ?? 0) <= (replyTo as number))) as HistRow[]
+        : histRead;
       // 発言の保存に失敗したときは、記録に無い今回の発言を足して続ける
       if (!userSave.ok) hist.push({ role: "user", body: text, flags: [...turnFlags] });
       timer.mark("history_read");
@@ -677,7 +848,7 @@ export async function POST(req: Request) {
       if (picked) {
         const cur = hist[hist.length - 1];
         if (cur) { cur.choice_set = picked.set; cur.choice_id = picked.id; }
-        if (userMsg?.seq != null) {
+        if (userMsg?.seq != null && !batchReply) {
           await checkedWrite("チップの記録", () => db.from("messages")
             .update({ choice_set: picked.set, choice_id: picked.id, choice_input: picked.input }).eq("seq", userMsg.seq));
         }
@@ -717,7 +888,12 @@ export async function POST(req: Request) {
       let defaultCrisisGen = false;
       // 本人の危機を生成で受けるターンの情報(種類・この会話で初めてか・怒りの中か。2026年11月1日・第3部)
       let crisisTurnInfo: { types: string[]; first: boolean; anger: boolean } | null = null;
-      if (crisisDetectionVersion() === "v2") {
+      if (batchSafetyFromPosts && batchAgg?.safety) {
+        // 連投: 1通ごとの判定は post で済んでいる(通知・記録も)。まとまりの中でいちばん重い判定を使う
+        safety = batchAgg.safety as unknown as Awaited<ReturnType<typeof classify>>;
+        eventKeywords = [];
+        eventReason = String((batchAgg.safety as { model?: { reason?: string } }).model?.reason ?? "");
+      } else if (crisisDetectionVersion() === "v2") {
         // 直近のやりとり(分類器の文脈)。以前は DB から読み直していたが、上で読んだ会話の記録から取る(往復を1回減らす)
         const classifierContext = prior.slice(-CLASSIFIER_CONTEXT_MESSAGES)
           .map((m) => ({ role: m.role === "ai" ? "ai" : "user", text: String(m.body ?? "") }));
@@ -767,7 +943,9 @@ export async function POST(req: Request) {
       timer.mark("classify");
       // 危機の種類(本人の暴力・虐待/希死念慮/自傷/いじめ/第三者。複数可。2026年11月1日・1-3。仮)。
       // 受け止めの一言と窓口のカードの並びに使い、記録にも残す。段階・通知は変えない
-      const crisisTypes: string[] = safety.risk === "crisis" && !skipReason ? crisisTypesOf(text, safety) : [];
+      const crisisTypes: string[] = safety.risk !== "crisis" ? []
+        : batchSafetyFromPosts ? (batchAgg?.types ?? [])
+          : !skipReason ? crisisTypesOf(text, safety) : [];
       const typesFlag = crisisTypesFlag(crisisTypes);
       if (crisisTypes.length) eventReason = `${eventReason}(種類: ${crisisTypes.join(",")})`;
 
@@ -846,7 +1024,7 @@ export async function POST(req: Request) {
         if (plan.suppressed) turnFlags.push(`記録のみ:固定の文を出さず指示つきの生成にした(${plan.suppressed})`);
       } else {
         const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
-        if (safety.risk !== "none") {
+        if (safety.risk !== "none" && !batchSafetyFromPosts) {
           const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
           const saved = await checkedWrite("安全の記録", () => db.from("safety_events").insert({
             session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: eventKeywords,
@@ -869,8 +1047,11 @@ export async function POST(req: Request) {
           const decided = defaultCrisisReplyFor(prior, crisisTypes.length ? crisisTypes : categoryOfSafety(safety), declinedNow);
           if (decided.kind !== "generate" && decided.text) {
             const reply = decided.text;
+            const stop = await batchCheck();
+            if (stop) return batchStop(stop);
             const row: Record<string, unknown> = {
               session_id: sessionId, role: "ai", body: reply, crisis: true,
+              ...(batchReply ? { batch_id: batchRows[batchRows.length - 1]?.batch_id ?? null } : {}),
               ...(turnFlags.length || typesFlag ? { flags: [...turnFlags, ...(typesFlag ? [typesFlag] : [])] } : {}),
               timings: timer.done(), settings: settingsSnapshot(),
             };
@@ -966,6 +1147,8 @@ export async function POST(req: Request) {
         rows, chunks, sess.weight, sess.notes, sess.turns_since_summary, memory?.summary,
         safetyContext, sess, {
           stats, text, declined: declinedNow, intakeTurn,
+          // 連投のまとまりの発言の数(2通以上なら「まとまり全体に1回で応える」を足す)
+          batchCount: batchReply ? batchRows.length : 1,
           // 危機のターン・危機のあと(2026年11月1日・第3部): 指示・相談者が挙げた話せそうな人・人につなぐ問いの時期
           crisisTurn: crisisTurnInfo,
           confidants: inCrisisFlow ? confidants : [],
@@ -988,6 +1171,9 @@ export async function POST(req: Request) {
         // 「ありがとう」だけ・受け止めだけで終えない(第4部): フェーズ2と危機の状態の生成では、問いか続きを促す一言で終える。
         // インテークの決まった問いをサーバが続けるターンは除く
         aiEndingCheck(o, { text, closingState: sess.closing_state, requireNext: crisisGenerated || (flowPhase === "phase2" && !intakeTurn?.after) });
+      // 連投: 生成を始める前に、新しい発言が届いていないか(むだな生成を減らす)
+      const stopBeforeGen = await batchCheck();
+      if (stopBeforeGen) return batchStop(stopBeforeGen);
       const generated = await generateReply(
         system, messages, undefined, undefined, undefined, priorFailureCount,
         crisisGenerated
@@ -1121,7 +1307,12 @@ export async function POST(req: Request) {
         prompt_version: promptVersionOf(system), knowledge_version: knowledgeVersion(rows),
         settings: settingsSnapshot(), timings: timer.done(),
         intake_step: intakeTurn?.step ?? null,
+        // 連投のまとまり(db/schema.sql 17節)
+        ...(batchReply ? { batch_id: batchRows[batchRows.length - 1]?.batch_id ?? null } : {}),
       };
+      // 連投: 返事と状態を保存する直前に、新しい発言が届いていないか(届いていたら、何も保存せずに捨てる)
+      const stopBeforeSave = await batchCheck();
+      if (stopBeforeSave) return batchStop(stopBeforeSave);
       let aiSave = await checkedWrite("AIの返事", () => db.from("messages").insert(aiRow).select("seq").single());
       // 16節が未実行の DB では、その列を外して書き直す
       if (!aiSave.ok) {
@@ -1206,6 +1397,7 @@ export async function POST(req: Request) {
         choices: flowChoices, choice_set: flowChoices ? FLOW_CHOICE_SET : null,
         choice_note: flowChoices ? CHOICE_NOTE_PROVISIONAL : null,
         user_seq: userMsg?.seq, ai_seq: aiMsg?.seq,
+        ...(batchReply ? { batch: { to_seq: replyTo, size: batchRows.length } } : {}),
         ...(devPanel() ? { timings: timer.done() } : {}),
       });
     }

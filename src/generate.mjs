@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { APP_VERSION } from "./version.mjs";
+import { batchPromptLine } from "./batch.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
@@ -753,7 +754,7 @@ ${know}
 ・謝るときは一度だけ短く。自分を責める言い方(「わたしが悪かった」など)をしない。相談者が謝ってきたら
 　「謝らなくて大丈夫だよ」と短く返し、話を相談者に戻す。
 ・「本当にすごいことだと思う」「えらいね」のような、相談者を評価する言葉を使わない。
-・絵文字を使わない。箇条書きにしない。太字の見出しや、説明を複数の段落に分けない。
+・絵文字を使わない。箇条書きにしない。太字の見出しや、説明を複数の段落に分けない。${(flow?.batchCount ?? 1) > 1 ? "\n" + batchPromptLine(flow.batchCount) : ""}
 
 # 出力形式(JSONのみ。前後に説明や記号を付けない)
 {

@@ -356,8 +356,8 @@ export function flowStats(hist, sess, opts = {}) {
   }
   // 傾聴に切り替えてよいか(この3つのときだけ。モデルの推測では切り替えない)
   const userTexts = msgs.filter((m) => m.role === "user" && !m.choice_set).map((m) => String(m.body ?? ""));
-  // 往復の数(相談者の発言の数)と、まとめてよいか(第4部)
-  const exchanges = msgs.filter((m) => m.role === "user").length;
+  // 往復の数と、まとめてよいか(第4部)。続けて送った相談者の発言(連投のまとまり。2026年11月3日)は1往復と数える
+  const exchanges = msgs.filter((m, i) => m.role === "user" && msgs[i - 1]?.role !== "user").length;
   const lastUser = String(opts.text ?? msgs.filter((m) => m.role === "user").at(-1)?.body ?? "");
   // 冒頭の言い直し: 今回と比べる相談者の発言(チップを押したターンは比べない)と、直前2回の生成した返事が言い直しだったか
   const echoUsers = opts.choiceId ? [] : msgs.filter((m) => m.role === "user" && !m.choice_id && !m.choice_set).map((m) => String(m.body ?? ""));
