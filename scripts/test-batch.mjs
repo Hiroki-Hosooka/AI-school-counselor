@@ -175,7 +175,8 @@ const zero = () => { for (const k of Object.keys(counts)) counts[k] = 0; genInpu
   const r = await reply(c, last.body.seq);
   if (r.status !== 200 || typeof r.body.reply !== "string") console.log("   返事:", r.status, JSON.stringify(r.body).slice(0, 300));
   ok(r.status === 200 && typeof r.body.reply === "string" && r.body.reply.length > 0, "まとまりに返事を1回");
-  ok(counts.generate === 1, `生成は1回(${counts.generate})`);
+  // 無料枠では、上限・混雑で次のモデルを試すたびに数が増える(呼び出しの数 = 試した回数)ので、回数はモックのときだけ確かめる
+  ok(modelMode !== "mock" || counts.generate === 1, `生成は1回(試した呼び出し ${counts.generate})`);
   const lastUser = [...(genInputs[0] ?? [])].reverse().find((x) => x.role === "user")?.parts?.[0]?.text ?? "";
   ok(texts.every((t) => lastUser.includes(t)), "5通すべてが、順番と区切りを残して生成に渡る");
   ok(lastUser === texts.join("\n"), "改行が区切り");
