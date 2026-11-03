@@ -1,0 +1,29 @@
+生成の失敗の内訳(画面と同じ経路の再生の記録)
+読んだファイル 7 / 会話 484 / AI の返事の行 1008 / 生成に失敗したターン 634
+
+■ 種類ごと
+  利用上限(429): 559
+  そのほか: 69
+  混雑(503): 5
+  形の崩れ: 1
+
+■ 場面ごと
+  afterCrisis: 263
+  通常(固定応答で継続): 215
+  tierB: 110
+  crisisGeneration: 46
+
+■ 種類×場面
+  利用上限(429)|afterCrisis: 216
+  利用上限(429)|通常(固定応答で継続): 215
+  利用上限(429)|tierB: 85
+  利用上限(429)|crisisGeneration: 43
+  そのほか|afterCrisis: 42
+  そのほか|tierB: 24
+  混雑(503)|afterCrisis: 4
+  そのほか|crisisGeneration: 3
+  混雑(503)|tierB: 1
+  形の崩れ|afterCrisis: 1
+
+■ 「そのほか」の詳細
+  失敗の詳細: [HTTP_400] Gemini(gemini-3-flash-preview) 400: { "error": { "code": 400, "message": "API key not valid. Please pa: 69

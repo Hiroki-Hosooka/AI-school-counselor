@@ -66,11 +66,11 @@ import {
   CRISIS_SAFETY_LINE_PROVISIONAL, SAFETY_LINE_FLAG, CRISIS_GEN_FLAG,
 } from "@/crisis-turn.mjs";
 import { buildCrisisReply } from "@/crisis-texts.mjs";
-import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE } from "@/notices.mjs";
+import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, GENERATION_WAIT_NOTICE_PROVISIONAL } from "@/notices.mjs";
 import {
   loadKnowledge, clearKnowledgeCache, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
-  DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION, modelTrailFlag, modelHealth,
+  DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION, modelTrailFlag, modelHealth, GENERATION_FAILURE_FLAG,
 } from "@/generate.mjs";
 import { validateKnowledgeInput } from "@/knowledge-admin.mjs";
 import { planIntakeTurn, finishIntakeTurn, topScreenChoice } from "@/intake.mjs";
@@ -389,8 +389,9 @@ export async function POST(req: Request) {
       try {
         const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const rows = await selectRowsWithFallback(
-          () => db.from("messages").select("created_at,flags,timings").eq("role", "ai").gte("created_at", since).limit(5000),
-          () => db.from("messages").select("created_at,flags").eq("role", "ai").gte("created_at", since).limit(5000),
+          // 生徒の発言の行も読む(作り直しを待った生成の失敗の印は、発言の行に付く。2026年11月4日)
+          () => db.from("messages").select("role,created_at,flags,timings").gte("created_at", since).limit(10000),
+          () => db.from("messages").select("role,created_at,flags").gte("created_at", since).limit(10000),
         );
         model_health = modelHealth(rows);
       } catch (e) {
@@ -455,6 +456,10 @@ export async function POST(req: Request) {
         : withSource.data) as Record<string, unknown> | null;
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        // 18節(生成の失敗の記録。2026年11月4日。管理画面だけで見る)の列
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings,batch_id,safety,failure")
+          .eq("session_id", sessionId).order("seq"),
         // 17節(連投のまとまり・1通ごとの判定。2026年11月3日)の列
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings,batch_id,safety")
@@ -730,6 +735,12 @@ export async function POST(req: Request) {
       // 返事を保存する直前(と、生成を始める前)に、新しい発言が届いていないかを確かめる。
       // 届いていたら作った返事を捨てて、画面にまとまりを広げて求め直してもらう(段階2のまとまりでは作り直しは1回まで)
       const batchCheck = async (): Promise<"superseded" | "already" | null> => {
+        // 作り直し(retry_seq): 作っている途中に新しい発言が届いたら捨てる(新しい発言への返事が、この発言も含めて作る)
+        if (retrySeq != null) {
+          const r = await db.from("messages").select("seq,role").eq("session_id", sessionId).order("seq");
+          const b = batchOf((r.data ?? []) as BatchRow[], retrySeq);
+          return b.replied ? "already" : b.newer.length ? "superseded" : null;
+        }
         if (!batchReply || replyTo == null) return null;
         const r = await db.from("messages").select("seq,role").eq("session_id", sessionId).order("seq");
         const b = batchOf((r.data ?? []) as BatchRow[], replyTo);
@@ -750,8 +761,27 @@ export async function POST(req: Request) {
         // チップを押したまとまり(画面はチップを押すとすぐ返事を求める)は、最後の1通のチップとして受け取る
         choiceId = batchRows[batchRows.length - 1]?.choice_id ?? null;
       }
+      // 生成に失敗した発言への作り直し(2026年11月4日・応答形式エラーの対策 第3部)。画面が時間をおいて retry_seq を付けて呼ぶ。
+      // 発言はもう保存してあるので、保存し直さない(二重にしない)。返事がもうある・あとの発言が届いている(そちらの返事に含まれる)ときは作らない
+      const retrySeq = !batchReply && payload.retry_seq != null && Number.isFinite(Number(payload.retry_seq)) ? Number(payload.retry_seq) : null;
+      if (retrySeq != null) {
+        const all = await db.from("messages").select("seq,role,body,choice_id").eq("session_id", sessionId).order("seq");
+        if (all.error) throw new Error(all.error.message);
+        const b = batchOf((all.data ?? []) as BatchRow[], retrySeq);
+        if (b.replied) return batchStop("already");
+        if (b.newer.length) return batchStop("superseded");
+        if (!b.batch.length) return json({ error: "返事をする発言がありません" }, 400);
+        const rows = b.batch as BatchRow[];
+        text = joinBatch(rows.map((r) => r.body));
+        choiceId = rows[rows.length - 1]?.choice_id ?? null;
+      }
+      // 発言を保存しないで返事だけを作る呼び出しか(連投のまとまり・作り直し)
+      const replyOnly = batchReply || retrySeq != null;
+      const replyOnlySeq = (replyTo ?? retrySeq) as number;
       // まとまりの判定を post で済ませているか(判定が残っていない発言があれば、ここで判定し直す)
       const batchSafetyFromPosts = batchReply && !!batchAgg?.safety && !batchAgg.missing;
+      // 危機の記録と職員への通知を、このリクエストでは出さない(post で済んでいる・作り直しでは最初の回に済んでいる)
+      const skipSafetyRecord = batchSafetyFromPosts || retrySeq != null;
       if (!clientId || !sessionId || !text) return json({ error: "パラメータが不足しています" }, 400);
 
       // 字数・回数の上限(2026年10月7日)。上限を超えた発言でも、止める前に AI を使わない照合
@@ -760,7 +790,7 @@ export async function POST(req: Request) {
       // 長い打ち明けほど判定も通知もされなかった。サインが無ければ、今までどおり止めて、生徒向けの文面
       // (src/notices.mjs。notice)を返す(error は記録・開発用)。
       let overLimit: "too_long" | "rate_limited" | null = !batchReply && text.length > MAX_TEXT_LENGTH ? "too_long" : null;
-      if (!overLimit) {
+      if (!overLimit && retrySeq == null) {
         // 連投のときは、返事の数(まとまりの数)で数える(db/schema.sql 17節の recent_batch_count。無い DB では数えない)
         const { data: used } = batchReply
           ? await db.rpc("recent_batch_count", { p_client_id: clientId })
@@ -816,8 +846,8 @@ export async function POST(req: Request) {
 
       // 発言を保存(失敗しても会話は続ける。下で記録の印を残し、その会話では固定の文を出さない)
       // 連投のときは、発言は post で保存してある
-      const userSave = batchReply
-        ? { ok: true, data: { seq: replyTo as number }, error: null }
+      const userSave = replyOnly
+        ? { ok: true, data: { seq: replyOnlySeq }, error: null }
         : await checkedWrite("相談者の発言", () => db.from("messages")
           .insert({ session_id: sessionId, role: "user", body: text }).select("seq").single());
       const userMsg = userSave.data as { seq: number } | null;
@@ -836,9 +866,8 @@ export async function POST(req: Request) {
         () => db.from("messages").select("seq,role,body,crisis,flags,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
       )) as unknown as HistRow[];
       // 連投: このまとまりより後に届いた発言は次のまとまり。続いた生徒の発言は1つにまとめる(生成と、会話の流れの数え方。1往復と数える)
-      const hist: HistRow[] = batchReply
-        ? mergeUserRuns(histRead.filter((h) => (h.seq ?? 0) <= (replyTo as number))) as HistRow[]
-        : histRead;
+      // 作り直しを待つあいだに書き足した発言も同じ(生成に失敗した発言のあとに、続けて生徒の発言がある)
+      const hist: HistRow[] = mergeUserRuns(replyOnly ? histRead.filter((h) => (h.seq ?? 0) <= replyOnlySeq) : histRead) as HistRow[];
       // 発言の保存に失敗したときは、記録に無い今回の発言を足して続ける
       if (!userSave.ok) hist.push({ role: "user", body: text, flags: [...turnFlags] });
       timer.mark("history_read");
@@ -856,7 +885,7 @@ export async function POST(req: Request) {
       if (picked) {
         const cur = hist[hist.length - 1];
         if (cur) { cur.choice_set = picked.set; cur.choice_id = picked.id; }
-        if (userMsg?.seq != null && !batchReply) {
+        if (userMsg?.seq != null && !replyOnly) {
           await checkedWrite("チップの記録", () => db.from("messages")
             .update({ choice_set: picked.set, choice_id: picked.id, choice_input: picked.input }).eq("seq", userMsg.seq));
         }
@@ -1032,7 +1061,7 @@ export async function POST(req: Request) {
         if (plan.suppressed) turnFlags.push(`記録のみ:固定の文を出さず指示つきの生成にした(${plan.suppressed})`);
       } else {
         const isSelfCrisis = safety.risk === "crisis" && safety.subject === "self";
-        if (safety.risk !== "none" && !batchSafetyFromPosts) {
+        if (safety.risk !== "none" && !skipSafetyRecord) {
           const notified = safety.risk === "crisis" ? await notifyCrisis(sessionId, safety.subject) : false;
           const saved = await checkedWrite("安全の記録", () => db.from("safety_events").insert({
             session_id: sessionId, risk: safety.risk, subject: safety.subject, keywords: eventKeywords,
@@ -1191,6 +1220,51 @@ export async function POST(req: Request) {
             : { extraNg: declinedChecks, fixHint: declinedHint, endCheck },
       );
       timer.mark("generate");
+      // 場面(記録用): 危機のターン・危機のあと・気がかり・第三者・インテーク・通常
+      const sceneLabel = safetyContext.includes("crisisTurn") ? "crisisTurn" : safetyContext.includes("crisisGeneration") ? "crisisGeneration"
+        : safetyContext.includes("afterCrisis") ? "afterCrisis" : safetyContext.includes("thirdParty") ? "thirdParty"
+          : safetyContext.includes("tierB") ? "tierB" : sess.phase === "intake" ? "intake" : "phase2";
+      // 生成の失敗の記録(第1部): AI が返した出力・終わった理由・モデル・トークン数(管理画面でだけ見える messages.failure。18節)
+      const failureRecord = generated.failures?.length
+        ? { at: new Date().toISOString(), scene: sceneLabel, kind: generated.failureKind ?? null, salvaged: generated.salvaged === true, failures: generated.failures }
+        : null;
+      // 生成に失敗したら、相談者には固定の一言を返さず、画面に時間をおいて作り直してもらう(第3部 3-2)。返事も状態も保存しない。
+      // 危機の状態で生成するターン(本人の危機・危機の状態の指示つき)は今までどおり、固定の文と窓口のカードを必ず出す(第4部)。
+      // 段階ごとの応答(CRISIS_RESPONSE=staged)の流れも、状態を進めているので今までどおり
+      if (generated.generationFailed && !crisisGenerated && !plan) {
+        const seq = userMsg?.seq;
+        const failFlags = [
+          `${GENERATION_FAILURE_FLAG}: ${generated.failureKind ?? "そのほか"}(${sceneLabel}・作り直しを待つ)`,
+          ...(modelTrailFlag(generated.attempts) ? [modelTrailFlag(generated.attempts) as string] : []),
+          ...(generated.failureDetail ? [`失敗の詳細: ${String(generated.failureDetail).slice(0, 160)}`] : []),
+        ];
+        if (seq != null) {
+          const { data: cur } = await db.from("messages").select("flags").eq("seq", seq).maybeSingle();
+          const prevFlags = Array.isArray((cur as { flags?: unknown } | null)?.flags) ? (cur as { flags: string[] }).flags : [];
+          const { data: curF } = await db.from("messages").select("failure").eq("seq", seq).maybeSingle();
+          const prevFail = Array.isArray((curF as { failure?: unknown } | null)?.failure) ? (curF as { failure: unknown[] }).failure : [];
+          const w = await checkedWrite("生成の失敗の記録", () => db.from("messages")
+            .update({ flags: [...prevFlags, ...turnFlags, ...failFlags], failure: [...prevFail, failureRecord] }).eq("seq", seq));
+          if (!w.ok) await checkedWrite("生成の失敗の記録(18節なし)", () => db.from("messages")
+            .update({ flags: [...prevFlags, ...turnFlags, ...failFlags] }).eq("seq", seq));
+        }
+        // 危機のあと・第三者の場面は、管理画面の「確認待ち」に並べる(最初の失敗だけ。職員への通知は出さない。人が決めた)
+        const review = retrySeq == null ? contextFailureReply(safetyContext, 0) : null;
+        if (review?.review) {
+          await checkedWrite("生成失敗の確認待ち", () => db.from("safety_events").insert({
+            session_id: sessionId, risk: safety.risk !== "none" ? safety.risk : "watch", subject: safety.subject,
+            keywords: [], model_risk: safety.model.risk, notified: false,
+            model_reason: `【生成失敗・確認待ち】${review.scene === "afterCrisis" ? "危機のあと" : "第三者の心配"}の返事を生成できず、作り直しを待っている(${generated.failureKind ?? generated.failureCause})`,
+          }));
+        }
+        const kind = generated.failureKind ?? "";
+        return chatJson({
+          pending_retry: true, notice: GENERATION_WAIT_NOTICE_PROVISIONAL,
+          retry_after_ms: kind === "利用上限(429)" ? 10000 : kind === "混雑(503)" ? 6000 : 3000,
+          user_seq: seq, flags: failFlags,
+          ...(devPanel() ? { failure: failureRecord, timings: timer.done() } : {}),
+        });
+      }
       const priorCrisisFallbacks = hist.filter((h) => Array.isArray(h.flags)
         && (h.flags as string[]).some((f) => f.startsWith(CRISIS_FALLBACK_FLAG))).length;
       const finalized = crisisGenerated
@@ -1315,6 +1389,8 @@ export async function POST(req: Request) {
         prompt_version: promptVersionOf(system), knowledge_version: knowledgeVersion(rows),
         settings: settingsSnapshot(), timings: timer.done(),
         intake_step: intakeTurn?.step ?? null,
+        // 作り直して通った・形の崩れから返事を取り出したときの記録(18節。管理画面だけ)
+        ...(failureRecord ? { failure: [failureRecord] } : {}),
         // 連投のまとまり(db/schema.sql 17節)。まとまりの最初の発言の番号にそろえる(下で発言の行も同じ番号に付け直す)
         ...(batchReply ? { batch_id: batchRows[0]?.batch_id ?? null } : {}),
       };
@@ -1322,15 +1398,20 @@ export async function POST(req: Request) {
       const stopBeforeSave = await batchCheck();
       if (stopBeforeSave) return batchStop(stopBeforeSave);
       let aiSave = await checkedWrite("AIの返事", () => db.from("messages").insert(aiRow).select("seq").single());
+      // 18節が未実行の DB では、失敗の記録の列を外して書き直す
+      if (!aiSave.ok && failureRecord) {
+        aiSave = await checkedWrite("AIの返事(18節の列なし)", () => db.from("messages")
+          .insert(withoutKeys(aiRow, ["failure"])).select("seq").single());
+      }
       // 16節が未実行の DB では、その列を外して書き直す
       if (!aiSave.ok) {
         aiSave = await checkedWrite("AIの返事(16節の列なし)", () => db.from("messages")
-          .insert(withoutKeys(aiRow, SECTION16_MESSAGE_COLUMNS)).select("seq").single());
+          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "failure", "batch_id"])).select("seq").single());
       }
       // 11節・14節が未実行の DB で safety_card・choices が無いときも、返事そのものは必ず保存する(カード・チップは画面にだけ出す)
       if (!aiSave.ok && (fallbackCard || thirdPartyCard || selfCrisisCard || flowChoices) && !plan) {
         aiSave = await checkedWrite("AIの返事(カード・チップの列なし)", () => db.from("messages")
-          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set"])).select("seq").single());
+          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set", "failure", "batch_id"])).select("seq").single());
       }
       const aiMsg = aiSave.data as { seq?: number } | null;
       // 連投: このまとまりの発言の行を、返事と同じまとまりの番号にそろえる(画面は返事を待つあいだに次の番号で送ることがあるため)

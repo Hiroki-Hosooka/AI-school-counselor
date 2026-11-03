@@ -15,7 +15,7 @@ import { batchPromptLine } from "./batch.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
-import { callGemini, parseJSON, LITE_MODELS } from "./classify.mjs";
+import { callGemini, parseJSON, salvageReply, LITE_MODELS } from "./classify.mjs";
 // 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
 import { leadBlock } from "./flow.mjs";
 import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock, AI_ENDING_FIX_HINT, AI_ENDING_FLAG, AI_ENDING_TAIL_PROVISIONAL } from "./flow.mjs";
@@ -82,16 +82,27 @@ export function modelHealth(rows, now = Date.now(), warnOver = 3) {
     const has = (r, pred) => flagsOf(r).some(pred);
     const totals = list.map((r) => Number(r.timings?.total)).filter((n) => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
     const median = totals.length ? totals[Math.floor((totals.length - 1) / 2)] : null;
+    // 生徒の発言の行には、作り直しを待った失敗の印が付く(2026年11月4日。返事の数には入れない)
+    const aiRows = list.filter((r) => !r.role || r.role === "ai");
+    // 生成の失敗の種類ごとの数(GENERATION_FAILURE_FLAG。作り直しを待った失敗と、作り直して通った・取り出した失敗の両方)
+    const kinds = {};
+    for (const r of list) for (const f of flagsOf(r)) {
+      if (!f.startsWith(GENERATION_FAILURE_FLAG)) continue;
+      const k = f.slice(GENERATION_FAILURE_FLAG.length).replace(/^[::]\s*/, "").replace(/[((].*$/, "").trim() || "そのほか";
+      kinds[k] = (kinds[k] ?? 0) + 1;
+    }
     return {
-      replies: list.length,
-      rate_limited: list.filter((r) => has(r, (f) => f.includes("429"))).length,
-      fallback: list.filter((r) => has(r, (f) => f.startsWith(MODEL_FALLBACK_FLAG))).length,
+      replies: aiRows.length,
+      failure_kinds: kinds,
+      waiting_retry: list.filter((r) => has(r, (f) => f.startsWith(GENERATION_FAILURE_FLAG) && f.includes("作り直しを待つ"))).length,
+      rate_limited: aiRows.filter((r) => has(r, (f) => f.includes("429"))).length,
+      fallback: aiRows.filter((r) => has(r, (f) => f.startsWith(MODEL_FALLBACK_FLAG))).length,
       // 危機の状態の生成の失敗(src/crisis-response.mjs の CRISIS_FALLBACK_FLAG。生成失敗のときだけ)も数える(2026年11月2日)
-      failed: list.filter((r) => has(r, (f) => f.startsWith("生成失敗→") || f.startsWith("生成失敗の場面")
+      failed: aiRows.filter((r) => has(r, (f) => f.startsWith("生成失敗→") || f.startsWith("生成失敗の場面")
         || f.startsWith("危機の状態の生成→固定の返事で継続(生成失敗"))).length,
       median_ms: median,
       // 冒頭の言い直し(src/flow.mjs の ECHO_FLAG)の印が付いた返事の割合。2026年11月1日より前の返事には印が無いので、全体の目安
-      echo_rate: list.length ? Math.round((list.filter((r) => has(r, (f) => f.startsWith("記録のみ:冒頭の言い直し"))).length / list.length) * 100) / 100 : null,
+      echo_rate: aiRows.length ? Math.round((aiRows.filter((r) => has(r, (f) => f.startsWith("記録のみ:冒頭の言い直し"))).length / aiRows.length) * 100) / 100 : null,
     };
   };
   const h1 = win(60 * 60 * 1000);
@@ -825,6 +836,21 @@ export function pickFailureReply(priorFailureCount) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 生成の失敗の種類(2026年11月4日・応答形式エラーの調査 5章。管理画面で数える)
+export const GENERATION_FAILURE_KINDS = ["形の崩れ", "長さの上限", "安全フィルター", "利用上限(429)", "混雑(503)", "時間切れ", "そのほか"];
+export const GENERATION_FAILURE_FLAG = "生成の失敗の内訳";
+export function failureKindOf(err, finishReason) {
+  const m = String(err?.message ?? err ?? "");
+  const fr = String(finishReason ?? "");
+  if (/MAX_TOKENS/.test(fr)) return "長さの上限";
+  if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY/.test(fr) || m.includes("[BLOCKED]")) return "安全フィルター";
+  if (m.includes("応答をJSONとして読み取れませんでした")) return "形の崩れ";
+  if (m.includes("[RATE_LIMIT]")) return "利用上限(429)";
+  if (m.includes("[HTTP_503]")) return "混雑(503)";
+  if (m.includes("[TIMEOUT]")) return "時間切れ";
+  return "そのほか";
+}
+
 // opts(省略可。危機の状態で生成するターン用。2026年9月29日・危機検知の作り直し 第2段階):
 //   opts.extraNg  OUTPUT_NG に加えて使う出力チェックの正規表現(src/crisis-response.mjs の CRISIS_GENERATION_EXTRA_NG)
 //   opts.fixHint  出力チェックに当たったときの書き直しの指示に足す一言
@@ -861,9 +887,11 @@ export async function generateReply(
   // 試したモデルと結果(作り直しの呼び出しも含む。2026年11月1日・1-2)
   const attempts = [];
   const timeoutMs = generationCallTimeoutMs();
+  // 出力の上限(長さの上限で切れたら、作り直しで広げる。第2部)
+  let curMax = maxOutputTokens;
   async function call(modelList, sys) {
     try {
-      const r = await callGemini(modelList, sys, messages, maxOutputTokens, thinkingBudget, { timeoutMs });
+      const r = await callGemini(modelList, sys, messages, curMax, thinkingBudget, { timeoutMs });
       attempts.push(...(r.attempts ?? []));
       return r;
     } catch (e) {
@@ -871,30 +899,73 @@ export async function generateReply(
       throw e;
     }
   }
-  async function attempt(modelList) {
-    const result = await call(modelList, system);
-    return { parsed: parseJSON(result.text), result };
+  // 生成の失敗の記録(2026年11月4日・応答形式エラーの調査 第1部)。1回ごとに、AI が実際に返した出力(先頭だけ)・
+  // 返事が終わった理由・モデル・トークン数・出力の上限・形を強制したか、を残す。相談内容を含むので、呼び出し側は
+  // 管理画面でだけ見える場所(messages.failure。db/schema.sql 18節)に保存する
+  const failures = [];
+  const formatError = (e) => String(e?.message ?? e).includes("応答をJSONとして読み取れませんでした");
+  async function attempt(modelList, stage) {
+    let result;
+    try {
+      result = await call(modelList, system);
+    } catch (e) {
+      failures.push({ stage, kind: failureKindOf(e), error: String(e?.message ?? e).slice(0, 300), attempts: e?.attempts ?? [], maxOutputTokens: curMax });
+      throw e;
+    }
+    try {
+      return { parsed: parseJSON(result.text), result, salvaged: false };
+    } catch (e) {
+      const diag = {
+        stage, kind: failureKindOf(e, result.finishReason), error: String(e?.message ?? e).slice(0, 200),
+        model: result.model, finishReason: result.finishReason ?? null, raw: String(result.text ?? "").slice(0, 3000),
+        rawLength: String(result.text ?? "").length, promptTokens: result.usage?.promptTokenCount ?? null,
+        outputTokens: result.usage?.candidatesTokenCount ?? null, thoughtsTokens: result.usage?.thoughtsTokenCount ?? null,
+        maxOutputTokens: curMax, thinkingBudget, schemaForced: false,
+      };
+      failures.push(diag);
+      // 返事の部分が最後まで閉じていれば、その文だけを使う(第2部)。ほかの項目(重心・見立て等)は前のターンのまま
+      const salvaged = salvageReply(result.text);
+      if (salvaged) {
+        diag.salvaged = true;
+        return { parsed: { reply: salvaged, used: [], why: "形の崩れた出力から返事だけを取り出した" }, result, salvaged: true };
+      }
+      const err = new Error(`${e?.message ?? e}(終わった理由: ${result.finishReason ?? "不明"})`);
+      err.attempts = result.attempts;
+      throw err;
+    }
   }
   const startedAt = Date.now();
+  let salvagedReply = false;
 
-  try {
-    const { parsed, result } = await attempt(models);
-    out = parsed; usedModel = result.model; usage = result.usage;
-  } catch (firstErr) {
-    // 定型文を出す前に、短い待機を挟んで1回だけ再試行する(2026年9月・2-2)。
-    // 直前に失敗したモデルは外し、リストに複数あれば次のモデル(フォールバック)で試す
-    // (単純にmodels[0]から再試行すると、同じモデルに同じ失敗をもう一度求めるだけになる)。
-    console.error("生成に失敗しました。再試行します:", firstErr);
-    // 1回目で20秒以上かかったとき(時間切れが続いた等)は、待たせすぎないよう再試行しない(2026年11月1日・1-2)
-    const skipRetry = Date.now() - startedAt > 20000;
-    if (!skipRetry) await sleep(3000);
-    const retryModels = models.length > 1 ? models.slice(1) : models;
+  // 作り直し(第3部 3-1。相談者には入力中の表示を出したまま、サーバ側で作り直す):
+  // 形の崩れ(応答形式エラー)は出力の揺れなので、待たずに同じモデルの並びで2回まで作り直す。
+  // 利用上限(429)・混雑(503)・時間切れは、3秒待って、直前に失敗したモデルを外して1回だけ(以前と同じ)。
+  // どちらも、ここまでに20秒以上かかっていたら作り直さない(待たせすぎない。画面側が時間をおいて作り直す)
+  let lastErr = null;
+  for (let i = 0; i < 3; i++) {
+    if (i > 0) {
+      const fmt = formatError(lastErr);
+      if (!fmt && i >= 2) break;
+      if (Date.now() - startedAt > 20000) break;
+      console.error(`生成に失敗しました。作り直します(${i}回目):`, lastErr);
+      if (!fmt) await sleep(3000);
+      // 長さの上限で切れた(考える分に出力の枠を使われた・返事が長すぎた): 作り直しでは上限を広げる(3000まで)
+      if (failures.at(-1)?.finishReason === "MAX_TOKENS") curMax = Math.min(curMax * 2, 3000);
+    }
+    const list = i === 0 || formatError(lastErr) ? models : (models.length > 1 ? models.slice(1) : models);
     try {
-      if (skipRetry) throw firstErr;
-      const { parsed, result } = await attempt(retryModels);
-      out = parsed; usedModel = result.model; usage = result.usage;
-    } catch (secondErr) {
-      console.error("再試行後も生成に失敗しました:", secondErr);
+      const { parsed, result, salvaged } = await attempt(list, i === 0 ? "first" : `retry${i}`);
+      out = parsed; usedModel = result.model; usage = result.usage; salvagedReply = salvaged;
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr) {
+    const secondErr = lastErr;
+    {
+      console.error("作り直しても生成に失敗しました:", secondErr);
       generationFailed = true;
       const msg = secondErr instanceof Error ? secondErr.message : String(secondErr);
       failureDetail = msg;
@@ -906,11 +977,7 @@ export async function generateReply(
         : msg.includes("[HTTP_503]") ? "サービス過負荷(503)"
         // 1つのモデルの呼び出しの上限を超えた(2026年11月1日・1-2)
         : msg.includes("[TIMEOUT]") ? "時間切れ"
-        // 応答本文がJSONとして読み取れなかった場合(2026年9月・ペルソナ多ターン回帰
-        // テストのfull×2実行で複数回確認。会話履歴が長くなるほど起きやすい様子)。
-        // 生徒役の発言生成では同じ症状を既に再試行対象にしていた(test-persona-
-        // regression.mjsのgeneratePersonaLine)。こちらも同様に一時的な出力の
-        // 揺れとみなし、再試行対象に加える(isTransientGenerateFailure参照)。
+        // 応答本文がJSONとして読み取れなかった場合(途中で切れた・安全フィルターで途中で止めた・文の中の記号で崩れた)
         : msg.includes("応答をJSONとして読み取れませんでした") ? "応答形式エラー"
         : "不明なエラー";
       out = {
@@ -993,7 +1060,16 @@ export async function generateReply(
     if (!fixedEnd) out = { ...out, reply: `${String(out.reply ?? "").trim()}\n${AI_ENDING_TAIL_PROVISIONAL}` };
     flags = [...flags, `${AI_ENDING_FLAG}(${fixedEnd ? "解消" : "残ったので続きを促す一言を足した"})`];
   }
-  return { out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens, endRegens, attempts };
+  // 形の崩れた出力から返事だけを取り出したとき(第2部)・作り直して通ったとき(第3部 3-1)も記録に残す
+  if (salvagedReply) flags = [...flags, "記録のみ:形の崩れた出力から返事だけを取り出した"];
+  if (!generationFailed && failures.length) flags = [...flags, `記録のみ:生成を作り直して通った(${failures.map((f) => f.kind).join("・")})`];
+  // 最後に失敗したときの種類(管理画面で数える。5章)
+  const failureKind = generationFailed ? (failures.at(-1)?.kind ?? failureKindOf(failureDetail)) : null;
+  if (failureKind) flags = [...flags, `${GENERATION_FAILURE_FLAG}: ${failureKind}`];
+  return {
+    out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens, endRegens, attempts,
+    failures, failureKind, salvaged: salvagedReply,
+  };
 }
 
 // ============================================================================

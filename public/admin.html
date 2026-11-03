@@ -161,7 +161,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       <span id="syntheticLabel">合成データ(ペルソナテスト)を表示する</span>
     </label>
     <div id="keyGuard" class="model-health" hidden></div>
-    <div id="modelHealth" class="model-health" hidden title="生成のモデルの状態(直近1時間・24時間)。429 はキーの上限、切り替えは予備のモデルへ移った回数、失敗は固定の一言で受けた回数、時間は返事にかかった時間の中央値"></div>
+    <div id="modelHealth" class="model-health" hidden title="生成のモデルの状態(直近1時間・24時間)。429 はキーの上限、切り替えは予備のモデルへ移った回数、失敗は固定の一言で受けた回数、作り直し待ちは返事を作れず画面が時間をおいて作り直した発言の数、失敗の内訳は生成の失敗の種類ごとの数、時間は返事にかかった時間の中央値"></div>
     <div id="sessionList" class="s-list"></div>
     <div id="listEmpty" class="empty" hidden>まだセッションがありません。</div>
   </section>
@@ -435,6 +435,26 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     el.hidden = false;
   }
 
+  // 生成の失敗の記録(messages.failure。2026年11月4日・db/schema.sql 18節)。AI が返した出力そのものを含むので、管理画面だけで見る。
+  // 1回の生成の呼び出しごとに: 何回目か・失敗の種類・モデル・終わった理由・入力/出力/考えるトークン・出力の上限・形を強制したか・出力
+  function failureHtml(list) {
+    if (!Array.isArray(list) || !list.length) return "";
+    var items = [];
+    list.forEach(function (rec) {
+      if (!rec || !Array.isArray(rec.failures)) return;
+      rec.failures.forEach(function (f, i) {
+        items.push('<div class="hint"><b>' + esc(rec.scene || "") + ' ' + (i + 1) + '回目(' + esc(f.stage || "") + '):</b> ' +
+          esc(f.kind || "") + ' ・モデル ' + esc(f.model || "—") + ' ・終わった理由 ' + esc(f.finishReason || "—") +
+          ' ・トークン 入力 ' + esc(f.promptTokens == null ? "—" : f.promptTokens) + ' / 出力 ' + esc(f.outputTokens == null ? "—" : f.outputTokens) +
+          ' / 考える ' + esc(f.thoughtsTokens == null ? "—" : f.thoughtsTokens) + ' ・出力の上限 ' + esc(f.maxOutputTokens == null ? "—" : f.maxOutputTokens) +
+          ' ・形の強制 ' + (f.schemaForced ? "あり" : "なし") + ' ・出力 ' + esc(f.rawLength == null ? "—" : f.rawLength) + '字' +
+          (f.raw ? '<pre style="white-space:pre-wrap;font-size:11px;margin:4px 0 0">' + esc(f.raw) + '</pre>' : "") + '</div>');
+      });
+      if (rec.salvaged) items.push('<div class="hint">形の崩れた出力から返事だけを取り出した</div>');
+    });
+    return items.length ? '<details class="failure"><summary>生成の失敗の記録(' + items.length + '件。管理画面だけ)</summary>' + items.join("") + '</details>' : "";
+  }
+
   // モデルの状態の1行(2026年11月1日・危機の作り直し 1-2)。直近1時間の 429 が3回を超えたら警告の色にする
   function renderModelHealth(h) {
     var el = document.getElementById("modelHealth");
@@ -442,7 +462,13 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     function part(label, w) {
       var sec = w.median_ms == null ? "—" : (w.median_ms / 1000).toFixed(1) + "秒";
       return label + ": 返事 " + w.replies + " / 429 " + w.rate_limited + " / 切り替え " + w.fallback + " / 失敗 " + w.failed + " / 時間 " + sec +
-        (w.echo_rate == null ? "" : " / 冒頭の言い直し " + Math.round(w.echo_rate * 100) + "%");
+        (w.echo_rate == null ? "" : " / 冒頭の言い直し " + Math.round(w.echo_rate * 100) + "%") +
+        (w.waiting_retry ? " / 作り直し待ち " + w.waiting_retry : "") + kindsText(w.failure_kinds);
+    }
+    // 生成の失敗の種類ごとの数(形の崩れ・長さの上限・安全フィルター・429・混雑・時間切れ。2026年11月4日)
+    function kindsText(k) {
+      var keys = k ? Object.keys(k) : [];
+      return keys.length ? "(失敗の内訳 " + keys.map(function (x) { return x + " " + k[x]; }).join("・") + ")" : "";
     }
     el.textContent = "モデルの状態 ― " + part("直近1時間", h.h1) + " 　" + part("24時間", h.h24) +
       (h.warn ? " 　※ 429 が続いています。キーの上限・課金を確かめてください" : "");
@@ -708,7 +734,10 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
             (s ? " ・判定 " + esc(RISK_JA[s.risk] || s.risk) + (s.subject === "other" ? "(第三者)" : "") +
               (s.notify_handled ? " ・通知" : "") + (s.skip ? " ・分類器にかけない(" + esc(s.skip) + ")" : "") : "") + '</div>'
           : "";
-        return head + '<div class="msg user"><div class="bubble">' + esc(m.body) + '</div></div>' + info;
+        // 生成に失敗して作り直しを待った発言には、失敗の印と記録を出す(2026年11月4日)
+        var uflags = (m.flags || []).filter(function (f) { return String(f).indexOf("生成の失敗の内訳") === 0 || String(f).indexOf("失敗の詳細") === 0 || String(f).indexOf("モデルの切り替え") === 0; });
+        var uf = uflags.length ? '<div class="flags">' + uflags.map(function (f) { return '<span class="tag warn">' + esc(f) + '</span>'; }).join("") + '</div>' : "";
+        return head + '<div class="msg user"><div class="bubble">' + esc(m.body) + '</div></div>' + info + uf + failureHtml(m.failure);
       }
       var flags = (m.flags && m.flags.length)
         ? '<div class="flags">' + m.flags.map(function (f) { return '<span class="tag warn">' + esc(f) + '</span>'; }).join("") + '</div>'
@@ -722,6 +751,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
           (m.hypothesis ? '<div class="hint"><b>仮説:</b> ' + esc(m.hypothesis) + '</div>' : "") +
           (m.why ? '<div class="hint"><b>理由:</b> ' + esc(m.why) + '</div>' : "") +
           flags +
+          failureHtml(m.failure) +
           knowledgeHtml(m.used) +
           ratingHtml(m) +
           discomfortHtml(m) +

@@ -176,7 +176,9 @@ async function readGemini(model, res) {
   }
   // usageMetadata(実際のトークン消費量)も返す(2026年9月・モデル比較検証)。
   // 既存の戻り値(text)は変えず追加するだけなので、他の呼び出し元には影響しない。
-  return { text, usage: d.usageMetadata ?? null };
+  // 返事が終わった理由(STOP = 最後まで書いた / MAX_TOKENS = 長さの上限 / SAFETY 等 = 安全フィルターで途中で止めた)も返す
+  // (2026年11月4日・応答形式エラーの調査 第1部。以前は文字が空のときしか見ておらず、途中で止められた文がそのまま読み取りに回っていた)
+  return { text, usage: d.usageMetadata ?? null, finishReason: candidate?.finishReason ?? null, modelVersion: d.modelVersion ?? null };
 }
 
 // models を上から順に試し、最初に成功したものを返す。
@@ -222,9 +224,9 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
   let anyOverloaded = false;
   for (const model of models) {
     try {
-      const { text, usage } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs);
+      const { text, usage, finishReason } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs);
       attempts.push({ model, ok: true, tag: "" });
-      return { text, model, usage, attempts };
+      return { text, model, usage, attempts, finishReason };
     } catch (e) {
       lastError = e;
       attempts.push({ model, ok: false, tag: failureTag(e instanceof Error ? e.message : e) });
@@ -258,7 +260,25 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
 export function parseJSON(raw) {
   const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
   if (s < 0 || e < 0) throw new Error("応答をJSONとして読み取れませんでした");
-  return JSON.parse(raw.slice(s, e + 1));
+  try {
+    return JSON.parse(raw.slice(s, e + 1));
+  } catch (err) {
+    // 途中で切れた・文の中の記号で崩れた JSON も「応答形式エラー」として扱う(以前は SyntaxError のまま「不明なエラー」に落ちていた)
+    throw new Error(`応答をJSONとして読み取れませんでした(${String(err?.message ?? err).slice(0, 80)})`);
+  }
+}
+
+// 形が崩れた出力から、返事の文("reply" の値)だけを取り出す(2026年11月4日・第2部)。
+// 値が最後まで閉じている(後ろに , か } が続く)ときだけ使う。途中で切れた・止められた返事は使わない
+export function salvageReply(raw) {
+  const m = String(raw ?? "").match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]/);
+  if (!m) return null;
+  try {
+    const text = JSON.parse(`"${m[1]}"`).trim();
+    return text.length ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 // キーワード事前検知 + Gemini分類器。

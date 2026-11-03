@@ -9,6 +9,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 // 上限・エラーのときに生徒に見せる文面(サーバと共通。src/notices.mjs)。技術的な中身は見せず、コンソールに残す
 import {
   SEND_FAILED_NOTICE, NOT_CONNECTED_NOTICE, DETAILS_ITEMS_PROVISIONAL, FOOTER_DISCLOSURE, TOP_FREE_TEXT_HINT,
+  GENERATION_WAIT_NOTICE_PROVISIONAL, GENERATION_RETRY_BUTTON_LABEL, GENERATION_RETRY_MAX,
 } from "@/notices.mjs";
 // トップ画面のボタン(主訴のカテゴリ。仮。2026年10月14日。嶋先生インタビュー4。docs/design/top-screen/Main.dc.html)。
 // 押すと choice_id(K1〜K6)を送り、サーバ(src/intake.mjs)がコードでインテークを進める
@@ -56,6 +57,10 @@ type Msg = {
   cardTeacherNote?: boolean;
   choices?: Choice[] | null;
   choiceNote?: string | null;
+  // 返事を作り直しているあいだの一言(2026年11月4日。返事が届いたら消す。記録には残らない)
+  waitNotice?: boolean;
+  // 作り直しを何回か試しても返事が届かなかったときの「もう一度送る」ボタン(押すと同じ発言で作り直す。書き直させない)
+  retryButton?: boolean;
 };
 
 type ChoiceInfo = {
@@ -184,6 +189,9 @@ export default function Page() {
     chain: Promise.resolve() as Promise<unknown>, batchId: "", inflightPosts: 0, lastSentAt: 0, lastTypedAt: 0,
     replying: false, rebuilt: 0, pending: new Map<number, { urgent: boolean; at: number }>(),
   });
+  // 生成に失敗した発言の作り直し(2026年11月4日・応答形式エラーの対策 第3部)。
+  // seq: 返事を待っている発言の番号 / tries: 作り直した回数 / timer: 次の作り直し / inflight: 作り直しの呼び出しの途中
+  const rt = useRef({ seq: null as number | null, tries: 0, timer: null as ReturnType<typeof setTimeout> | null, inflight: null as Promise<void> | null });
   const applyBatchCfg = (cfg: BatchCfg | null | undefined) => {
     const v = cfg && typeof cfg.idle_ms === "number" ? cfg : null;
     batchCfgRef.current = v;
@@ -227,6 +235,14 @@ export default function Page() {
           const old = Date.now() - 600000;
           for (const seq of tail) bt.current.pending.set(seq, { urgent: false, at: old });
           if (tail.length) setWaiting(true);
+        } else {
+          // 1通ごとの返事: 最後が返事のない発言(生成に失敗したまま閉じた)なら、開いてすぐ作り直す
+          const last = r.messages[r.messages.length - 1];
+          if (last?.role === "user" && typeof last.seq === "number") {
+            rt.current.seq = last.seq;
+            rt.current.tries = 0;
+            rt.current.timer = setTimeout(() => void runRetry(), 500);
+          }
         }
         if (r.session.weight) setWeight(r.session.weight);
         if (r.session.relation) setRelation(r.session.relation);
@@ -310,6 +326,8 @@ export default function Page() {
   // 返事を画面に出す(1通ごとの返事と、連投のまとまりへの返事で共通)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function showResult(r: any) {
+    clearWaitNotice();
+    if (r.pending_retry) { schedulePendingRetry(r); return; }
     {
       if (r.crisis) {
         // 吹き出しが複数(2通目の「心配」+3通目など)のときは、間をおいて1つずつ出す。チップは最後の吹き出しの下
@@ -385,10 +403,85 @@ export default function Page() {
     }
   }
 
+  // ---- 生成に失敗したときの作り直し(2026年11月4日)----
+  // 返事を作るのに失敗したら、サーバは返事を保存せずに pending_retry を返す。画面は一言だけ出して、時間をおいて同じ発言で作り直す
+  // (429 は長めに待つ)。何回か試してもだめなら「もう一度送る」ボタンを出す。生徒に書き直させない。
+  // 待っているあいだに書き足した発言は、そちらの返事にまとめる(サーバが続いた発言を1つにまとめて作る)。
+  function clearWaitNotice() {
+    setMessages((m) => (m.some((x) => x.waitNotice || x.retryButton) ? m.filter((x) => !x.waitNotice && !x.retryButton) : m));
+  }
+  function cancelRetry() {
+    const s = rt.current;
+    if (s.timer) clearTimeout(s.timer);
+    s.timer = null;
+    s.seq = null;
+    s.tries = 0;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function schedulePendingRetry(r: any) {
+    const s = rt.current;
+    if (typeof r.user_seq === "number") s.seq = r.user_seq;
+    if (s.seq == null) { setMessages((m) => [...m, { role: "ai", body: SEND_FAILED_NOTICE, error: true }]); return; }
+    if (s.tries >= GENERATION_RETRY_MAX) {
+      // 何回か試してもだめだった: ボタンを出す(押すまで作り直さない)
+      setMessages((m) => [...m.filter((x) => !x.waitNotice && !x.retryButton),
+        { role: "ai", body: typeof r.notice === "string" ? r.notice : GENERATION_WAIT_NOTICE_PROVISIONAL, error: true, retryButton: true }]);
+      return;
+    }
+    // 一言は1つだけ(作り直しのたびに増やさない)
+    setMessages((m) => (m.some((x) => x.waitNotice) ? m
+      : [...m, { role: "ai", body: typeof r.notice === "string" ? r.notice : GENERATION_WAIT_NOTICE_PROVISIONAL, error: true, waitNotice: true }]));
+    const base = typeof r.retry_after_ms === "number" && r.retry_after_ms > 0 ? r.retry_after_ms : 3000;
+    const delay = Math.min(base * 2 ** s.tries, 60000);
+    if (s.timer) clearTimeout(s.timer);
+    s.timer = setTimeout(() => void runRetry(), delay);
+  }
+  async function runRetry() {
+    const s = rt.current;
+    s.timer = null;
+    if (s.seq == null || s.inflight) return;
+    const seq = s.seq;
+    s.tries++;
+    setThinking(true);
+    const job = (async () => {
+      try {
+        const r = await api("chat", { retry_seq: seq });
+        setThinking(false);
+        if (rt.current.seq !== seq) return;   // 待つあいだに新しい発言を送った(そちらの返事にまとまる)
+        if (r.superseded || r.already) { cancelRetry(); clearWaitNotice(); return; }
+        if (!r.pending_retry) cancelRetry();
+        await showResult(r);
+      } catch (e) {
+        setThinking(false);
+        console.error("作り直せませんでした:", e);
+        if (rt.current.seq === seq) schedulePendingRetry({});
+      }
+    })();
+    s.inflight = job;
+    await job;
+    s.inflight = null;
+    if (!rt.current.timer && rt.current.seq == null) setThinking(false);
+  }
+  // 「もう一度送る」: 回数を数え直して、すぐ作り直す
+  function retryNow() {
+    rt.current.tries = 0;
+    setMessages((m) => m.filter((x) => !x.retryButton));
+    void runRetry();
+  }
+  // 新しい発言を送るとき: 作り直しを止めて、新しい発言の返事にまとめる(作り直しの途中なら、終わるのを待つ)
+  async function supersedeRetry() {
+    const s = rt.current;
+    if (s.seq == null && !s.inflight) return;
+    cancelRetry();
+    if (s.inflight) await s.inflight;
+    clearWaitNotice();
+  }
+
   // ---- 連投(2026年11月3日)----
   // 1通を送る: 吹き出しはすぐ出し、post は列に入れて1通ずつ順番に送る(失敗したら同じ番号で3回まで送り直す)
   function submitBatch(text: string, choiceId?: string) {
     const b = bt.current;
+    void supersedeRetry();
     setMessages((m) => [...m, { role: "user", body: text }]);
     const sentAt = Date.now();
     b.lastSentAt = sentAt;
@@ -489,6 +582,7 @@ export default function Page() {
       return;
     }
     setBusy(true);
+    await supersedeRetry();
     await turn(v, choiceId);
     setBusy(false);
     textareaRef.current?.focus();
@@ -508,6 +602,7 @@ export default function Page() {
     bt.current.pending.clear();
     bt.current.batchId = "";
     bt.current.rebuilt = 0;
+    cancelRetry();
     setWaiting(false);
     setWeight("rapport");
     setRelation("visitor");
@@ -639,7 +734,7 @@ export default function Page() {
         ) : (
           <div className="thread">
             {messages.map((m, i) => (
-              <MessageBubble key={i} msg={m} dev={dev} onRate={rate}
+              <MessageBubble key={i} msg={m} dev={dev} onRate={rate} onRetry={retryNow}
                 onChoose={i === messages.length - 1 && !busy && !waiting ? (c) => submit(c.label, c.id) : undefined} />
             ))}
             {thinking && (
@@ -804,8 +899,8 @@ function HotlineDetails() {
   );
 }
 
-function MessageBubble({ msg, dev, onRate, onChoose }: {
-  msg: Msg; dev: boolean; onRate: (seq: number, n: number) => void; onChoose?: (c: Choice) => void;
+function MessageBubble({ msg, dev, onRate, onChoose, onRetry }: {
+  msg: Msg; dev: boolean; onRate: (seq: number, n: number) => void; onChoose?: (c: Choice) => void; onRetry?: () => void;
 }) {
   // 段階ごとの応答(第2段階)の文面は card で出し分ける。それ以前の危機の固定応答
   // (crisis はあるが crisisStep が無いもの)は、今まで通り危機カードを出す。
@@ -814,6 +909,9 @@ function MessageBubble({ msg, dev, onRate, onChoose }: {
   return (
     <div className={cls}>
       {msg.body ? <div className="bubble">{msg.body}</div> : null}
+      {msg.retryButton && onRetry && (
+        <div className="choice-chips"><button type="button" className="choice-chip retry" onClick={onRetry}>{GENERATION_RETRY_BUTTON_LABEL}</button></div>
+      )}
       {card === "crisis" && (
         <div className="crisis-card">
           {msg.safetyLine && <p className="safety-line">{msg.safetyLine}</p>}

@@ -284,7 +284,15 @@ async function runScenario(name, sc, rep) {
       if (!item) kind = "chip-not-offered";      // 出ていないチップのラベルを送った(自由記述として扱われるのが正しい)
       else if (t.chip) { choiceId = id; kind = "chip"; } else kind = "typed";
     }
-    const r = await call({ action: "chat", client_id: clientId, session_id: sessionId, text, ...(choiceId ? { choice_id: choiceId } : {}) });
+    let r = await call({ action: "chat", client_id: clientId, session_id: sessionId, text, ...(choiceId ? { choice_id: choiceId } : {}) });
+    // 生成に失敗して作り直し待ち(2026年11月4日)なら、画面と同じく retry_seq で作り直す(画面と同じく5回まで)
+    const pending = [];
+    for (let k = 0; r.body?.pending_retry && k < 5; k++) {
+      pending.push({ kind: (r.body.flags ?? []).find((f) => String(f).startsWith("生成の失敗の内訳")) ?? null, retry_after_ms: r.body.retry_after_ms });
+      if (modelMode === "free") await new Promise((res) => setTimeout(res, Math.min(r.body.retry_after_ms ?? 3000, 15000)));
+      r = await call({ action: "chat", client_id: clientId, session_id: sessionId, retry_seq: r.body.user_seq });
+    }
+    if (r.body?.pending_retry) pending.push({ kind: "作り直しても届かない", retry_after_ms: r.body.retry_after_ms });
     const b = r.body;
     const replies = Array.isArray(b.replies) && b.replies.length ? b.replies.map((x) => x.body) : [b.reply];
     // チップは最後の吹き出しの下に出る(インテークの次の問いは after に続く)
@@ -297,6 +305,7 @@ async function runScenario(name, sc, rep) {
       risk: b.safety?.risk ?? null, subject: b.safety?.subject ?? null,
       choices: (lastChoices ?? []).map((c) => c.id), dev_keys: ["safety", "flags", "used", "weight", "timings"].filter((k) => k in b), classifier: b.safety?.model ?? null, stage: b.safety?.stage ?? null,
       flags: b.flags ?? [], local_stage: classifyLocal(text, "check").stage,
+      ...(pending.length ? { pending_retry: pending } : {}),
     });
   }
   // DB に残った記録(状態の保存の失敗など)
@@ -310,7 +319,7 @@ async function runScenario(name, sc, rep) {
     session: sess && { phase: sess.phase, intake_step: sess.intake_step, chief_complaint_category: sess.chief_complaint_category,
       chief_complaint_source: sess.chief_complaint_source, distress_level: sess.distress_level, user_goal: sess.user_goal,
       recommended_mode: sess.recommended_mode, onset_context: sess.onset_context },
-    stored: msgs.map((m) => ({ role: m.role, body: m.body, crisis: m.crisis, crisis_step: m.crisis_step ?? null, closing: m.closing ?? false, summarized: m.summarized ?? null, safety_card: m.safety_card ?? null, choices: m.choices ?? null, choice_id: m.choice_id ?? null, flags: m.flags, timings: m.timings ?? null, model: m.model ?? null, prompt_version: m.prompt_version ?? null, settings: m.settings ?? null })) };
+    stored: msgs.map((m) => ({ role: m.role, body: m.body, crisis: m.crisis, crisis_step: m.crisis_step ?? null, closing: m.closing ?? false, summarized: m.summarized ?? null, safety_card: m.safety_card ?? null, choices: m.choices ?? null, choice_id: m.choice_id ?? null, flags: m.flags, timings: m.timings ?? null, model: m.model ?? null, prompt_version: m.prompt_version ?? null, settings: m.settings ?? null, failure: m.failure ?? null })) };
 }
 
 function measure(run) {
