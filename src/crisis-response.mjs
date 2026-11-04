@@ -44,7 +44,7 @@
 // ============================================================================
 
 import {
-  callGemini, parseJSON, LITE_MODELS, buildClassifierInput, classifyStaged, crisisDetectionVersion,
+  callGemini, parseJSON, LITE_MODELS, buildClassifierInput, classifyStaged, crisisDetectionVersion, liteThinkingBudget,
 } from "./classify.mjs";
 import { matchNegation, normalizeV3, categoryOfSafety, CATEGORY_PRIORITY } from "./crisis-keywords-v3.mjs";
 import { buildConcernBubbles, crisisStep3TextFor, crisisRepeatText, buildCrisisReply } from "./crisis-texts.mjs";
@@ -1087,7 +1087,7 @@ async function judgeOnce(prompt, schema, input, validate) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const result = await callGemini(
-        LITE_MODELS, prompt, [{ role: "user", parts: [{ text: input }] }], JUDGE_MAX_OUTPUT_TOKENS, -1, { responseSchema: schema },
+        LITE_MODELS, prompt, [{ role: "user", parts: [{ text: input }] }], JUDGE_MAX_OUTPUT_TOKENS, liteThinkingBudget(), { responseSchema: schema },
       );
       const parsed = parseJSON(result.text);
       const value = validate(parsed);

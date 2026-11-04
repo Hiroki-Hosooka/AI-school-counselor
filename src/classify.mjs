@@ -48,6 +48,19 @@ export const CRISIS_REPLY = buildCrisisReply(null);
 // (モデル比較検証で実際に動作・低コストを確認済み)。
 export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 
+// 軽いモデル(分類器・補助判定・人単位のメモの要約)の思考の上限(2026年11月4日。docs/token-usage-20261103.md の案①。人が指示)。
+// 以前は -1(動的。モデルにまかせる)で、思考のトークンが入力より多い回もあり、費用の約3割が分類器の思考だった。
+// lite は 0(思考なし)を受け付けないが、128 は受け付け、試した文では思考が 0 になり判定は同じだった。
+// 設定 LITE_THINKING_BUDGET で変えられる("dynamic" または -1 で以前の動き)。モデルが受け付けなかった(400)ときは、
+// そのモデルだけ -1 で送り直す(callGemini)。危機の判定の仕組み(2回並行・キーワードの強制判定)は変えていない
+export const LITE_THINKING_BUDGET_DEFAULT = 128;
+export function liteThinkingBudget(env = process.env) {
+  const v = String(env.LITE_THINKING_BUDGET ?? "").trim();
+  if (v === "dynamic" || v === "-1") return -1;
+  const n = Number(v);
+  return v !== "" && Number.isInteger(n) && n > 0 && n <= 24576 ? n : LITE_THINKING_BUDGET_DEFAULT;
+}
+
 // 2026年9月(構造化面接AI統合 手順4)に、絶望感≠危機の原則とsubject(self/other)判定を追加。
 // 「もう無理」「限界」等はここでは crisis から外し、watch(Tier B)側に明示的に含めている
 // (src/safety.mjs の CRISIS_WORDS 変更と対をなす)。subject は、友人・家族等の第三者の
@@ -224,7 +237,16 @@ export async function callGemini(models, systemInstruction, contents, maxOutputT
   let anyOverloaded = false;
   for (const model of models) {
     try {
-      const { text, usage, finishReason } = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs);
+      let r;
+      try {
+        r = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, thinkingBudget, responseSchema, timeoutMs);
+      } catch (e0) {
+        // 思考の上限をそのモデルが受け付けなかった(400)ときは、以前の -1(動的)で同じモデルに送り直す(2026年11月4日)
+        if (!(thinkingBudget > 0 && e0 instanceof Error && e0.message.includes("[HTTP_400]") && /thinking/i.test(e0.message))) throw e0;
+        attempts.push({ model, ok: false, tag: "思考の上限を受け付けない→動的で送り直し" });
+        r = await callGeminiOnce(model, systemInstruction, contents, maxOutputTokens, -1, responseSchema, timeoutMs);
+      }
+      const { text, usage, finishReason } = r;
       attempts.push({ model, ok: true, tag: "" });
       return { text, model, usage, attempts, finishReason };
     } catch (e) {
@@ -308,7 +330,7 @@ export async function classify(text) {
     // 思考トークン消費量が読めず(実機検証でCLASSIFIER_PROMPTに対し191〜224トークン
     // 消費を確認)、200では思考だけで使い切りJSON本体がMAX_TOKENSで尻切れになっていた。
     // 出力自体は20〜30トークンの小さなJSONなので、1024は十分な余裕を持たせた値。
-    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 1024, -1);
+    const result = await callGemini(LITE_MODELS, CLASSIFIER_PROMPT, [{ role: "user", parts: [{ text }] }], 1024, liteThinkingBudget());
     model = parseJSON(result.text);
     usedModel = result.model;
   } catch (e) {
@@ -533,7 +555,7 @@ async function oneVote(input, prompt) {
     try {
       const result = await callGemini(
         LITE_MODELS, prompt, [{ role: "user", parts: [{ text: input }] }],
-        V2_MAX_OUTPUT_TOKENS, -1, { responseSchema: CLASSIFIER_SCHEMA_V2, timeoutMs: classifierCallTimeoutMs() },
+        V2_MAX_OUTPUT_TOKENS, liteThinkingBudget(), { responseSchema: CLASSIFIER_SCHEMA_V2, timeoutMs: classifierCallTimeoutMs() },
       );
       const parsed = parseJSON(result.text);
       if (!["none", "watch", "crisis"].includes(parsed.risk)) throw new Error(`想定外の risk: ${parsed.risk}`);

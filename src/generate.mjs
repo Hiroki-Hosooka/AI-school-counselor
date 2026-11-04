@@ -15,7 +15,7 @@ import { batchPromptLine } from "./batch.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
-import { callGemini, parseJSON, salvageReply, LITE_MODELS } from "./classify.mjs";
+import { callGemini, parseJSON, salvageReply, LITE_MODELS, liteThinkingBudget } from "./classify.mjs";
 // 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
 import { leadBlock } from "./flow.mjs";
 import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock, AI_ENDING_FIX_HINT, AI_ENDING_FLAG, AI_ENDING_TAIL_PROVISIONAL } from "./flow.mjs";
@@ -625,14 +625,24 @@ export function flowPhaseFor(intake, safetyContext) {
 //
 // ナレッジが増えて対象範囲(principle/ng)が4000トークン規模に近づいたら再検討する
 // (第7節のRAG導入基準「1000件を超えたら」と同じく、規模に応じて見直す性質のもの)。
+//
+// 2026年11月4日に並べ替えた(人の指示。docs/token-usage-20261103.md 4章 案②)。指示が増えて、変わらない部分
+// (前書き・原則・同調の区別・禁止・綱引き・応答の作り方、フェーズ2では進め方と会話の流れの決まり)だけで
+// 約8,000字(約4,600トークン)になり、キャッシュの最低ラインを超えたため。変わらない部分を先頭にまとめ、
+// 「ここから下は、この場面・このターンの指示と情報」の見出しのあとに、安全の文脈・インテーク・モード・クロージング・
+// いまの状態・区切り・重心・メモ・見立て・知識・出力形式を置く。指示の位置が変わるので、見出しに
+// 「上の一般的な決まりとぶつかるときは、ここから下を優先する」と書いた(以前は安全の文脈が禁止のすぐ後ろにあった)。
+// 原則・禁止は番号の順にそろえる(先頭を毎回同じ文にするため)。インテーク中は先頭が約2,400トークンで、キャッシュは効かない。
 // flow(省略可。2026年10月11日・会話の流れ): { stats(src/flow.mjs の flowStats), text(相談者の今回の発言),
 //   declined(本人が断った相手。2026年10月14日), intakeTurn(src/intake.mjs の planIntakeTurn。2026年10月14日)}。
 //   フェーズ2のときだけ、決まり(FLOW_RULES_BLOCK)といまの状態(buildFlowBlock)を進め方のあとに足す
 export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSummary, safetyContext, intake, flow) {
-  const principles = rows.filter((k) => k.cat === "principle")
+  // 原則・禁止は番号の順にそろえる(DB から読んだ順は決まっていない。先頭を毎回同じ文にして、暗黙のキャッシュを効かせるため。2026年11月4日)
+  const byId = (a, b) => String(a.id).localeCompare(String(b.id), "en", { numeric: true });
+  const principles = rows.filter((k) => k.cat === "principle").sort(byId)
     .map((k) => `・${k.body}(${k.src})`).join("\n");
   const ngAt = (lv) =>
-    rows.filter((k) => k.cat === "ng" && k.lv === lv).map((k) => "・" + k.body).join("\n");
+    rows.filter((k) => k.cat === "ng" && k.lv === lv).sort(byId).map((k) => "・" + k.body).join("\n");
   const know = chunks
     .map((k) => `[${k.id}／${k.src}]${k.cat === "verbatim" ? "【逐語】" : ""} ${k.body}`)
     .join("\n") || "(該当なし)";
@@ -663,12 +673,14 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   // トップ画面から始めたインテーク(sessions.intake_step。2026年10月14日)は、そのターンの段階の指示だけを出す
   // (次に何を聞くかはコードが決める。src/intake.mjs)。intake_step が無い以前のセッションは、今までの台本
   const stepTurn = phase === "intake" && intake?.intake_step && flow?.intakeTurn ? flow.intakeTurn : null;
+  // 変わらない部分(フェーズ2の進め方・会話の流れの決まり)と、ターンごとに変わる部分(モード・クロージング・いまの状態)を分ける。
+  // 変わらない部分は先頭のまとまりに入れる(案②。暗黙のキャッシュ。docs/token-usage-20261103.md 4章)
+  const phase2Static = phase === "phase2" && !stepTurn ? PHASE2_FLOW_BLOCK + "\n\n" + FLOW_RULES_BLOCK + "\n" : "";
   const flowBlock = stepTurn ? buildIntakeStepBlock(stepTurn)
     : phase === "intake"
     ? buildIntakeBlock(intake)
-    : PHASE2_FLOW_BLOCK + "\n\n" + buildModeBlock(intake?.recommended_mode)
+    : buildModeBlock(intake?.recommended_mode)
       + "\n\n" + buildClosingBlock(intake?.closing_state, intake?.user_goal, contexts.includes("afterCrisis"), endingStyleOf(contexts))
-      + "\n\n" + FLOW_RULES_BLOCK
       + (flow?.stats ? "\n\n" + buildFlowBlock(flow.stats, intake, flow.text) : "");
   const intakeSchema = stepTurn ? INTAKE_STEP_OUTPUT_SCHEMA
     : phase === "intake" ? INTAKE_OUTPUT_SCHEMA : PHASE2_OUTPUT_SCHEMA + FLOW_OUTPUT_SCHEMA;
@@ -708,40 +720,11 @@ ${ngAt(1)}
 ・相手が話していないことを事実として決めつけない。
 ・技法や理論の名前を出さない。
 ・一言だけで終わらせない。受けたら、次につながる一言を必ず添える(短い返事でもよいが、相談者の言葉に触れて、次につながる形にする)。
-${safetyBlock}
-${flowBlock}
-
-# 区切りの判断
-${sum}
 
 # AIであることの綱引き
 普通のカウンセリングとまったく同じことをすると、文字のやり取りではまどろっこしくなり、相手はすぐ離脱します。
 かといってアドバイスに寄せると、相談する気をなくさせます。
 アドバイス感を抑えたまま、話が前に進んでいる感じは保ってください。短く、自然な速さで。
-
-# いまの重心
-${weight}
-
-# この人についての引き継ぎメモ(前回までの要約。無ければ「初めて」)
-${personSummary ? personSummary : "初めて来た人として接してください。"}
-
-このメモの扱い方(重要):
-・参考にはしますが、目の前の発言を最優先してください。人は変わります。
-・自分からこのメモの内容を詳しく話し出さないでください。
-　「前回はこうでしたね」と精度高く再生するのは、本人が自分で振り返る機会を奪います。
-・聞かれたら、覚えていること自体は隠さず認めてよいですが、要点程度に留めます。
-・「ここでの時間には限りがある」という枠組みの感覚を壊さないこと。
-　何でも覚えている万能な相手に見せないでください。
-
-# これまでの見立て
-${JSON.stringify(notes ?? {})}
-
-# この場面で参照できる知識
-${know}
-【逐語】と付いているものは、実際のカウンセラーの発話です。言い回しをできるだけ活かしてください。
-出典が「技」のものは学術文献等に基づく理論解説で、まだカウンセラーへの取材による検証を
-経ていません(CLAUDE.md 8節)。【逐語】や、出典が「嶋」「石」「嶋石」の知識で近いものが
-あれば、そちらの言い回しを優先し、「技」はそれで表現しきれない時の補足として使ってください。
 
 # 応答の作り方
 ・まず受け止める。整理や問いより受け止めが先。ただし受け止め方は1つで十分。
@@ -765,7 +748,39 @@ ${know}
 ・謝るときは一度だけ短く。自分を責める言い方(「わたしが悪かった」など)をしない。相談者が謝ってきたら
 　「謝らなくて大丈夫だよ」と短く返し、話を相談者に戻す。
 ・「本当にすごいことだと思う」「えらいね」のような、相談者を評価する言葉を使わない。
-・絵文字を使わない。箇条書きにしない。太字の見出しや、説明を複数の段落に分けない。${(flow?.batchCount ?? 1) > 1 ? "\n" + batchPromptLine(flow.batchCount) : ""}
+・絵文字を使わない。箇条書きにしない。太字の見出しや、説明を複数の段落に分けない。
+${phase2Static}
+# ここから下は、この場面・このターンの指示と情報
+(ここから下はターンごとに変わる。上の一般的な決まりとぶつかるときは、ここから下の指示を優先する)
+${safetyBlock}
+${flowBlock}
+
+# 区切りの判断
+${sum}
+
+# いまの重心
+${weight}
+
+# この人についての引き継ぎメモ(前回までの要約。無ければ「初めて」)
+${personSummary ? personSummary : "初めて来た人として接してください。"}
+
+このメモの扱い方(重要):
+・参考にはしますが、目の前の発言を最優先してください。人は変わります。
+・自分からこのメモの内容を詳しく話し出さないでください。
+　「前回はこうでしたね」と精度高く再生するのは、本人が自分で振り返る機会を奪います。
+・聞かれたら、覚えていること自体は隠さず認めてよいですが、要点程度に留めます。
+・「ここでの時間には限りがある」という枠組みの感覚を壊さないこと。
+　何でも覚えている万能な相手に見せないでください。
+
+# これまでの見立て
+${JSON.stringify(notes ?? {})}
+
+# この場面で参照できる知識
+${know}
+【逐語】と付いているものは、実際のカウンセラーの発話です。言い回しをできるだけ活かしてください。
+出典が「技」のものは学術文献等に基づく理論解説で、まだカウンセラーへの取材による検証を
+経ていません(CLAUDE.md 8節)。【逐語】や、出典が「嶋」「石」「嶋石」の知識で近いものが
+あれば、そちらの言い回しを優先し、「技」はそれで表現しきれない時の補足として使ってください。${(flow?.batchCount ?? 1) > 1 ? "\n\n# 今回の発言について\n" + batchPromptLine(flow.batchCount) : ""}
 
 # 出力形式(JSONのみ。前後に説明や記号を付けない)
 {
@@ -1241,7 +1256,8 @@ export async function updatePersonMemory(db, clientId, sessionNotes) {
     // (src/classify.mjsのcallGemini()コメント参照)。maxOutputTokensは2000。
     // -1(dynamic)は思考トークン消費が読めないため、本文(最大MEMORY_MAX_CHARS=600字
     // ≒400トークン)+思考分の余裕を持たせた。
-    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, -1);
+    // 思考の上限は liteThinkingBudget()(2026年11月4日。以前は -1 = 動的)
+    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, liteThinkingBudget());
     newSummary = summaryResult.text.trim();
   } catch (e) {
     console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);
