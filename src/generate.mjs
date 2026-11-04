@@ -15,7 +15,7 @@ import { batchPromptLine } from "./batch.mjs";
 import { createClient } from "@supabase/supabase-js";
 import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
-import { callGemini, parseJSON, salvageReply, LITE_MODELS, liteThinkingBudget } from "./classify.mjs";
+import { callGemini, parseJSON, salvageReply, LITE_MODELS, MEMORY_THINKING_BUDGET } from "./classify.mjs";
 // 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
 import { leadBlock } from "./flow.mjs";
 import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock, AI_ENDING_FIX_HINT, AI_ENDING_FLAG, AI_ENDING_TAIL_PROVISIONAL } from "./flow.mjs";
@@ -1256,8 +1256,8 @@ export async function updatePersonMemory(db, clientId, sessionNotes) {
     // (src/classify.mjsのcallGemini()コメント参照)。maxOutputTokensは2000。
     // -1(dynamic)は思考トークン消費が読めないため、本文(最大MEMORY_MAX_CHARS=600字
     // ≒400トークン)+思考分の余裕を持たせた。
-    // 思考の上限は liteThinkingBudget()(2026年11月4日。以前は -1 = 動的)
-    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, liteThinkingBudget());
+    // 思考の上限は MEMORY_THINKING_BUDGET(2026年11月4日。以前は -1 = 動的。危機の判定に関わらないので上限を既定にした)
+    const summaryResult = await callGemini(LITE_MODELS, SUMMARY_PROMPT, [{ role: "user", parts: [{ text: prompt }] }], 2000, MEMORY_THINKING_BUDGET);
     newSummary = summaryResult.text.trim();
   } catch (e) {
     console.error("人単位の記憶の要約に失敗しました(本体の会話には影響なし):", e);

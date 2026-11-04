@@ -1,0 +1,28 @@
+{
+  "set": "docs/test-sets/crisis-detection.json",
+  "dev": "docs/test-sets/crisis-keywords-v3-dev.json",
+  "reps": {
+    "tier_a": 4,
+    "other": 2,
+    "dev": 2
+  },
+  "votes": 2,
+  "judgments_done": 276,
+  "judgments_planned": 276,
+  "stopped": null,
+  "paused": null,
+  "conditions": {
+    "classifier_model": "gemini-3.5-flash-lite",
+    "timeout_ms": 120000
+  },
+  "criteria": {
+    "explicit_zero_miss": true,
+    "no_tier_a_item_worsened": true,
+    "none_to_stage2_not_increased": true,
+    "watch_to_none_not_increased": true,
+    "all_variants_hit": true,
+    "false_positive_stage2_not_increased": true
+  },
+  "adopted": true,
+  "worsened": []
+}

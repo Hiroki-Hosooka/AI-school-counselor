@@ -105,6 +105,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── test-generation-retry.mjs     生成に失敗したときの作り直しのテスト(画面と同じ API の経路・失敗をわざと起こす。オフライン)
 │   ├── test-generation-retry-ui.mjs  生成に失敗したときの画面の作り直しのテスト(Playwright。API は横取り)
 │   ├── analyze-generation-failures.mjs 再生の記録から生成の失敗を種類・場面ごとに数える
+│   ├── test-prompt-cache.mjs        生成の指示の暗黙のキャッシュが効くかの確かめ(無料枠・合成の発言)
 │   ├── analyze-token-usage.mjs / analyze-classifier-votes.mjs  トークンの使い方と費用・分類器の2回の判定の食い違いを数える(docs/token-usage-20261103.md)
 │   ├── test-version.mjs              版の書き方と docs/changelog.md が最新かの確かめ(6節)
 │   ├── export-review-logs.mjs        採点用のログの書き出し(画面に出たやり取りだけ・1会話1ファイル・版がわからない番号。対応表は別。書き出し先 review-export/ はコミットしない)

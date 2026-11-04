@@ -48,18 +48,19 @@ export const CRISIS_REPLY = buildCrisisReply(null);
 // (モデル比較検証で実際に動作・低コストを確認済み)。
 export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 
-// 軽いモデル(分類器・補助判定・人単位のメモの要約)の思考の上限(2026年11月4日。docs/token-usage-20261103.md の案①。人が指示)。
-// 以前は -1(動的。モデルにまかせる)で、思考のトークンが入力より多い回もあり、費用の約3割が分類器の思考だった。
-// lite は 0(思考なし)を受け付けないが、128 は受け付け、試した文では思考が 0 になり判定は同じだった。
-// 設定 LITE_THINKING_BUDGET で変えられる("dynamic" または -1 で以前の動き)。モデルが受け付けなかった(400)ときは、
-// そのモデルだけ -1 で送り直す(callGemini)。危機の判定の仕組み(2回並行・キーワードの強制判定)は変えていない
-export const LITE_THINKING_BUDGET_DEFAULT = 128;
+// 軽いモデル(分類器・補助判定)の思考の上限(2026年11月4日。docs/token-usage-20261103.md の案①。人が指示して試した)。
+// 以前から -1(動的。モデルにまかせる)で、費用の約3割が分類器の思考だった。上限(128)を付けると、出力の形を決めた呼び出しでは
+// 思考が 0 になる。確かめ(無料枠・同じ手順。docs/test-results/crisis-evidence-*-20261104-think128-summary.txt)では、
+// 明示的な表現の見逃し 0・Tier A の見逃しは同じだったが、保留セットで none が段階2になる回が 5 → 8回(44判定中)に増え、
+// 誇張(「〜すぎて死にそう笑」)が段階2になる回も見えた。誤検知で危機の応答と職員への通知が増えうるので、**既定は以前の -1 のまま**にし、
+// 設定 LITE_THINKING_BUDGET(1〜24576)で上限を試せるようにした(入れるかは人が決める)。モデルが受け付けなかった(400)ときは、
+// そのモデルだけ -1 で送り直す(callGemini)。人単位のメモの要約は危機の判定に関わらないので、上限を既定にした(MEMORY_THINKING_BUDGET)
 export function liteThinkingBudget(env = process.env) {
   const v = String(env.LITE_THINKING_BUDGET ?? "").trim();
-  if (v === "dynamic" || v === "-1") return -1;
   const n = Number(v);
-  return v !== "" && Number.isInteger(n) && n > 0 && n <= 24576 ? n : LITE_THINKING_BUDGET_DEFAULT;
+  return v !== "" && Number.isInteger(n) && n > 0 && n <= 24576 ? n : -1;
 }
+export const MEMORY_THINKING_BUDGET = 128;
 
 // 2026年9月(構造化面接AI統合 手順4)に、絶望感≠危機の原則とsubject(self/other)判定を追加。
 // 「もう無理」「限界」等はここでは crisis から外し、watch(Tier B)側に明示的に含めている
