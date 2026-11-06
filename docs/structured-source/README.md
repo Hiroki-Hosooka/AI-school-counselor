@@ -1,6 +1,6 @@
 # 構造化面接AI 統合の参照資料
 
-`docs/prompts/structured-unstructured-merge.md` が指す参照資料。
+`docs/archive/prompts/structured-unstructured-merge.md` が指す参照資料。
 
 - `00_統合版_構造化面接AIプロンプト.txt` — 構造化AIの完成版プロンプト
 - `03_共通グランドルール_両条件共通.txt` — 構造化・非構造化どちらにも入れる共通ルール

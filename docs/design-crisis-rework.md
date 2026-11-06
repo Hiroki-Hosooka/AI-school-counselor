@@ -178,7 +178,7 @@
 ## 5章の検証
 
 - 10/28 のログ5件の生徒の発言(チップつき)を、画面と同じ API の経路(`scripts/test-api-path.mjs` の `log-*`。偽の DB・無料枠・合成)で
-  修正前(d5e0890)と修正後に2回ずつ流し、`scripts/analyze-crisis-rework.mjs` で数えた。結果は `docs/test-results/crisis-rework-logs-20261101-summary.txt`、
+  修正前(d5e0890)と修正後に2回ずつ流し、`scripts/archive/analyze-crisis-rework.mjs` で数えた。結果は `docs/test-results/crisis-rework-logs-20261101-summary.txt`、
   修正後の返事の全部は `docs/test-results/crisis-rework-logs-20261101-after.md`(ログを書いた本人が読んで最後の判断をする)。
 - **結果(2026年11月1日)**: 判定の側は確かめられた(短い返事で危機に上がった 0、空の返事 27 → 0、暴力・虐待で 189 0/2 → 2/2、
   分類器だけの段階2 6 → 3。残る誤りは「あしらわれたら立ち直れない」の1件)。引用の確かめは開発用の文・保留セット v3 とも明示的な表現の見逃し 0。

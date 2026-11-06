@@ -1,13 +1,13 @@
 // ============================================================================
 //  冒頭の言い直しの検証で、修正後の返事を、相談した本人が読める形に書き出す(2026年11月1日)
 //
-//    node scripts/export-echo-after.mjs --in=<test-api-path.mjs の --out>,... --out=<.md>
+//    node scripts/archive/export-echo-after.mjs --in=<test-api-path.mjs の --out>,... --out=<.md>
 //
 //  生成に失敗して固定の一言になった返事は「(生成失敗)」と印を付ける(言い直しの割合には数えていない)。
 //  言い直しと判定した最初の一文には「◆言い直し」を付ける(src/flow.mjs の echoOf)。
 // ============================================================================
 import fs from "node:fs";
-import { echoOf } from "../src/flow.mjs";
+import { echoOf } from "../../src/flow.mjs";
 
 const arg = (k, d = "") => (process.argv.find((a) => a.startsWith(`--${k}=`)) ?? `--${k}=${d}`).slice(k.length + 3);
 const files = arg("in").split(",").filter(Boolean);

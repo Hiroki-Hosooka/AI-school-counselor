@@ -3,7 +3,7 @@
 //
 //  材料: 相談ログ 16f362dd(docs/review-logs/2026-10-11-16f362dd.md)と、相談した本人の感想
 //        (「同じような返され方しかされないと、まともに相手にされていない気がする」「すごく他人事感がある」)
-//  設計: docs/design-conversation-flow.md(第1部・第2部)。指示書: docs/prompts/conversation-flow-fix.md・conversation-engagement-fix.md
+//  設計: docs/design-conversation-flow.md(第1部・第2部)。指示書: docs/archive/prompts/conversation-flow-fix.md・conversation-engagement-fix.md
 //  根拠: 石田先生 IS4(「そうなの」の次に一言)・V4・V5(コンプレイナントへの問い)・IS8(一回まとめてみようか)・IS14(熱量を合わせる)、
 //        嶋先生 T16(気づきの問い)、嶋石 X3(友達でも親でもない)・X5(相手が主体。本人が自分で気づいていくのを支える)、
 //        JILPT 資料の自己一致・診断的な問い(Q4)
@@ -733,7 +733,7 @@ export function conversationMetrics(hist) {
 }
 
 // ============================================================================
-//  AI から会話を終える事故(2026年10月14日。docs/prompts/fix-after-shima4.md 1-4)
+//  AI から会話を終える事故(2026年10月14日。docs/archive/prompts/fix-after-shima4.md 1-4)
 //  嶋先生とのミーティング中、相談者が終わりの合図を出していないのに、AI の返事が区切りの挨拶だけで終わった。
 //  本人が終わりの合図を出していないのに、返事が「終わりの形」(問いも次につながる一言も無く、終わりの言い回しを含む)なら、
 //  作り直す(1回。src/generate.mjs の endCheck)。作り直しても残れば、続きを促す一言(仮)を足す。どのフェーズでも使う。

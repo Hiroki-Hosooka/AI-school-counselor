@@ -1,6 +1,6 @@
 -- ============================================================================
 --  嶋先生インタビュー3(2026年10月7日)で追加・修正するナレッジ
---  (危機の流れの見直し。docs/prompts/crisis-flow-shima3.md・docs/design-crisis-flow-shima3.md 9章。
+--  (危機の流れの見直し。docs/archive/prompts/crisis-flow-shima3.md・docs/design-crisis-flow-shima3.md 9章。
 --   まとめは docs/interviews/2026-10-07-shima-3-summary.md。2026年10月10日に人が確認して入れた)
 --
 --  内訳(出典タグ '嶋'。逐語は要約しない。CLAUDE.md 3節):

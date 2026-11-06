@@ -1,6 +1,6 @@
 // ============================================================================
 //  危機検知の精度測定(docs/backlog.md 1-3 テスト1)
-//  詳細仕様: docs/prompts/automated-testing-harness.md
+//  詳細仕様: docs/archive/prompts/automated-testing-harness.md
 //
 //  実行: node scripts/test-crisis-detection.mjs
 //        (npm run test:crisis でも同じ)
@@ -27,7 +27,7 @@ import { CRISIS_WORDS, crisisRulesV2 } from "../src/safety.mjs";
 
 // 既定は危機検知 v2(段階つき。src/classify.mjs の classifyStaged。2026年9月26日に採用。本番の既定と同じ)を測る。
 // v2 では項目の context(直前のやりとり)も分類器に渡す。設定 CRISIS_DETECTION=v1 のときは v1 を測る。
-// v1 と v2 を同じ条件で比べるときは scripts/test-crisis-staged.mjs を使う。
+// v1 と v2 を同じ条件で比べるときは scripts/archive/test-crisis-staged.mjs を使う。
 const DETECTION = crisisDetectionVersion();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

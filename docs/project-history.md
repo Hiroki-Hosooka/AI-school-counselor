@@ -26,7 +26,7 @@
 | | 嶋先生 | 石田先生 |
 |---|---|---|
 | 立場 | 来談者中心寄り(CLAUDE.md 3節) | 人間性心理学ベース・折衷。小中学生とその保護者を担当(CLAUDE.md 3節) |
-| インタビュー | 2026/5/28 と 2026/9 の2回(CLAUDE.md 3節)。2回目は試作機を触りながらのフィードバック(docs/prompts/structured-unstructured-merge.md) | 日付はリポジトリに記録なし |
+| インタビュー | 2026/5/28 と 2026/9 の2回(CLAUDE.md 3節)。2回目は試作機を触りながらのフィードバック(docs/archive/prompts/structured-unstructured-merge.md) | 日付はリポジトリに記録なし |
 | ナレッジの件数 | 出典「嶋」40件 | 出典「石」42件 |
 
 (件数は db/seed_knowledge.sql・db/seed_knowledge_structured.sql から集計。二者が一致した「嶋石」5件は「最も強い根拠」(CLAUDE.md 3節))
@@ -104,7 +104,7 @@
 - テスト2(禁止表現の漏れ率。入力10種)、テスト3(関わりの型の安定性。6ペルソナ)、テスト4(ペルソナとの多ターン会話。6ペルソナ)を実装(コミット 9b33c37)。
 - 本番とテストが**同じ関数**を使うよう、判定・生成のロジックを src/classify.mjs・src/generate.mjs に切り出した(コミット 9b33c37)。
 - テストの会話では、職員への通知と安全イベントの記録をしない(実在しない生徒の危機が学校に誤って届かないように)(コミット 9b33c37)。
-- この時点では、まだ実際のキーで実行していない(docs/prompts/automated-testing-harness.md の実施メモ)。
+- この時点では、まだ実際のキーで実行していない(docs/archive/prompts/automated-testing-harness.md の実施メモ)。
 
 ### フェーズ5: 「思考」で応答が途中で切れる不具合(2026-09-16)
 
@@ -116,7 +116,7 @@
 
 コミット 7d40864・e9bb644・f48cf09・ff37fcc・f04f896・c3ec734・9a30c8e・d12a8fc・21578fc・af3a7cc・c86ea1b・ad94435・95a84b5・3dc1d28
 
-- 背景: Gemini の Gem で作った「構造化面接AI」(4ターンのインテーク → 技法別の進め方 → クロージング)と、これまでの非構造化AIを統合する。進み方の骨格は構造化のまま、話す中身と言い回しは嶋・石の逐語を優先する(docs/prompts/structured-unstructured-merge.md)。
+- 背景: Gemini の Gem で作った「構造化面接AI」(4ターンのインテーク → 技法別の進め方 → クロージング)と、これまでの非構造化AIを統合する。進み方の骨格は構造化のまま、話す中身と言い回しは嶋・石の逐語を優先する(docs/archive/prompts/structured-unstructured-merge.md)。
 - 手順2(DB): knowledge.mode、sessions のフェーズ・インテークの項目・クロージングの状態、messages の推移を記録する列を追加(コミット 7d40864)。
 - 手順3(ナレッジ): 技法カタログ26件(出典「技」)と嶋先生インタビュー2由来の3件、計29件を追加 → 169件(コミット e9bb644)。
 - 手順4(危機の安全層): 「もう無理」「限界」を危機キーワードから外し、Tier B(気がかり=watch)へ。発言が本人(self)か第三者(other)かも判定し、**固定応答は本人の危機のときだけ**に。ナレッジ D3〜D6 を追加 → 173件。危機検知のテストセットを71件に(コミット ff37fcc)。
@@ -131,7 +131,7 @@
 
 コミット 693210d 〜 40600c8(この日36件)
 
-- 検証の仕様を5本立てに更新(docs/prompts/structured-verification-suite.md)。実行は Gemini(本人のテスト用キー)、結果の評価・要約は Claude、と役割を分けた(コミット a01e0ae)。
+- 検証の仕様を5本立てに更新(docs/archive/prompts/structured-verification-suite.md)。実行は Gemini(本人のテスト用キー)、結果の評価・要約は Claude、と役割を分けた(コミット a01e0ae)。
 - **テスト1(危機検知・79件)**: Tier A の見逃し 0/23、Tier B→Tier A の過剰検知 0/28、ブロック 0/79、正解率 0.97(test-results/crisis-detection-summary.txt)。
   - 実行前に、Google のキー形式の移行(AIza → AQ.)にともなう2つの不具合を発見・修正: 軽いモデルが thinkingBudget 0 を拒否する/-1 にすると思考が出力枠を使い切る(191〜224トークンを確認)(コミット 8e2a67f)。
 - **テスト2(禁止表現)**: 1回目は130回中97回(75%)が生成失敗。レート制限(429)の情報が、最後に試したモデルの404で隠されて再試行されていなかった(コミット 89a8d07)。単一キーでの実行も83.8分かかり、130回中69回(53%)が生成失敗(コミット a2192b9)。
@@ -303,7 +303,7 @@ Postgres(Supabase。データベースとしてだけ使う)
 
 - 本番とテストは同じ関数(src/classify.mjs・src/generate.mjs・src/crisis-response.mjs)を使う。測った数字が本番の実力になるように(README.md)。
 - テスト用のキーは本番と分ける。無料枠は複数キーのプール(4本)(scripts/test-model-comparison.mjs の先頭コメント)。生成の質を測る重いテストは課金キー+予算台帳(上限 既定1000円)(README.md)。
-- 実行は Gemini、結果の要約・評価は Claude(docs/prompts/structured-verification-suite.md)。
+- 実行は Gemini、結果の要約・評価は Claude(docs/archive/prompts/structured-verification-suite.md)。
 - テストの発話の多くは Claude が作った合成データで、実際の相談で使われた言い回しではない(test-sets/crisis-detection.json の note)。
 - **保留セット**: 実装を見ない別のエージェントが作り、変更の採否の判断にだけ使う。調整に使ったら未知の発話への強さを測れなくなる(README.md)。
 - **分類器の判定は毎回ぶれる。** 1回の実行で見逃し0件でも、見逃しがないとは言えない(README.md)。
@@ -329,7 +329,7 @@ Postgres(Supabase。データベースとしてだけ使う)
 
 ### 5-4. 危機検知の作り直し 第1段階: v1 と v2 の比較(2026-09-25〜26)
 
-v1 と v2 を発言ごとに交互に判定。Tier A は各10回、それ以外は各3回。v2 は1判定に分類器2回(scripts/test-crisis-staged.mjs の先頭コメント)。
+v1 と v2 を発言ごとに交互に判定。Tier A は各10回、それ以外は各3回。v2 は1判定に分類器2回(scripts/archive/test-crisis-staged.mjs の先頭コメント)。
 
 | 指標 | メイン84件(826判定) | 保留セット v2・45件(606判定) |
 |---|---|---|

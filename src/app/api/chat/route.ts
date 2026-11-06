@@ -1337,7 +1337,7 @@ export async function POST(req: Request) {
       }
       // 生成に失敗した(安全フィルターのブロック・すべてのモデルの失敗)とき、危機のあと・気がかり・第三者の場面なら、
       // ふつうの固定の返事(「もう少し聞かせて」)ではなく、場面ごとの一言とカードで受ける(2026年10月11日。仮。
-      // docs/proposal-safety-filter-fallback.md)。危機の状態で生成したターン(段階ごとの応答)は上の固定の返事のまま
+      // docs/archive/proposal-safety-filter-fallback.md)。危機の状態で生成したターン(段階ごとの応答)は上の固定の返事のまま
       const priorContextFallbacks = hist.filter((h) => Array.isArray(h.flags)
         && (h.flags as string[]).some((f) => f.startsWith(CONTEXT_FAILURE_FLAG))).length;
       const fallback = !crisisGenerated && generated.generationFailed

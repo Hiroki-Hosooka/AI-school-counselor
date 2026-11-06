@@ -9,7 +9,7 @@
 
 ---
 
-## 1. docs/prompts/automated-testing-harness.md(機械だけで測る自動テスト一式。4本柱)
+## 1. docs/archive/prompts/automated-testing-harness.md(機械だけで測る自動テスト一式。4本柱)
 
 | 指示書 | 項目 | 状態 | 根拠 | 残っていること |
 |---|---|---|---|---|
@@ -25,7 +25,7 @@
 | automated-testing-harness | 横断: 実行日時と概算コストを残す | 済(一部は概算) | 予算台帳 `docs/test-results/budget-ledger.json`(コミット `2ca3908`)。テスト1は文字数からの概算(`scripts/test-crisis-detection.mjs` の `CHARS_PER_TOKEN = 1.5`) | テスト1は実際の usageMetadata を使っていない(無料枠のため ¥0 扱い) |
 | automated-testing-harness | 横断: 安全フィルターの閾値を変えたらブロック率とセットで記録 | 済 | CLAUDE.md 5.11(2026年10月7日に実測値を記録。`55e4cd0`) | Tier B・第三者・危機のあとの会話を本生成で返すときのブロック率は未測定(CLAUDE.md 5.11 に明記) |
 
-## 2. docs/prompts/structured-unstructured-merge.md(構造化面接AIとの統合)
+## 2. docs/archive/prompts/structured-unstructured-merge.md(構造化面接AIとの統合)
 
 | 指示書 | 項目 | 状態 | 根拠 | 残っていること |
 |---|---|---|---|---|
@@ -49,7 +49,7 @@
 | merge | 手順7 クロージング | 済 | コミット `21578fc` | なし |
 | merge | 守ること: 技法名を出さない/箇条書きの長文をしない/内部判定を応答に含めない | 済 | `OUTPUT_NG` の技法名(SFBT・心理教育を `74f1808` で追加)、`buildSystem` の指示 | なし |
 
-## 3. docs/prompts/structured-verification-suite.md(統合後の検証一式。5本立て)
+## 3. docs/archive/prompts/structured-verification-suite.md(統合後の検証一式。5本立て)
 
 | 指示書 | 項目 | 状態 | 根拠 | 残っていること |
 |---|---|---|---|---|
@@ -65,7 +65,7 @@
 | verification | 横断: 実行日時・概算コスト/Tier A 見逃しが出たら止めて報告 | 済 | 予算台帳、2-3 の不採用(`a502e75`) | なし |
 | verification | 横断(追記): 使ったモデルを各ログに記録 | 済 | コミット `8f1f39b` | なし |
 
-## 4. docs/prompts/crisis-keywords-v3.md(危機キーワード v3)
+## 4. docs/archive/prompts/crisis-keywords-v3.md(危機キーワード v3)
 
 | 指示書 | 項目 | 状態 | 根拠 | 残っていること |
 |---|---|---|---|---|
@@ -77,9 +77,9 @@
 | keywords-v3 | 4. v2 と v3 の比較(採用の条件すべて) | 済 | `docs/test-results/crisis-keywords-v3-20261009-summary.txt`(見逃し 0、誤検知の段階2 30→12) | なし |
 | keywords-v3 | 5. 保留セット v3 を別エージェントで作り、集計だけで判定 | 済 | コミット `bfefa36`・`1ab38a3`(Tier A 見逃し 0/220、none→段階2 15→9) | なし |
 | keywords-v3 | 6. CLAUDE.md 5.12 に変更内容と根拠を追記 | 済 | コミット `dca23b2` | なし |
-| keywords-v3 | 6.「本番(main)への反映は、検証の結果を私が確認してから」 | 不明 | 既定は v3 になった(`dca23b2`)。ただし GitHub に `main` ブランチは無く、既定ブランチは `claude/doc-review-n5v5eq`。Vercel の本番がどのコミットか、リポジトリからは確かめられない。`docs/changes-since-shima3-interview.md` 7章は「本番(main)への反映: 検証の結果を確認してから」と未済のまま | 本番に出したかを利用者が確認する |
+| keywords-v3 | 6.「本番(main)への反映は、検証の結果を私が確認してから」 | 不明 | 既定は v3 になった(`dca23b2`)。ただし GitHub に `main` ブランチは無く、既定ブランチは `claude/doc-review-n5v5eq`。Vercel の本番がどのコミットか、リポジトリからは確かめられない。`docs/archive/changes-since-shima3-interview.md` 7章は「本番(main)への反映: 検証の結果を確認してから」と未済のまま | 本番に出したかを利用者が確認する |
 
-## 5. docs/prompts/crisis-flow-shima3.md(危機の流れの見直し。嶋先生 10/7)
+## 5. docs/archive/prompts/crisis-flow-shima3.md(危機の流れの見直し。嶋先生 10/7)
 
 | 指示書 | 項目 | 状態 | 根拠 | 残っていること |
 |---|---|---|---|---|
@@ -91,7 +91,7 @@
 | crisis-flow | 2-1 スケーリングを出すとき・回数(続けて出さない) | 済(仮) | 1会話2回まで・直前がチップなら出さない(CLAUDE.md 5.18) | なし |
 | crisis-flow | 2-2 AIの返事(仮) | 済(仮) | `SCALING_PROMPT_PROVISIONAL`・`SCALING_PROMPT_A_PROVISIONAL` | 心理士の確認 |
 | crisis-flow | 2-3 選択肢(インテークと同じ向き・ラベル) | 済(仮) | `CHOICES_SCALING_PROVISIONAL`。向きはそろえ、ラベルは指示書のまま(2026年10月9日に人が確認。ソースのコメント) | 心理士の確認 |
-| crisis-flow | 2-4 選んだあと(受け止めの一言・記録・管理画面) | 済(仮) | `SCALING_ACK_PROVISIONAL`、`safety_events.scale`、admin.html の表示(`docs/changes-since-shima3-interview.md` 2-4) | なし |
+| crisis-flow | 2-4 選んだあと(受け止めの一言・記録・管理画面) | 済(仮) | `SCALING_ACK_PROVISIONAL`、`safety_events.scale`、admin.html の表示(`docs/archive/changes-since-shima3-interview.md` 2-4) | なし |
 | crisis-flow | 3-1 全体の流れ(1通目→2通目→3通目→分岐→生成。AIから終わらせない) | 済(仮・既定オフ) | CLAUDE.md 5.16・5.18 | 心理士の確認 |
 | crisis-flow | 3-2 2通目から「重い」を外し「心配」を使う/出力チェックに追加 | 済 | `src/crisis-texts.mjs` の `buildCrisisReply`・`CONCERN_TEXT_PROVISIONAL`、`OUTPUT_NG`(`src/safety.mjs` 243〜246行) | 「{心配なこと}」の文面は仮。本番の固定応答も同じ文面を使うので**本番の文面の確認が要る** |
 | crisis-flow | 3-2 生成でのパーソナライズは実装せず、安全の担保の方法だけ提案 | 済 | `docs/proposal-concern-personalization.md` | 入れるかの判断(人) |
@@ -101,7 +101,7 @@
 | crisis-flow | 4-1 AIから終わらせない・AIの限界で区切らない | 済 | `AFTER_CRISIS_BLOCK_PROVISIONAL`(本番の既定でも効く。CLAUDE.md 5.17)、`OUTPUT_NG` | 指示の文面は仮のまま本番で使う(人が決めた) |
 | crisis-flow | 4-2 段階ごとの終わり方(危機のあとは3案を回す) | 済(仮) | `CRISIS_ENDINGS_PROVISIONAL`、`STAGE1_CLOSING_LINE_PROVISIONAL`、`messages.ending_variant` | 心理士の確認 |
 | crisis-flow | 5.「大丈夫」を文字どおりに受け取らない(指示+記録のみ) | 済 | `DAIJOUBU_RULE_PROVISIONAL`、`daijoubuYokattaNote`(route.ts) | 指示の文面は仮 |
-| crisis-flow | 6. 知識ベースへの追加(提案→確認→DB) | 途中 | `db/seed_knowledge_shima3.sql`(V19〜V26・T33〜T35、T30 の書き直し。コミット `8cc4750`) | **Supabase での実行が必要**(`docs/changes-since-shima3-interview.md` 5章・7章) |
+| crisis-flow | 6. 知識ベースへの追加(提案→確認→DB) | 途中 | `db/seed_knowledge_shima3.sql`(V19〜V26・T33〜T35、T30 の書き直し。コミット `8cc4750`) | **Supabase での実行が必要**(`docs/archive/changes-since-shima3-interview.md` 5章・7章) |
 | crisis-flow | 7-1 オフラインの検証 | 済 | `scripts/test-staged-response.mjs` 389件通過(今回も確認) | なし |
 | crisis-flow | 7-2 無料枠の検証(否定の検出、A の語が危機キーワードに当たらない) | 済 | `docs/test-results/crisis-negation-20261010-summary.txt`(156/168) | なし |
 | crisis-flow | 7-3 有料のペルソナテスト(B6・B7・B8・B1・B5) | 未着手(予定どおり待ち) | ペルソナ B6〜B8 は `docs/test-sets/personas.json` に定義済み、判定は `test-persona-regression.mjs` 774行〜 | 心理士の確認で文面が決まってから1回だけ |

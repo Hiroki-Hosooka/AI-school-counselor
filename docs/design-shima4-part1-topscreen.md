@@ -1,6 +1,6 @@
 # 第1部(不具合)とトップ画面・インテークの設計(嶋先生4回目 10/14 を受けて)
 
-2026年10月14日。指示書 `docs/prompts/fix-after-shima4.md` の第1部と、`docs/prompts/top-screen-intake.md`(第5部を置き換える)を、
+2026年10月14日。指示書 `docs/archive/prompts/fix-after-shima4.md` の第1部と、`docs/archive/prompts/top-screen-intake.md`(第5部を置き換える)を、
 指示どおり一つの設計にまとめた。**まだ実装していない。** 確認をいただいてから実装する。
 
 > 第2部〜第4部・第6部は、第1部の実装と検証が終わってから、同じく設計を先に出す。

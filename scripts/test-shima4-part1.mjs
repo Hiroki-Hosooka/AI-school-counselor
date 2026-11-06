@@ -2,7 +2,7 @@
 //  嶋先生4回目を受けた第1部(不具合)のオフラインテスト(2026年10月14日)
 //
 //  実行: node scripts/test-shima4-part1.mjs。API・DB は使わない。
-//  設計: docs/design-shima4-part1-topscreen.md 1章。指示書: docs/prompts/fix-after-shima4.md 第1部
+//  設計: docs/design-shima4-part1-topscreen.md 1章。指示書: docs/archive/prompts/fix-after-shima4.md 第1部
 //  確かめること
 //   1. チップの受け取り(状態ではなく直前の返事の記録から。押した・手で打った・数字)
 //   2. 相談ログ 86130eef の不具合の再現(状態の保存の失敗で step3 に止まる)と、直したあとの流れ

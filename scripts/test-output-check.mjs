@@ -157,7 +157,7 @@ for (const text of MUST_NOT_HIT_CRISIS_KEYWORD) {
 
 // --------------------------------------------------------------------------
 // 危機検知 v2 の照合規則(2026年9月・危機検知の作り直し 第1段階。src/safety.mjs の crisisRulesV2)
-// 危機検知 v2(既定)で使う規則。ここに挙げた文は、実際の判定(scripts/test-crisis-staged.mjs)
+// 危機検知 v2(既定)で使う規則。ここに挙げた文は、実際の判定(scripts/archive/test-crisis-staged.mjs)
 // とは別に、規則を変えたときに書き方の違いへの強さ・誤一致を機械的に確かめるためのもの。
 // --------------------------------------------------------------------------
 const v2Stage2 = (t) => { const r = crisisRulesV2(t); return r.keywords.length > 0 || r.patterns.length > 0; };
@@ -201,7 +201,7 @@ for (const text of V2_IDIOM_GUARDED) check(`「${text}」`, v2Stage2(text), "段
 
 // --------------------------------------------------------------------------
 // 危機キーワード v3(src/crisis-keywords-v3.mjs。2026年10月10日に採用して既定。CRISIS_KEYWORDS=v2 で以前のリスト)
-// 例文は docs/prompts/crisis-keywords-v3.md 3章(開発用)と、上の v2 の文。分類器は使わない照合だけの確かめ
+// 例文は docs/archive/prompts/crisis-keywords-v3.md 3章(開発用)と、上の v2 の文。分類器は使わない照合だけの確かめ
 // --------------------------------------------------------------------------
 const v3Stage = (t) => { const r = crisisRulesV3(t); return r.keywords.length || r.patterns.length ? 2 : r.floor.length || r.idiomExempted.length ? 1 : 0; };
 const v3Show = (t) => { const r = crisisRulesV3(t); return JSON.stringify(r.hits.map((h) => `${h.id}:${h.stage}`)); };
@@ -308,7 +308,7 @@ for (const [name, text] of Object.entries(CONTEXT_FAILURE_REPLIES_PROVISIONAL)) 
   const bad = /聞かせて|受け取れな|いつでも|重い|これ以上/.test(text);
   check(`一言 ${name}`, hit.length === 0 && !bad, hit.length ? `一致: ${hit.join(", ")}` : "言い直させる・受け取れない・いつでも等の言い方");
 }
-console.log("\n[生成失敗の場面の一言] 場面・回数ごとの出し分け(2026年10月11日。docs/proposal-safety-filter-fallback.md)");
+console.log("\n[生成失敗の場面の一言] 場面・回数ごとの出し分け(2026年10月11日。docs/archive/proposal-safety-filter-fallback.md)");
 {
   const T = CONTEXT_FAILURE_REPLIES_PROVISIONAL;
   const cases = [

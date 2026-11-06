@@ -137,13 +137,13 @@ def main():
     # ---- 説明 ----
     for line in [
         "列の意味",
-        "区分: 危機・気がかり・通常(テスト1のラベル)/ 表記ゆれ・誤検知の確認・暴言(docs/prompts/crisis-keywords-v3.md 3章の例文)",
+        "区分: 危機・気がかり・通常(テスト1のラベル)/ 表記ゆれ・誤検知の確認・暴言(docs/archive/prompts/crisis-keywords-v3.md 3章の例文)",
         "Tier A: 本人の危機(crisis・本人)。見逃し = Tier A なのに、段階2・本人と判定しなかった回",
         "下げた語・外した語: v3 で段階2→1にした語と、キーワードから外した「怒鳴られ」。発言に含まれるもの",
         "v2 / v3 の規則: keyword・pattern(段階2の照合)/ keyword_floor(v3 の段階1の語)/ classifier(分類器の危機)/ classifier_watch / idiom(誇張の除外)/ classifier_error",
         "分類器の答え: 並行の各回の risk:subject",
         "",
-        "採用の条件は docs/prompts/crisis-keywords-v3.md 4章のとおり。保留セット v3 での確認は別に行う",
+        "採用の条件は docs/archive/prompts/crisis-keywords-v3.md 4章のとおり。保留セット v3 での確認は別に行う",
     ]:
         doc.append([line])
 

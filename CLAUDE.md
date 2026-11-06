@@ -501,7 +501,7 @@ Google側の遮断は屋上屋であり、むしろ害になり得る。該当�
 > **閾値を既定に戻さないこと。** ブロックなどで本生成に失敗したとき、危機のあと・気がかり・第三者の場面では、場面ごとの固定の一言
 > (`src/crisis-response.mjs` の `contextFailureReply`・`CONTEXT_FAILURE_REPLIES_PROVISIONAL`。仮・心理士の確認待ち)で受け、危機のあとは
 > 危機カードを添える。同じ会話で2回目は短い別の一言、3回目以降はカードだけ。危機のあと・第三者では管理画面の「確認待ち」に並べる
-> (職員への通知は出さない)。実際のエラー文も `messages.flags` に残す(2026年10月11日に人が決めて実装。`docs/proposal-safety-filter-fallback.md`)。
+> (職員への通知は出さない)。実際のエラー文も `messages.flags` に残す(2026年10月11日に人が決めて実装。`docs/archive/proposal-safety-filter-fallback.md`)。
 > モデルを入れ替えたときは、テスト1とこの測定を回し直してブロック率を確かめ、ここに追記すること。
 
 ### 5.12 危機対応は一枚岩ではない(Tier A=selfだけが固定応答)
@@ -571,7 +571,7 @@ Google側の遮断は屋上屋であり、むしろ害になり得る。該当�
 ### 5.13 フェーズ1(インテーク)は台本、フェーズ2は自由。この境界を混ぜない
 
 **2026年10月14日から、インテークはコードの状態で進める**(嶋先生インタビュー4。設計 `docs/design-shima4-part1-topscreen.md`、
-指示書 `docs/prompts/top-screen-intake.md`。人が確認)。トップ画面のボタン(主訴 K1〜K6。6 = どれに当てはまるかわからない)→
+指示書 `docs/archive/prompts/top-screen-intake.md`。人が確認)。トップ画面のボタン(主訴 K1〜K6。6 = どれに当てはまるかわからない)→
 背景 → つらさのチップ(D1〜D5)→ どうなれたらいいかのチップ(H1〜H4)の順に、`src/intake.mjs` の `planIntakeTurn` が
 `sessions.intake_step`(16節)で次を決め、決まった問いはサーバが返事のあとに付ける(モデルには「問いを書かない」と指示)。
 チップ・手で打った同じラベル・インテーク中の数字だけの返事は分類器にかけない(本人の言葉ではない、または数字だけでは判定できないため)。
@@ -836,7 +836,7 @@ AI側から一方的に「もう十分話せた」と判断して締めくくら
 
 ### 5.18 危機の流れの見直し(嶋先生インタビュー3。2026年10月7日)
 
-2026年10月9日に人が確認して実装した(設計 `docs/design-crisis-flow-shima3.md`、指示書 `docs/prompts/crisis-flow-shima3.md`、
+2026年10月9日に人が確認して実装した(設計 `docs/design-crisis-flow-shima3.md`、指示書 `docs/archive/prompts/crisis-flow-shima3.md`、
 まとめ `docs/interviews/2026-10-07-shima-3-summary.md`)。**本番の既定にも効くのは、固定応答から「重い」を外したこと(5.2)・
 出力チェックの追加(5.2)・「大丈夫」の扱いと AI から終わらせない指示(5.17)だけ。** それ以外は段階ごとの応答
 (`CRISIS_RESPONSE=staged`。5.16)のときだけ動き、文面はすべて仮(心理士の確認待ち。`_PROVISIONAL`)。DB は `db/schema.sql` 14節。
@@ -867,8 +867,8 @@ AI側から一方的に「もう十分話せた」と判断して締めくくら
 
 ### 5.19 受け止めだけを続けない・この人の話にしか言えない返事にする(2026年10月11日)
 
-2026年10月11日に人が確認して実装した(設計 `docs/design-conversation-flow.md`、指示書 `docs/prompts/conversation-flow-fix.md`・
-`docs/prompts/conversation-engagement-fix.md`)。きっかけは、開発メンバーが試した相談(相談ログ 16f362dd。`docs/review-logs/`)と、相談した本人の感想
+2026年10月11日に人が確認して実装した(設計 `docs/design-conversation-flow.md`、指示書 `docs/archive/prompts/conversation-flow-fix.md`・
+`docs/archive/prompts/conversation-engagement-fix.md`)。きっかけは、開発メンバーが試した相談(相談ログ 16f362dd。`docs/review-logs/`)と、相談した本人の感想
 「同じような返され方しかされないと、まともに相手にされていない気がする」「すごく他人事感がある」「質問してくれず、ずっと受け止められると、何を話せばいいかわからない」。
 このログでは「問わず受け止めのみ」が4回続き、「ずっと(一人で)頑張ってきたんだね」と同じ意味の文が4回出て、相談者が言っていない強い言葉(すり減る・逃げ場・取り残され)を足していた。
 **禁止表現は一つも出ていなかった。** 「してはいけないこと」を中心に測るテストでは見つからない種類の問題だった。決まりと判定は `src/flow.mjs` に集めている(本番の既定で効く)。
@@ -921,7 +921,7 @@ AI側から一方的に「もう十分話せた」と判断して締めくくら
 
 ### 5.20 チップの受け取りと状態の保存(嶋先生4回目・相談ログ 86130eef。2026年10月14日)
 
-2026年10月14日に人が確認して実装した(設計 `docs/design-shima4-part1-topscreen.md` 1章、指示書 `docs/prompts/fix-after-shima4.md` 第1部)。
+2026年10月14日に人が確認して実装した(設計 `docs/design-shima4-part1-topscreen.md` 1章、指示書 `docs/archive/prompts/fix-after-shima4.md` 第1部)。
 相談ログ 86130eef で、組Bの B2 を押したのに同じ固定の文が2回続き、スケーリングの「4」に3通目への返事が出た。
 状態(`sessions.crisis_state`・`pending_choice_set`)の保存がだまって失敗し、押したチップが受け付けられず、ラベルの文字が
 自由記述として判定されていた、と考えている(オフラインと API の経路のテストで同じ並びを再現した)。
@@ -961,7 +961,7 @@ AI側から一方的に「もう十分話せた」と判断して締めくくら
 
 ## 5.21 採点用に固定した版 v1.0-review(2026年10月21日)
 
-心理士さんにログを採点していただくために固定した版(`src/version.mjs` の `2026-10-21b`。名前 **v1.0-review**。指示書 `docs/prompts/hotfix-before-review.md`)。
+心理士さんにログを採点していただくために固定した版(`src/version.mjs` の `2026-10-21b`。名前 **v1.0-review**。指示書 `docs/archive/prompts/hotfix-before-review.md`)。
 **採点が終わるまで、この版の本番環境・プロンプト・ナレッジを変えない**。版を固定したコミットは **`4173cba`**(4173cba07c72d18372aef5d8beb43bb7a4e25dfe)。
 このあとのコミットは、この記録を書き足しただけ(コードは同じ)。git のタグ `v1.0-review` は、作業の環境からはリモートに送れなかったため、人が付ける
 (`git tag -a v1.0-review 4173cba -m "採点に使う版" && git push origin v1.0-review`)。

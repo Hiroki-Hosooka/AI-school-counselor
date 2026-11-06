@@ -12,7 +12,7 @@
 //  crisisCategoryOf。分類器だけで危機と判定したときは種類不明)。
 // ============================================================================
 
-// 種類ごとの「心配なこと」(docs/prompts/crisis-flow-shima3.md 3-2 の表)。null = 種類不明
+// 種類ごとの「心配なこと」(docs/archive/prompts/crisis-flow-shima3.md 3-2 の表)。null = 種類不明
 export const CONCERN_TEXT_PROVISIONAL = {
   suicidal: "いなくなりたいと思うくらい、つらい気持ちがあること",
   selfharm: "自分を傷つけてしまうくらい、つらい気持ちを抱えていること",

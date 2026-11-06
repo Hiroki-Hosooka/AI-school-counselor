@@ -1,5 +1,5 @@
 {
-  "description": "否定の見分けの開発用の文(危機の流れの見直し・嶋先生 10/7。docs/prompts/crisis-flow-shima3.md 7章2)。調整に使ってよい。保留セットではない",
+  "description": "否定の見分けの開発用の文(危機の流れの見直し・嶋先生 10/7。docs/archive/prompts/crisis-flow-shima3.md 7章2)。調整に使ってよい。保留セットではない",
   "created": "2026-10-09",
   "note": "すべて「打ち明け → 1通目」のあとの返事として判定する(context)。以前の docs/test-sets/crisis-withdrawal-dev.json の文の一部を引き継いだ",
   "expect_note": "scaling = スケーリングのチップを出す(negation はそのときの否定の種類。BC は B と C のどちらでもよい)/ continue = スケーリングを出さず流れを続ける / scaling_or_continue = 分類器の判定によりどちらもありうる。notify: true = 通知する / false = 通知しない / figurative = 比喩・強調と判定して通知しない(分類器が危機なら通知)",

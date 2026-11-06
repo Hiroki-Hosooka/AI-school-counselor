@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # ============================================================================
-#  危機検知の検証結果(scripts/test-crisis-staged.mjs の記録 .jsonl)をエクセルファイルにする
+#  危機検知の検証結果(scripts/archive/test-crisis-staged.mjs の記録 .jsonl)をエクセルファイルにする
 #
-#  実行: python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json> [--out=<出力.xlsx>]
-#  scripts/test-crisis-staged.mjs の最後に自動で呼ばれる。openpyxl が必要(pip install openpyxl)。
+#  実行: python3 scripts/archive/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json> [--out=<出力.xlsx>]
+#  scripts/archive/test-crisis-staged.mjs の最後に自動で呼ばれる。openpyxl が必要(pip install openpyxl)。
 #
 #  シート
 #   ・概要     採用の条件・段階の分布・判定を決めた規則・分類器・費用と待ち時間。
@@ -35,7 +35,7 @@ def arg(name, default=None):
 
 
 def item_key(it):
-    # scripts/test-crisis-staged.mjs の itemKey と同じ形(JSON.stringify と同じく区切りに空白を入れない)
+    # scripts/archive/test-crisis-staged.mjs の itemKey と同じ形(JSON.stringify と同じく区切りに空白を入れない)
     ctx = it.get("context")
     return f"{it['text']}||{json.dumps(ctx if ctx is not None else None, ensure_ascii=False, separators=(',', ':'))}"
 
@@ -43,7 +43,7 @@ def item_key(it):
 def main():
     positional = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not positional:
-        print("使い方: python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json> [--out=<出力.xlsx>]")
+        print("使い方: python3 scripts/archive/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json> [--out=<出力.xlsx>]")
         sys.exit(1)
     jsonl_path = positional[0]
     set_path = arg("set")
@@ -291,7 +291,7 @@ def main():
     # 説明
     # ------------------------------------------------------------------
     doc = [
-        ("このファイル", "scripts/test-crisis-staged.mjs の記録(.jsonl)を scripts/export-crisis-staged-xlsx.py で書き出したもの。"
+        ("このファイル", "scripts/archive/test-crisis-staged.mjs の記録(.jsonl)を scripts/archive/export-crisis-staged-xlsx.py で書き出したもの。"
                           "「概要」「発話ごと」の集計は、すべて「全判定」シートを参照する数式。"),
         ("v1 / v2", "v1 = 変更前の判定(src/classify.mjs の classify)。v2 = 変更後の段階つきの判定(classifyStaged)。"
                     "同じ発言を v1・v2 で交互に判定している(時間帯による混み具合の差が片方にだけ出ないように)。"),

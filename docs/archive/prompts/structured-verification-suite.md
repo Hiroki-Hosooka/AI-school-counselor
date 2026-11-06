@@ -1,4 +1,4 @@
-docs/prompts/structured-unstructured-merge.md で依頼した統合実装が完了した前提で、
+docs/archive/prompts/structured-unstructured-merge.md で依頼した統合実装が完了した前提で、
 機械だけで測れる検証一式を実装します。以前依頼した4項目(危機検知・禁止表現・
 判定安定性・ペルソナ回帰)に、統合後に必要になった項目を1つ加えた5本立てです。
 
@@ -178,7 +178,7 @@ APIキー・環境変数を完全に分離してください(既存のCLAUDE.md�
 ### テスト1
 
 - 2026年9月: 着手。既存の `docs/test-sets/crisis-detection.json`(71件。
-  docs/prompts/automated-testing-harness.md 由来)は、この時点で既に
+  docs/archive/prompts/automated-testing-harness.md 由来)は、この時点で既に
   「60件以上・各20件以上」の数を満たしていたため、作り直さず拡張する方針にした。
 - `03_共通グランドルール_両条件共通.txt` 7-1と既存71件を突き合わせ、
   未カバーだった2種の言い回しを追加した。
@@ -263,7 +263,7 @@ APIキー・環境変数を完全に分離してください(既存のCLAUDE.md�
 ### テスト2
 
 - 2026年9月: 着手。`scripts/test-ng-leak-rate.mjs`と`docs/test-sets/ng-leak-rate-inputs.json`
-  は以前(4本柱時代。docs/prompts/automated-testing-harness.md)に実装済みだったため、
+  は以前(4本柱時代。docs/archive/prompts/automated-testing-harness.md)に実装済みだったため、
   検証一式で新たに必要なのは「統合で追加した禁止事項(技法名の開示・「いつでも」の
   無制限利用)も同じ枠組みでテストする」の部分のみと判断した。
 - **`OUTPUT_NG`(`src/safety.mjs`)の見落としを発見。** 構造化面接AI統合 手順6の

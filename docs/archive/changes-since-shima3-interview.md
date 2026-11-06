@@ -1,7 +1,7 @@
 # 嶋先生インタビュー3(2026年10月7日)からの変更のまとめ
 
 > 2026年10月10日時点。インタビューのまとめは `docs/interviews/2026-10-07-shima-3-summary.md`、
-> 指示書は `docs/prompts/crisis-flow-shima3.md`・`docs/prompts/crisis-keywords-v3.md`、設計は `docs/design-crisis-flow-shima3.md`。
+> 指示書は `docs/archive/prompts/crisis-flow-shima3.md`・`docs/archive/prompts/crisis-keywords-v3.md`、設計は `docs/design-crisis-flow-shima3.md`。
 > 詳しい決まりは CLAUDE.md 5.2・5.6・5.12・5.16〜5.18。
 
 ## 0. ひとことで

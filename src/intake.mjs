@@ -1,6 +1,6 @@
 // ============================================================================
 //  トップ画面から始めるインテーク(2026年10月14日に人が確認した設計。docs/design-shima4-part1-topscreen.md 2章・3章、
-//  指示書 docs/prompts/top-screen-intake.md)
+//  指示書 docs/archive/prompts/top-screen-intake.md)
 //
 //  流れの判断はコードで決め、AI は言葉だけを担う(指示書 3章「流れはコードで決める」)。
 //  次に何を聞くかは sessions.intake_step(db/schema.sql 16節)だけで決める。AI の出力(intake_complete など)では進めない。

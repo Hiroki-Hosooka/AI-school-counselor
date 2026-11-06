@@ -16,7 +16,7 @@
 //  defaultSafetyContexts。設定 CRISIS_AFTERCARE=off のときだけ以前の動きに戻る)。
 //  有効にする前に db/schema.sql の11節〜14節(状態と記録の列)を Supabase で実行しておくこと。
 //
-//  仕組み(2026年10月9日に人が確認した設計。docs/design-crisis-flow-shima3.md・docs/prompts/crisis-flow-shima3.md)
+//  仕組み(2026年10月9日に人が確認した設計。docs/design-crisis-flow-shima3.md・docs/archive/prompts/crisis-flow-shima3.md)
 //   段階1(気がかり)… 生成で会話を続ける(Tier B の指示つき)。見守りを始めるターンだけ、返事の下に
 //                     「気づかいの一言+折りたたみの窓口」のカードを添える(一言は1セッション1回まで)。以後3ターンは見守り。
 //                     見守り中に本人の言葉によるサイン(分類器の watch・誇張の除外)がもう一度出たら段階2に上げる。
@@ -171,7 +171,7 @@ export const SCALING_PROMPT_A_PROVISIONAL =
 export const SCALING_PROMPT_SECOND_PROVISIONAL =
   "もう一度だけ、今の気持ちに近い数字を選んでみてくれる？ 気持ちは、話しているうちに変わってもいいからね。";
 // インテークのつらさと同じラベル・同じ向き(1がいちばん軽く、5がいちばんつらい)。2026年10月14日にそろえた
-// (相談ログ 86130eef で「4 かなりつらい」と「4: 限界に近い」が混在した。docs/prompts/fix-after-shima4.md 1-1)。
+// (相談ログ 86130eef で「4 かなりつらい」と「4: 限界に近い」が混在した。docs/archive/prompts/fix-after-shima4.md 1-1)。
 // 段階を下げる条件(lowersStage)は数字で決めているので、ラベルを変えても意味は変わらない
 // ラベルは src/intake.mjs の DISTRESS_LABELS_PROVISIONAL(インテークのつらさ)を1か所で持つ
 export const CHOICES_SCALING_PROVISIONAL = DISTRESS_LABELS_PROVISIONAL.map((l, i) => ({ id: `S${i + 1}`, label: `${i + 1} ${l}` }));
@@ -319,7 +319,7 @@ export function finalizeCrisisGeneration(gen, priorFallbackCount = 0) {
 
 // ----------------------------------------------------------------------------
 // 【仮の文面】生成に失敗した(安全フィルターのブロック・すべてのモデルの失敗)ときの、場面ごとの一言
-// (2026年10月11日に人が決めた設計。docs/proposal-safety-filter-fallback.md。心理士の確認待ち)。
+// (2026年10月11日に人が決めた設計。docs/archive/proposal-safety-filter-fallback.md。心理士の確認待ち)。
 // 本番の既定でも使う。ふつうの会話は今どおり src/generate.mjs の GENERATION_FAILURE_REPLIES。
 // 決まり: 打ち明けを言い直させない(「もう少し聞かせて」と言わない)・「受け取れなかった」と言わない・「いつでも」と言わない・
 // AI の限界で区切らない。同じ会話で同じ一言を2回出さない(2回目は短い別の一言、3回目以降は一言を出さず窓口のカードだけ)
@@ -639,7 +639,7 @@ export const crisisStepLabel = (n) => (n == null ? "生成" : CRISIS_STEP_LABELS
 export const REPLY_TYPE_LABELS = { withdrawal: "引き下がり", resignation: "諦め", reaffirm: "念押し", other: "ふつうの返事" };
 export const NEGATION_TYPE_LABELS = { A: "A 生きたい気持ち", B: "B 冗談・取り消し", C: "C 最小化・引き下がり" };
 
-// 段階を下げてよいか(docs/prompts/crisis-flow-shima3.md 1-1)。明示的な否定(A・B)× 1・2、キーワードによらない否定(C)× 1 だけ
+// 段階を下げてよいか(docs/archive/prompts/crisis-flow-shima3.md 1-1)。明示的な否定(A・B)× 1・2、キーワードによらない否定(C)× 1 だけ
 export function lowersStage(negationType, scale) {
   if (!Number.isInteger(scale)) return false;
   if (negationType === "A" || negationType === "B") return scale <= 2;

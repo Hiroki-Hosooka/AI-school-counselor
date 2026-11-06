@@ -3,7 +3,7 @@
 //
 //  実行: node scripts/test-staged-response.mjs(API・DB は使わない。費用なし)
 //
-//  確かめること(2026年10月9日に、危機の流れの見直しに合わせて書き直した。docs/prompts/crisis-flow-shima3.md 7章)
+//  確かめること(2026年10月9日に、危機の流れの見直しに合わせて書き直した。docs/archive/prompts/crisis-flow-shima3.md 7章)
 //   1. src/crisis-response.mjs の planSafetyTurn の状態の移り変わり
 //      ・段階を下げる条件の表(1-1)のすべての組み合わせ(明示的な否定 A・B / キーワードによらない否定 C × スケーリング1〜5 ×
 //        戻る先 step1・step3・done、選ばなかった場合)。下げてよいのは A・B × 1・2 と C × 1 の3通りだけ

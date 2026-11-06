@@ -1,5 +1,5 @@
 {
-  "description": "危機キーワード v3 の開発用の例文(docs/prompts/crisis-keywords-v3.md 3章をそのまま写したもの)。調整に使ってよい。保留セットではない",
+  "description": "危機キーワード v3 の開発用の例文(docs/archive/prompts/crisis-keywords-v3.md 3章をそのまま写したもの)。調整に使ってよい。保留セットではない",
   "created": "2026-10-09",
   "groups": {
     "variant": "表記ゆれ。すべて段階2に当たるべき",

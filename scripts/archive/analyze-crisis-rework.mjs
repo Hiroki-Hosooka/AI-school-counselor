@@ -1,7 +1,7 @@
 // ============================================================================
 //  危機の作り直し(2026年11月1日)の5章の検証: 10/28 のログ5件を画面と同じ経路で流した結果(test-api-path.mjs の --out)を数える
 //
-//    node scripts/analyze-crisis-rework.mjs <修正前.jsonl> <修正後.jsonl> [--out=<まとめ.txt>]
+//    node scripts/archive/analyze-crisis-rework.mjs <修正前.jsonl> <修正後.jsonl> [--out=<まとめ.txt>]
 //
 //  数えるもの(指示書 5章の目標):
 //    根拠の無い段階2(分類器だけで危機にしたターンのうち、発言に危機の言葉が無いもの) 0
@@ -11,8 +11,8 @@
 //  判定はこのファイルの正規表現(機械の目安)。最後の判断は、ログを書いた本人が返事を読んで行う。
 // ============================================================================
 import fs from "node:fs";
-import { isEmptyReply, classifyLocal } from "../src/classify.mjs";
-import { declinedPeopleFrom, declinedNg } from "../src/declined.mjs";
+import { isEmptyReply, classifyLocal } from "../../src/classify.mjs";
+import { declinedPeopleFrom, declinedNg } from "../../src/declined.mjs";
 
 const args = process.argv.slice(2);
 const files = args.filter((a) => !a.startsWith("--"));

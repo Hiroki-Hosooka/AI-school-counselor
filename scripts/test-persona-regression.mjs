@@ -300,7 +300,7 @@ async function runSession({ persona, sessionDef, clientId, personaId, runId, row
   if (sessionDef.first_message && !(1 in scriptedByTurn)) scriptedByTurn[1] = sessionDef.first_message;
 
   // 直前のAIの返事に付いたチップ(危機の流れの見直し・仮)。生徒役がどれを選ぶかはペルソナの定義(sessions[].choices の
-  // { scaling: "S4", B: "B2", C: "C6" } など)で決めておく。定義が無い組は選ばずに自由に書く(docs/prompts/crisis-flow-shima3.md 7章3)
+  // { scaling: "S4", B: "B2", C: "C6" } など)で決めておく。定義が無い組は選ばずに自由に書く(docs/archive/prompts/crisis-flow-shima3.md 7章3)
   let pendingChoices = null;
   // 会話の流れを数えるための、messages と同じ形の行(route.ts の hist と同じ)
   const flowHist = [];

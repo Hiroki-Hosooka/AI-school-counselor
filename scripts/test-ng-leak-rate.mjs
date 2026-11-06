@@ -1,6 +1,6 @@
 // ============================================================================
 //  禁止表現の漏れ率(docs/backlog.md 1-3 テスト2)
-//  詳細仕様: docs/prompts/automated-testing-harness.md
+//  詳細仕様: docs/archive/prompts/automated-testing-harness.md
 //
 //  実行: node scripts/test-ng-leak-rate.mjs
 //        (npm run test:ng-leak でも同じ)

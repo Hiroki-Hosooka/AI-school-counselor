@@ -1,5 +1,5 @@
 {
-  "description": "docs/prompts/structured-verification-suite.md テスト3(新規部分)用。フェーズ1(インテーク)の4項目が出そろった会話を6パターン用意し、recommended_modeの判定が安定しているかを見る。target_mode_hintは作成時に狙ったモードであり、正解ラベルではない(複合モードが出ても揺れではなく正常な判定として扱う)。Claudeによるsynthetic(合成)データ。",
+  "description": "docs/archive/prompts/structured-verification-suite.md テスト3(新規部分)用。フェーズ1(インテーク)の4項目が出そろった会話を6パターン用意し、recommended_modeの判定が安定しているかを見る。target_mode_hintは作成時に狙ったモードであり、正解ラベルではない(複合モードが出ても揺れではなく正常な判定として扱う)。Claudeによるsynthetic(合成)データ。",
   "created": "2026-09-24",
   "items": [
     {

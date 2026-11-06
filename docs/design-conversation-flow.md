@@ -1,7 +1,7 @@
 # 会話が展開しない問題の修正(設計)
 
-2026年10月11日。指示書「会話が展開しない問題の修正」(`docs/prompts/conversation-flow-fix.md`)と
-「『他人事感』の修正」(`docs/prompts/conversation-engagement-fix.md`)に対する設計。
+2026年10月11日。指示書「会話が展開しない問題の修正」(`docs/archive/prompts/conversation-flow-fix.md`)と
+「『他人事感』の修正」(`docs/archive/prompts/conversation-engagement-fix.md`)に対する設計。
 **第1部(0〜10章)・第2部(12〜16章)とも人が確認済み(回答は11章・17章)。2026年10月11日に実装した(CLAUDE.md 5.19)。**
 材料は相談ログ 16f362dd(`docs/review-logs/2026-10-11-16f362dd.md`)。
 

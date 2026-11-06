@@ -29,7 +29,7 @@ const arg = (name, def) => {
 const SET_PATH = path.resolve(ROOT, arg("set", "docs/test-sets/crisis-detection.json"));
 const DEV_ARG = arg("dev", "docs/test-sets/crisis-keywords-v3-dev.json");
 const DEV_PATH = DEV_ARG === "none" ? null : path.resolve(ROOT, DEV_ARG);
-// 保留セット(ファイル名に holdout を含む)は中身を見ない(docs/prompts/crisis-keywords-v3.md 5章)。発言は表示・集計に出さず、番号だけにする
+// 保留セット(ファイル名に holdout を含む)は中身を見ない(docs/archive/prompts/crisis-keywords-v3.md 5章)。発言は表示・集計に出さず、番号だけにする
 const HIDE = /holdout/.test(path.basename(SET_PATH));
 const REPS_TIER_A = Number(arg("reps-tier-a", 4));
 const REPS_OTHER = Number(arg("reps-other", 2));
@@ -38,7 +38,7 @@ const VOTES = Number(arg("votes", 2));
 const REPORT_ONLY = process.argv.includes("--report-only");
 const OUT = path.resolve(ROOT, arg("out", `docs/test-results/crisis-evidence-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`));
 
-// 条件は第1段階の検証(scripts/test-crisis-staged.mjs)と同じ: 分類モデルは LITE_MODELS の先頭だけ、
+// 条件は第1段階の検証(scripts/archive/test-crisis-staged.mjs)と同じ: 分類モデルは LITE_MODELS の先頭だけ、
 // 1回あたりの待ち時間の上限は120秒(無料枠の混雑による時間切れを「段階1」として記録しないため)
 const PRIMARY_MODEL = LITE_MODELS[0];
 LITE_MODELS.splice(1);

@@ -1,7 +1,7 @@
 // ============================================================================
 //  危機検知の作り直し 第1段階の検証(変更前 v1 と変更後 v2 を同じ条件で比べる)
 //
-//  実行: node scripts/test-crisis-staged.mjs [--set=docs/test-sets/crisis-detection.json]
+//  実行: node scripts/archive/test-crisis-staged.mjs [--set=docs/test-sets/crisis-detection.json]
 //          [--reps-tier-a=10] [--reps-other=3] [--votes=2] [--out=docs/test-results/xxx.jsonl]
 //        --out に途中まで書かれたファイルを渡すと、終わっている判定を飛ばして続きから再開する
 //        (無料枠の1日の上限に当たって止まった場合用)。--report-only で集計だけを出す。
@@ -24,11 +24,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
   requireTestGeminiKeyPool, withRateLimitRetry, createKeyRotationState, sleep, PRICING, USD_TO_JPY,
-} from "./_lib/test-env.mjs";
-import { classify, classifyStaged, LITE_MODELS } from "../src/classify.mjs";
+} from "../_lib/test-env.mjs";
+import { classify, classifyStaged, LITE_MODELS } from "../../src/classify.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+const ROOT = path.resolve(__dirname, "..", "..");
 const KEY_POOL = requireTestGeminiKeyPool(ROOT);
 const ROTATION = createKeyRotationState();
 
@@ -170,7 +170,7 @@ if (!REPORT_ONLY) {
         const res = await judge(version, it);
         if (res.paused) {
           paused = `無料枠の上限または混雑のため中断(${version}「${it.text.slice(0, 20)}」: ${String(res.error).slice(0, 160)})`;
-          console.log(`\n★ ${paused}\n  再開: node scripts/test-crisis-staged.mjs --set=${path.relative(ROOT, SET_PATH)} --out=${path.relative(ROOT, OUT)}`);
+          console.log(`\n★ ${paused}\n  再開: node scripts/archive/test-crisis-staged.mjs --set=${path.relative(ROOT, SET_PATH)} --out=${path.relative(ROOT, OUT)}`);
           break outer;
         }
         const rec = {
@@ -318,7 +318,7 @@ writeFileSync(`${base}-summary.json`, JSON.stringify({
 }, null, 2));
 console.log(`\n集計を保存しました: ${path.relative(ROOT, base)}-summary.txt / .json`);
 
-// エクセルファイルにも書き出す(データとして使えるように。scripts/export-crisis-staged-xlsx.py。
+// エクセルファイルにも書き出す(データとして使えるように。scripts/archive/export-crisis-staged-xlsx.py。
 // python3 と openpyxl が必要: pip install openpyxl)。集計は全判定シートを参照する数式で、エクセルで開くと計算される
 const xl = spawnSync("python3", [path.join(__dirname, "export-crisis-staged-xlsx.py"), OUT, `--set=${SET_PATH}`], { encoding: "utf8" });
 if (xl.status === 0) console.log(xl.stdout.trim());

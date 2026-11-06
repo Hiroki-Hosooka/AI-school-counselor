@@ -1,7 +1,7 @@
 // ============================================================================
 //  関わりの型・モード判定の安定性(docs/backlog.md 1-3 テスト3)
-//  詳細仕様: docs/prompts/automated-testing-harness.md(旧・関わりの型部分)/
-//            docs/prompts/structured-verification-suite.md テスト3(モード判定部分。2026年9月追加)
+//  詳細仕様: docs/archive/prompts/automated-testing-harness.md(旧・関わりの型部分)/
+//            docs/archive/prompts/structured-verification-suite.md テスト3(モード判定部分。2026年9月追加)
 //
 //  実行: node scripts/test-relation-stability.mjs
 //        (npm run test:relation-stability でも同じ)

@@ -1,7 +1,7 @@
 // ============================================================================
 //  冒頭の言い直しの検証(2026年11月1日。相談ログのレビュー「返事の冒頭の繰り返しが、そのまますぎて不快」)
 //
-//    node scripts/analyze-echo.mjs [--after=<test-api-path.mjs の --out>,...] [--rate] [--out=<まとめ.txt>]
+//    node scripts/archive/analyze-echo.mjs [--after=<test-api-path.mjs の --out>,...] [--rate] [--out=<まとめ.txt>]
 //
 //  修正前: docs/review-logs/2026-10-28-*.md(本番で実際に出た返事。開発メンバーが試した相談)
 //  修正後: 同じ5件の生徒の発言を、画面と同じ API の経路で流した結果(scripts/test-api-path.mjs の log-*)
@@ -13,9 +13,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { echoOf, echoHistory } from "../src/flow.mjs";
+import { echoOf, echoHistory } from "../../src/flow.mjs";
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const arg = (k, d = "") => (process.argv.find((a) => a.startsWith(`--${k}=`)) ?? `--${k}=${d}`).slice(k.length + 3);
 const afterFiles = arg("after").split(",").filter(Boolean);
 const RATE = process.argv.includes("--rate");
@@ -66,8 +66,8 @@ function echoDetail(msgs) {
 
 // ---- 具体への言及(軽いモデル。--rate のとき)----
 async function concreteRate(convs) {
-  const { rateConversation } = await import("./_lib/flow-rater.mjs");
-  const { requireTestGeminiKeyPool, createKeyRotationState } = await import("./_lib/test-env.mjs");
+  const { rateConversation } = await import("../_lib/flow-rater.mjs");
+  const { requireTestGeminiKeyPool, createKeyRotationState } = await import("../_lib/test-env.mjs");
   const pool = requireTestGeminiKeyPool(ROOT);
   const rot = createKeyRotationState();
   let yes = 0, no = 0;

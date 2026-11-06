@@ -1,6 +1,6 @@
 # 危機キーワード v2(今)→ v3(案)の差分
 
-> 2026年10月9日。`docs/prompts/crisis-keywords-v3.md` の1章「今のリストとの差分を出す」の結果。**まだ実装していない。**
+> 2026年10月9日。`docs/archive/prompts/crisis-keywords-v3.md` の1章「今のリストとの差分を出す」の結果。**まだ実装していない。**
 > 今のリストは `src/safety.mjs`(`KEYWORD_GROUPS_V2`・`KATAKANA_KEYWORDS_V2`・`INFLECTED_KEYWORDS_V2`・`PASSIVE_PATTERNS_V2`・
 > 誇張の除外 `SHAME_IDIOM_V2`)。v3 は `docs/crisis-keywords-v3.md`。
 > 段階1の語は、今の仕組みには無い(キーワードは当たれば段階2だけ。段階1は分類器の watch か、誇張の除外)。

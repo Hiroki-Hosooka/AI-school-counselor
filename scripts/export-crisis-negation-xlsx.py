@@ -84,7 +84,7 @@ def main():
     ov.cell(row=t, column=1).font = Font(name=FONT_NAME, bold=True)
 
     for line in [
-        "否定の見分けの検証(危機の流れの見直し・嶋先生 10/7。docs/prompts/crisis-flow-shima3.md 7章2)",
+        "否定の見分けの検証(危機の流れの見直し・嶋先生 10/7。docs/archive/prompts/crisis-flow-shima3.md 7章2)",
         "状態: 「打ち明け → 1通目」のあとの返事として判定(分類器 + 返事の種類・比喩の判定 + 状態の移り変わり)",
         "期待: スケーリングを出す(否定)/ 出さず続ける(念押し・絶望感・新しいサイン・ふつうの返事)/ 分類器の判定によりどちらも(危機のキーワードと否定が同じ発言)",
         "否定の種類: A 生きたい気持ち / B 冗談・取り消し / C 最小化・引き下がり(BC = どちらでもよい)",

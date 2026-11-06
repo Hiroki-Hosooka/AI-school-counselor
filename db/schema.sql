@@ -269,7 +269,7 @@ group by s.id;
 --  → 内部アセスメント → フェーズ2モード別プロトコル → クロージング)を、既存の
 --  非構造化AIに統合する。進み方の骨格は構造化側を採用しつつ、フェーズ2で使う
 --  言い回し・知識は既存の非構造化ナレッジ(嶋/石の逐語)を優先する
---  (docs/prompts/structured-unstructured-merge.md 参照)。
+--  (docs/archive/prompts/structured-unstructured-merge.md 参照)。
 --
 --  このセクションのみ ALTER TABLE ADD COLUMN IF NOT EXISTS を使い、再実行しても
 --  安全にする。既存のテーブル定義(1〜4節)自体は変更していない(元の設計判断の
@@ -607,7 +607,7 @@ alter table safety_events add constraint safety_events_crisis_step_check check (
 -- ============================================================================
 -- 14. 危機の流れの見直し(嶋先生 10/7。2026年10月9日・仮の文面。心理士の確認待ち)
 --
---  設計は docs/design-crisis-flow-shima3.md、指示書は docs/prompts/crisis-flow-shima3.md。
+--  設計は docs/design-crisis-flow-shima3.md、指示書は docs/archive/prompts/crisis-flow-shima3.md。
 --  11節〜13節と同じく、設定 CRISIS_RESPONSE=staged のときだけ route.ts が書き込む列・値
 --  有効にする前に、11節〜13節のあとでこの節を Supabase の SQL エディタで実行すること。何度実行してもよい。
 --
@@ -697,7 +697,7 @@ alter table messages add constraint messages_discomfort_reason_len_check check (
 
 -- ============================================================================
 -- 16. 研究のための1ターンごとの記録と、トップ画面からのインテーク(2026年10月14日。嶋先生4回目を受けた修正)
---   設計: docs/design-shima4-part1-topscreen.md。指示書: docs/prompts/fix-after-shima4.md・docs/prompts/top-screen-intake.md
+--   設計: docs/design-shima4-part1-topscreen.md。指示書: docs/archive/prompts/fix-after-shima4.md・docs/archive/prompts/top-screen-intake.md
 --   未実行でも会話は止まらない(route.ts は、この節の列が無ければ外して書き直す)。
 --
 --  messages.timings            1ターンの所要時間の内訳(ミリ秒。セッションの読み込み・会話の読み込み・判定・ナレッジ・生成・合計)

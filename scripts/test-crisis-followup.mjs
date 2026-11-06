@@ -11,7 +11,7 @@
 //  止める条件: 危機(crisis)でなければならない文(明示的な表現・受動的な希死念慮・念押し)が段階2に
 //  ならなかったら、その時点で止めて報告する(見守り中・危機のあとの判定で、新しい危機のサインを見逃さないため)。
 //  保留セットは使わない。無料枠のキー(TEST_GEMINI_API_KEY(S))を使う(予算の¥1000枠とは別)。
-//  分類モデルは主力モデル(LITE_MODELS の先頭)だけにする(scripts/test-crisis-staged.mjs と同じ理由)。
+//  分類モデルは主力モデル(LITE_MODELS の先頭)だけにする(scripts/archive/test-crisis-staged.mjs と同じ理由)。
 //  結果は記録(.jsonl)・集計(-summary.txt / .json)・エクセル(.xlsx。scripts/export-crisis-followup-xlsx.py)に書き出す。
 // ============================================================================
 
@@ -38,7 +38,7 @@ const SET_PATH = path.resolve(ROOT, arg("set", "docs/test-sets/crisis-followup-d
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const OUT = path.resolve(ROOT, arg("out", `docs/test-results/crisis-followup-dev-${stamp}.jsonl`));
 
-// 検証の条件(scripts/test-crisis-staged.mjs と同じ): 主力モデルだけ・1回あたりの待ち時間の上限を長く
+// 検証の条件(scripts/archive/test-crisis-staged.mjs と同じ): 主力モデルだけ・1回あたりの待ち時間の上限を長く
 const PRIMARY_MODEL = LITE_MODELS[0];
 LITE_MODELS.splice(1);
 process.env.CRISIS_CLASSIFIER_TIMEOUT_MS = arg("timeout-ms", "120000");

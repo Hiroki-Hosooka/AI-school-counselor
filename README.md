@@ -272,9 +272,9 @@ https://(デプロイ先のドメイン)/admin.html
 (test-safety-filter・test-crisis-keywords-v3・test-crisis-negation・test-crisis-followup・test-crisis-staged・test-staged-replay)。
 
 ナレッジやプロンプトを変えたときに悪化していないかを、人手を介さず機械的に確認するための
-テスト群。もともとの4本の詳細仕様は `docs/prompts/automated-testing-harness.md`、
+テスト群。もともとの4本の詳細仕様は `docs/archive/prompts/automated-testing-harness.md`、
 構造化面接AI統合後に更新した5本の仕様(Tier A/B分離の妥当性、インテーク完了率等を追加)は
-`docs/prompts/structured-verification-suite.md`。**このテスト一式は基本的に人(あなた)が
+`docs/archive/prompts/structured-verification-suite.md`。**このテスト一式は基本的に人(あなた)が
 自分のAPIキーで実行するためのものです。** Claude(AI)自身は本番相当のGeminiキーを
 持たないサンドボックスで作業しているため、これらのテストを実際には実行できません
 (コードのロジック検証は、モックデータを使ったオフライン確認にとどまります)。
@@ -337,14 +337,14 @@ npm run test:crisis
     今は開発中の確認用。採否の判定には使わない
 - 危機検知は v2 が既定(2026年9月26日に採用)。今までの判定(v1)を測るときは、同じコマンドを
   `CRISIS_DETECTION=v1 npm run test:crisis` で実行する。v1 と v2 を同じ条件で比べるときは
-  `node scripts/test-crisis-staged.mjs`(発言ごとに v1・v2 を交互に判定し、Tier A は各10回・
+  `node scripts/archive/test-crisis-staged.mjs`(発言ごとに v1・v2 を交互に判定し、Tier A は各10回・
   ほかは各3回。発言ごとの見逃し率・段階の分布・判定を決めた規則・費用と待ち時間を集計する。
   無料枠の1日の上限に当たったら中断し、`--out=` に同じ記録ファイルを渡すと続きから再開できる)。
   結果は記録(.jsonl)・集計(-summary.txt / .json)に加えて、**エクセルファイル(.xlsx)**にも書き出す
-  (`scripts/export-crisis-staged-xlsx.py`。python3 と openpyxl が必要: `pip install openpyxl`)。
+  (`scripts/archive/export-crisis-staged-xlsx.py`。python3 と openpyxl が必要: `pip install openpyxl`)。
   シートは「概要」(採用の条件など)・「発話ごと」・「全判定」(1判定=1行)・「説明」で、集計は
   「全判定」を参照する数式になっている。記録ファイルから作り直すときは
-  `python3 scripts/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
+  `python3 scripts/archive/export-crisis-staged-xlsx.py <記録.jsonl> --set=<テストセット.json>`
 - **会話の流れ・他人事感の修正(2026年10月11日。CLAUDE.md 5.19)**:
   - オフラインのテスト: `npm run test:flow`(相談ログ 16f362dd で、作り直しが 8・11・12 ターンだけになることなど)
   - 検証(無料枠・合成データ): `npm run test:conversation-flow -- --variant=after --mode=replay --reps=3 --knowledge=<ナレッジの JSON> --out=<記録.jsonl>`
@@ -397,7 +397,7 @@ npm run test:crisis
 - 安全フィルターにブロックされた場合(`[BLOCKED]`)は再試行せず、そのまま「ブロックされた」件
   として記録する(レート制限とは区別する)
 - **Tier Aの見逃しが1件でもあれば、他のテストより優先して確認すること**
-  (`docs/prompts/structured-verification-suite.md` 参照)
+  (`docs/archive/prompts/structured-verification-suite.md` 参照)
 
 このテストの結果(特にブロック率)は、`callGeminiOnce` の `safetySettings` を緩めた判断の
 裏付けとして使う(CLAUDE.md 5.11)。結果を見ずに閾値だけ変更しないこと。

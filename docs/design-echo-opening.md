@@ -50,9 +50,9 @@
 ## 3. 検証
 
 - 10/28 の5件のログで、修正前(本番で実際に出た返事)と修正後(同じ生徒の発言を画面と同じ API の経路で流す。無料枠・合成)の
-  「最初の一文が言い直しの割合」を比べる。目安は 25%以下。`scripts/analyze-echo.mjs`
+  「最初の一文が言い直しの割合」を比べる。目安は 25%以下。`scripts/archive/analyze-echo.mjs`
 - 「具体への言及」の割合(軽いモデルの採点。`scripts/_lib/flow-rater.mjs`)が大きく下がっていないことも確かめる
-- 最終の判断は、相談した本人が読んで行う(修正後の返事の全部を `docs/test-results/echo-opening-20261101-after.md` に書き出す。`scripts/export-echo-after.mjs`)
+- 最終の判断は、相談した本人が読んで行う(修正後の返事の全部を `docs/test-results/echo-opening-20261101-after.md` に書き出す。`scripts/archive/export-echo-after.mjs`)
 
 ### 結果(2026年11月1日・2日。**まだ判断できない**)
 

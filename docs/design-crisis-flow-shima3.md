@@ -265,9 +265,9 @@
 
 ## 11. 決まったこと(2026年10月9日の返事)
 
-- Q1: `docs/crisis-keywords-v3.md` を受け取った(`docs/` に置いた)。キーワード v3 の実装の指示書は `docs/prompts/crisis-keywords-v3.md`。
+- Q1: `docs/crisis-keywords-v3.md` を受け取った(`docs/` に置いた)。キーワード v3 の実装の指示書は `docs/archive/prompts/crisis-keywords-v3.md`。
   差分は `docs/crisis-keywords-v3-diff.md`(v3 の指示書の1章。確認が取れるまで実装しない)
-- Q2: まとめを `docs/interviews/2026-10-07-shima-3-summary.md` に置いた。指示書は `docs/prompts/crisis-flow-shima3.md`
+- Q2: まとめを `docs/interviews/2026-10-07-shima-3-summary.md` に置いた。指示書は `docs/archive/prompts/crisis-flow-shima3.md`
 - Q3・Q4(案どおり)・Q5(案どおり)・Q8〜Q22: 案どおり
 - Q7: 本番の `CRISIS_REPLY` から「重い」を消し、指示書の2通目の型で作る。「〜が心配」の部分を危機の種類ごとに組めるようにする(12章の案)
 - Q12: 「死にたいとか冗談だよ」は案どおり。ただし、比喩・強調表現としての「死にたい」は通知しない(12章の案)
