@@ -18,7 +18,7 @@
 | automated-testing-harness | テスト1-2 適合率・再現率・F1/ブロック件数を別枠/誤判定の一覧 | 済 | `scripts/test-crisis-detection.mjs`、`docs/test-results/crisis-detection-summary.txt`(ブロック 0/79) | なし |
 | automated-testing-harness | テスト1-3 結果を CSV/JSON で出力 | 済 | `docs/test-results/crisis-detection-*.json` | なし |
 | automated-testing-harness | テスト2 禁止表現の漏れ率(10入力×10回、再生成で解消/解消せずを分ける) | 済 | `scripts/test-ng-leak-rate.mjs`、`docs/test-results/ng-leak-rate-2026-09-24T17-45-52-279Z.json`(130/130成功、NG 2/130) | ng6 の「いくらでも」誤検知(無制限の約束を断る文に当たった)を正規表現で直すかは人の判断のまま(CLAUDE.md 5.1 により変えていない) |
-| automated-testing-harness | テスト3 関わりの型判定の安定性(5〜6ペルソナ×10回、多数決との一致率) | 済 | `scripts/test-relation-stability.mjs`、`docs/test-results/relation-stability-2026-09-24T17-32-11-971Z.json`(一致率 1.00) | なし |
+| automated-testing-harness | テスト3 関わりの型判定の安定性(5〜6ペルソナ×10回、多数決との一致率) | 済 | `scripts/test-relation-stability.mjs`、`docs/test-results/archive/2026-09/relation-stability-2026-09-24T17-32-11-971Z.json`(一致率 1.00) | なし |
 | automated-testing-harness | テスト4 ペルソナ多ターン回帰(DB保存・admin.html で閲覧・ナレッジ世代の記録) | 済 | `scripts/test-persona-regression.mjs`(新仕様 `546948e` で15→18ペルソナに)、`docs/test-results/persona-regression-*.json`(`knowledge_version` あり) | 後述(テスト5・persona-test-followup)のとおり、テスト側の修正後に全ペルソナでの再実行(full)はしていない |
 | automated-testing-harness | 横断: 無料枠は合成テストだけ・本番キーと分離 | 済 | `TEST_GEMINI_API_KEY(S)` / `TEST_GEMINI_API_KEY_PAID` / 本番 `GEMINI_API_KEY`(`scripts/_lib/test-env.mjs`、CLAUDE.md 5.10) | 本番で有料枠の請求先を設定することは利用者側の作業(docs/project-history.md 7-7) |
 | automated-testing-harness | 横断: レート制限で落ちずに再試行 | 済 | コミット `3ddad4b`・`0caee38`・`dafa192`(503 で待って最大6回) | なし |

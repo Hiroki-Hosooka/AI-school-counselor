@@ -3,7 +3,7 @@
   "created": "2026-09-29",
   "source": {
     "run_id": "20260926123330",
-    "result": "docs/test-results/persona-regression-20260926123330.json",
+    "result": "docs/test-results/archive/2026-09/persona-regression-20260926123330.json",
     "logs": "docs/test-results/persona-logs-20260926123330/"
   },
   "personas": [
