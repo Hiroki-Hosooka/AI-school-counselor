@@ -58,6 +58,7 @@ import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES,
+  setLiteThinkingOverride, liteThinkingBudget, liteThinkingSource, parseThinkingSetting, LITE_THINKING_CHOICES,
 } from "@/classify.mjs";
 import { categoryOfSafety } from "@/crisis-keywords-v3.mjs";
 import { crisisTypesOf, crisisTypesFlag, crisisTypesFromFlags } from "@/crisis-types.mjs";
@@ -149,8 +150,25 @@ const commitShort = () => (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7) 
 const versionInfo = () => ({ app_version: APP_VERSION, commit: commitShort(), history: VERSION_HISTORY.slice(0, 5) });
 
 // その返事を作ったときの設定(研究のため1ターンごとに記録する。2026年10月14日。top-screen-intake.md 3-3)
+// 管理画面から変える設定(db/schema.sql 19節 app_settings。2026年11月6日)。デプロイし直さずに変えられるよう、DB に置いて
+// 30秒ごとに読み直す(サーバのインスタンスごと)。いまは分類器・補助判定の思考の上限(classifier_thinking)だけ。
+// 19節が未実行・読めないときは、環境変数と既定(以前の動き)のまま会話を続ける
+const APP_SETTINGS_TTL_MS = 30_000;
+let appSettingsCache: { at: number; values: Record<string, string> } | null = null;
+async function applyAppSettings(db: SupabaseClient) {
+  if (appSettingsCache && Date.now() - appSettingsCache.at < APP_SETTINGS_TTL_MS) return;
+  const values: Record<string, string> = {};
+  try {
+    const { data, error } = await db.from("app_settings").select("key,value");
+    if (!error) for (const r of (data ?? []) as { key: string; value: string }[]) values[r.key] = r.value;
+  } catch { /* 読めないときは今までどおり */ }
+  appSettingsCache = { at: Date.now(), values };
+  setLiteThinkingOverride(values.classifier_thinking ?? null);
+}
+
 function settingsSnapshot() {
   return {
+    classifier_thinking: liteThinkingBudget(), classifier_thinking_source: liteThinkingSource(),
     app_version: APP_VERSION, commit: commitShort(),
     crisis_response: process.env.CRISIS_RESPONSE ?? null, crisis_detection: process.env.CRISIS_DETECTION ?? "v2",
     crisis_keywords: process.env.CRISIS_KEYWORDS ?? "v3", crisis_aftercare: process.env.CRISIS_AFTERCARE ?? "on",
@@ -343,6 +361,8 @@ export async function POST(req: Request) {
 
   try {
     const db = getDb();
+    // 管理画面で変えた設定(分類器の思考の上限)を反映する(30秒ごと)
+    await applyAppSettings(db);
     // ------------------------------------------------------------------
     // 評価の記録
     // ------------------------------------------------------------------
@@ -407,6 +427,44 @@ export async function POST(req: Request) {
     // ナレッジ管理画面(public/knowledge.html。docs/backlog.md 1-1。2026年10月11日)
     // 合言葉は会話ログの画面と同じ(ADMIN_TOKEN)。削除はさせない(active を外すだけ)。確かめは src/knowledge-admin.mjs
     // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // 管理画面から変える設定(2026年11月6日。db/schema.sql 19節)。合言葉で守る。変えた記録を app_settings_history に残す
+    // ------------------------------------------------------------------
+    if (action === "admin_settings_get") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const cur = await db.from("app_settings").select("key,value,updated_at,note");
+      if (cur.error) return json({ available: false, error: "設定の表(db/schema.sql 19節)がまだありません", classifier_thinking: liteThinkingBudget(), source: liteThinkingSource() });
+      const hist = await db.from("app_settings_history").select("seq,key,before,after,note,changed_at").order("seq", { ascending: false }).limit(20);
+      const row = ((cur.data ?? []) as { key: string; value: string; updated_at: string; note: string | null }[]).find((r) => r.key === "classifier_thinking") ?? null;
+      return json({
+        available: true, choices: LITE_THINKING_CHOICES, classifier_thinking: liteThinkingBudget(), source: liteThinkingSource(),
+        env_value: process.env.LITE_THINKING_BUDGET ?? null, saved: row, history: hist.data ?? [],
+      });
+    }
+    if (action === "admin_settings_save") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const key = String(payload.key ?? "");
+      if (key !== "classifier_thinking") return json({ error: "変えられない設定です" }, 400);
+      const value = String(payload.value ?? "").trim();
+      // 「設定しない」(空)は、管理画面の値を消して環境変数・既定に戻す
+      if (value !== "" && (!LITE_THINKING_CHOICES.includes(value) || parseThinkingSetting(value) == null)) {
+        return json({ error: `選べる値は ${LITE_THINKING_CHOICES.join(" / ")} か、空(環境変数・既定に戻す)です` }, 400);
+      }
+      const note = String(payload.note ?? "").slice(0, 200) || null;
+      const before = await db.from("app_settings").select("value").eq("key", key).maybeSingle();
+      if (before.error) return json({ error: "設定の表(db/schema.sql 19節)がまだありません" }, 400);
+      const w = value === ""
+        ? await db.from("app_settings").delete().eq("key", key)
+        : await db.from("app_settings").upsert({ key, value, note, updated_at: new Date().toISOString() });
+      if (w.error) return json({ error: `保存できませんでした: ${w.error.message}` }, 400);
+      await checkedWrite("設定の変更の記録", () => db.from("app_settings_history").insert({
+        key, before: (before.data as { value?: string } | null)?.value ?? null, after: value || null, note,
+      }));
+      appSettingsCache = null;   // このインスタンスはすぐ反映する(ほかは30秒以内)
+      await applyAppSettings(db);
+      return json({ ok: true, classifier_thinking: liteThinkingBudget(), source: liteThinkingSource() });
+    }
+
     if (action === "admin_knowledge_list") {
       if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
       const { data, error } = await db.from("knowledge")

@@ -37,6 +37,9 @@ export function createFakeDb(opts = {}) {
   const constraints = opts.constraints ?? "v14";
   const missing = opts.missingColumns ?? {};
   const tables = { sessions: [], messages: [], safety_events: [], person_memory: [], knowledge: opts.knowledge ?? [] };
+  // 管理画面から変える設定(19節)。opts.noAppSettings のときは表が無い DB(19節が未実行)をまねる
+  if (!opts.noAppSettings) { tables.app_settings = []; tables.app_settings_history = []; }
+  let historySeq = 0;
   let seq = { messages: 0, safety_events: 0 };
   const writes = [];   // 書き込みの記録(テストで確かめる)
 
@@ -86,6 +89,7 @@ export function createFakeDb(opts = {}) {
       select(cols = "*") { if (q.op === "select") q.cols = cols; else { q.returning = true; q.cols = cols; } return api; },
       insert(payload) { q.op = "insert"; q.payload = payload; return api; },
       update(payload) { q.op = "update"; q.payload = payload; return api; },
+      delete() { q.op = "delete"; return api; },
       upsert(payload) { q.op = "upsert"; q.payload = payload; return api; },
       eq(col, v) {
         if (col.includes(".")) {
@@ -135,6 +139,11 @@ export function createFakeDb(opts = {}) {
         const err = forced ?? checkRow(q.table, item);
         writes.push({ table: q.table, op: q.op, row: item, error: err });
         if (err) return { data: null, error: { message: err } };
+        if (q.op === "upsert" && q.table === "app_settings") {
+          const i = t.findIndex((r) => r.key === item.key);
+          if (i >= 0) { t[i] = { ...t[i], ...item }; made.push(t[i]); continue; }
+        }
+        if (q.table === "app_settings_history") { const row = { seq: ++historySeq, changed_at: new Date().toISOString(), ...item }; t.push(row); made.push(row); continue; }
         if (q.op === "upsert" && q.table === "person_memory") {
           const i = t.findIndex((r) => r.client_id === item.client_id);
           if (i >= 0) { t[i] = { ...t[i], ...item }; made.push(t[i]); continue; }
@@ -162,6 +171,11 @@ export function createFakeDb(opts = {}) {
       }
       for (const r of targets) Object.assign(r, q.payload);
       return { data: q.returning ? targets.map((r) => project(q.table, r, q.cols)) : null, error: null };
+    }
+    if (q.op === "delete") {
+      for (let i = t.length - 1; i >= 0; i--) if (matches(t[i], q.filters)) t.splice(i, 1);
+      writes.push({ table: q.table, op: "delete", row: null, error: null });
+      return { data: null, error: null };
     }
     return { data: null, error: { message: `unsupported op ${q.op}` } };
   }

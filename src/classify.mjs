@@ -55,10 +55,29 @@ export const LITE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 // 誇張(「〜すぎて死にそう笑」)が段階2になる回も見えた。誤検知で危機の応答と職員への通知が増えうるので、**既定は以前の -1 のまま**にし、
 // 設定 LITE_THINKING_BUDGET(1〜24576)で上限を試せるようにした(入れるかは人が決める)。モデルが受け付けなかった(400)ときは、
 // そのモデルだけ -1 で送り直す(callGemini)。人単位のメモの要約は危機の判定に関わらないので、上限を既定にした(MEMORY_THINKING_BUDGET)
+//
+// 2026年11月6日: 人が「すぐに変えられるようにしておきたい」と依頼。管理画面(public/admin.html。合言葉で守る)から変えた値を
+// DB(app_settings。db/schema.sql 19節)に置き、route.ts が30秒ごとに読んで setLiteThinkingOverride で渡す(デプロイし直さない)。
+// 決まる順: 管理画面の値 > 環境変数 LITE_THINKING_BUDGET > 以前の -1(動的)
+export const LITE_THINKING_CHOICES = Object.freeze(["dynamic", "128", "512"]);
+let thinkingOverride = null;   // null = 管理画面で決めていない
+export function parseThinkingSetting(v) {
+  const s = String(v ?? "").trim();
+  if (s === "dynamic" || s === "-1") return -1;
+  const n = Number(s);
+  return s !== "" && Number.isInteger(n) && n > 0 && n <= 24576 ? n : null;
+}
+export function setLiteThinkingOverride(v) {
+  thinkingOverride = v == null ? null : parseThinkingSetting(v);
+}
 export function liteThinkingBudget(env = process.env) {
-  const v = String(env.LITE_THINKING_BUDGET ?? "").trim();
-  const n = Number(v);
-  return v !== "" && Number.isInteger(n) && n > 0 && n <= 24576 ? n : -1;
+  if (thinkingOverride != null) return thinkingOverride;
+  return parseThinkingSetting(env.LITE_THINKING_BUDGET) ?? -1;
+}
+// いまの値と、どこで決まったか(記録・管理画面の表示用)
+export function liteThinkingSource(env = process.env) {
+  if (thinkingOverride != null) return "admin";
+  return parseThinkingSetting(env.LITE_THINKING_BUDGET) != null ? "env" : "default";
 }
 export const MEMORY_THINKING_BUDGET = 128;
 

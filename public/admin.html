@@ -161,6 +161,23 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       <span id="syntheticLabel">合成データ(ペルソナテスト)を表示する</span>
     </label>
     <div id="keyGuard" class="model-health" hidden></div>
+    <!-- 管理画面から変える設定(2026年11月6日。db/schema.sql 19節)。保存すると30秒以内に、デプロイし直さずに反映される -->
+    <details id="settingsBox" class="model-health" style="padding:8px 10px">
+      <summary>分類器の思考の設定 <span id="thinkingNow"></span></summary>
+      <p style="margin:6px 0">危機の分類器と補助判定が、判定の前に「考える」量の上限です。上限を付けると、全体の費用が約3割減る見込みですが、
+        保留セットでふだんの言い回しが危機(段階2・職員への通知)になる回が 44判定中5回→8回に増えました(見逃しは増えていない)。
+        くわしくは docs/token-usage-20261103.md 8章。</p>
+      <label>値 <select id="thinkingSelect">
+        <option value="">設定しない(環境変数・既定 = 動的)</option>
+        <option value="dynamic">動的(以前どおり)</option>
+        <option value="128">上限 128(費用が少ない)</option>
+        <option value="512">上限 512</option>
+      </select></label>
+      <label>メモ <input id="thinkingNote" type="text" maxlength="200" placeholder="変える理由など(任意)" style="width:16em"></label>
+      <button type="button" id="thinkingSave" class="icon-btn">保存</button>
+      <span id="thinkingMsg"></span>
+      <div id="thinkingHistory" style="margin-top:6px"></div>
+    </details>
     <div id="modelHealth" class="model-health" hidden title="生成のモデルの状態(直近1時間・24時間)。429 はキーの上限、切り替えは予備のモデルへ移った回数、失敗は固定の一言で受けた回数、作り直し待ちは返事を作れず画面が時間をおいて作り直した発言の数、失敗の内訳は生成の失敗の種類ごとの数、時間は返事にかかった時間の中央値"></div>
     <div id="sessionList" class="s-list"></div>
     <div id="listEmpty" class="empty" hidden>まだセッションがありません。</div>
@@ -416,6 +433,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       document.getElementById("appVersion").textContent = v ? "いまの版 " + v.app_version + (v.commit ? "・" + v.commit : "") : "";
       renderModelHealth(body && body.model_health);
       renderKeyGuard(body && body.key_guard);
+      loadSettings();
       listView.hidden = false;
       renderList();
     }, function (e) {
@@ -454,6 +472,36 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     });
     return items.length ? '<details class="failure"><summary>生成の失敗の記録(' + items.length + '件。管理画面だけ)</summary>' + items.join("") + '</details>' : "";
   }
+
+  // 分類器の思考の設定(2026年11月6日)。いまの値・どこで決まったか・変えた記録
+  var THINK_JA = { "-1": "動的(以前どおり)", "128": "上限 128", "512": "上限 512" };
+  var SOURCE_JA = { admin: "管理画面で設定", env: "環境変数", "default": "既定" };
+  function loadSettings() {
+    return api("admin_settings_get", {}).then(function (b) {
+      var now = document.getElementById("thinkingNow");
+      now.textContent = "― いま: " + (THINK_JA[String(b.classifier_thinking)] || ("上限 " + b.classifier_thinking)) + "(" + (SOURCE_JA[b.source] || b.source) + ")";
+      if (!b.available) {
+        document.getElementById("thinkingMsg").textContent = "db/schema.sql の19節を Supabase で実行すると、ここから変えられます。";
+        document.getElementById("thinkingSave").disabled = true;
+        return;
+      }
+      document.getElementById("thinkingSelect").value = b.saved ? b.saved.value : "";
+      var h = (b.history || []).map(function (r) {
+        return "<div>" + esc(String(r.changed_at || "").slice(0, 16).replace("T", " ")) + " " + esc(r.before || "(なし)") + " → " + esc(r.after || "(なし)") +
+          (r.note ? " ・" + esc(r.note) : "") + "</div>";
+      }).join("");
+      document.getElementById("thinkingHistory").innerHTML = h ? "<b>変えた記録</b>" + h : "";
+    }).catch(function () { /* 読めなくても一覧は使える */ });
+  }
+  document.getElementById("thinkingSave").addEventListener("click", function () {
+    var value = document.getElementById("thinkingSelect").value;
+    if (!confirm("分類器の思考の設定を「" + (value || "設定しない") + "」にします。30秒以内に本番の判定に反映されます。よろしいですか?")) return;
+    var msg = document.getElementById("thinkingMsg");
+    msg.textContent = "保存しています…";
+    api("admin_settings_save", { key: "classifier_thinking", value: value, note: document.getElementById("thinkingNote").value })
+      .then(function () { msg.textContent = "保存しました(30秒以内に反映)"; document.getElementById("thinkingNote").value = ""; return loadSettings(); })
+      .catch(function (e) { msg.textContent = "保存できませんでした: " + (e && e.message ? e.message : e); });
+  });
 
   // モデルの状態の1行(2026年11月1日・危機の作り直し 1-2)。直近1時間の 429 が3回を超えたら警告の色にする
   function renderModelHealth(h) {

@@ -774,3 +774,30 @@ $$;
 --  この節が未実行の DB でも会話は止まらない(列を外して書く。印は messages.flags に残る)
 -- ============================================================================
 alter table messages add column if not exists failure jsonb;
+
+-- ============================================================================
+-- 19. 管理画面から変える設定(2026年11月6日。人が「すぐに変えられるようにしておきたい」と依頼)
+--
+--  app_settings          いまの値(key ごとに1行)。route.ts が30秒ごとに読む(デプロイし直さずに変わる)。
+--                        いまは classifier_thinking(分類器・補助判定の思考の上限)だけ。値は dynamic(以前どおり・動的)/ 128 / 512。
+--                        行が無いときは環境変数 LITE_THINKING_BUDGET、それも無ければ dynamic(docs/token-usage-20261103.md 8章)
+--  app_settings_history  変えた記録(前の値・あとの値・メモ・時刻)。削除しない
+--  変えるのは管理画面(public/admin.html。合言葉 ADMIN_TOKEN で守る)の「分類器の思考」から。RLS はポリシーを作らない(ほかの表と同じ)
+--  この節が未実行の DB でも会話は止まらない(環境変数と既定のまま)
+-- ============================================================================
+create table if not exists app_settings (
+  key text primary key,
+  value text not null,
+  note text,
+  updated_at timestamptz not null default now()
+);
+create table if not exists app_settings_history (
+  seq bigserial primary key,
+  key text not null,
+  before text,
+  after text,
+  note text,
+  changed_at timestamptz not null default now()
+);
+alter table app_settings enable row level security;
+alter table app_settings_history enable row level security;
