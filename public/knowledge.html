@@ -78,6 +78,8 @@ tr.off td{color:var(--ink-faint)}
     <a class="icon-btn" href="/admin.html" style="text-decoration:none">相談ログ レビューへ</a>
     <button id="newBtn" class="icon-btn" hidden>新しく足す</button>
     <button id="refreshBtn" class="icon-btn" hidden>更新</button>
+    <!-- 2026年11月6日: リポジトリの db/knowledge.json を本番の DB に合わせるための書き出し(使っていない行も含む全件) -->
+    <button id="exportBtn" class="icon-btn" hidden title="本番の DB のナレッジを全件(使っていない行も含む)JSON で保存します。リポジトリの db/knowledge.json を最新にするときに使います">JSONで書き出す</button>
   </div>
 </header>
 <main>
@@ -224,12 +226,12 @@ tr.off td{color:var(--ink-faint)}
 
   function showLogin() {
     $("#loginForm").hidden = false; $("#listView").hidden = true; $("#editView").hidden = true;
-    $("#newBtn").hidden = true; $("#refreshBtn").hidden = true;
+    $("#newBtn").hidden = true; $("#refreshBtn").hidden = true; $("#exportBtn").hidden = true;
     $("#tokenInput").focus();
   }
   function showList() {
     $("#loginForm").hidden = true; $("#editView").hidden = true; $("#listView").hidden = false;
-    $("#newBtn").hidden = false; $("#refreshBtn").hidden = false;
+    $("#newBtn").hidden = false; $("#refreshBtn").hidden = false; $("#exportBtn").hidden = false;
     renderRows();
   }
 
@@ -369,6 +371,20 @@ tr.off td{color:var(--ink-faint)}
   $("#newBtn").addEventListener("click", function () { openEdit(null); });
   $("#backBtn").addEventListener("click", function () { showMessage(""); showList(); });
   $("#refreshBtn").addEventListener("click", load);
+  // 全件を JSON で保存する(画面の絞り込みにかかわらず全部。番号の順)。中身はナレッジだけで、相談の記録は含まない
+  $("#exportBtn").addEventListener("click", function () {
+    api("admin_knowledge_list").then(function (r) {
+      var rows = (r.knowledge || []).slice().sort(function (a, b) { return String(a.id).localeCompare(String(b.id), "en", { numeric: true }); });
+      var out = { exported_at: new Date().toISOString(), count: rows.length, knowledge: rows };
+      var blob = new Blob([JSON.stringify(out, null, 2) + "\n"], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "knowledge-export-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+      showMessage(rows.length + "件を書き出しました。このファイルを開発メンバーに渡してください。", "ok");
+    }).catch(function (e) { if (e.message !== "unauthorized") showMessage("書き出せませんでした: " + e.message, "warn"); });
+  });
   $("#saveBtn").addEventListener("click", save);
   $("#allHistoryBtn").addEventListener("click", function () { loadHistory("", $("#allHistory")); });
 

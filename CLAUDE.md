@@ -111,6 +111,7 @@ Postgres(Supabase。データベースとしてのみ使う)
 │   ├── test-version.mjs              版の書き方と docs/changelog.md が最新かの確かめ(6節)
 │   ├── export-review-logs.mjs        採点用のログの書き出し(画面に出たやり取りだけ・1会話1ファイル・版がわからない番号。対応表は別。書き出し先 review-export/ はコミットしない)
 │   ├── test-*.mjs                    そのほかの自動テスト(使い方は README.md「自動テスト一式」)
+│   ├── import-knowledge-export.mjs   ナレッジ管理画面の「JSONで書き出す」を点検し、db/knowledge.json と1つにまとめた seed を作る
 │   ├── check-knowledge.mjs           DB のナレッジに seed の欠けが無いかを確かめる(読むだけ)
 │   ├── run-until-done.mjs            無料枠の上限で止まったテストを、上限が戻ったら自動で続きから再開する
 │   ├── export-*.py / export-provisional-texts.mjs  結果のエクセル・仮の文面の文書を作る

@@ -16,6 +16,11 @@
 // retro: true の版は、版を付ける仕組みができる前の変更に、さかのぼって付けた番号(記録の prompt_version には出てこない)
 export const VERSION_HISTORY = [
   {
+    version: "2026-11-06b", date: "2026-11-06", areas: ["管理画面"],
+    summary: "ナレッジ管理画面に「JSONで書き出す」を足した(本番の DB の全件。使っていない行も含む)。書き出したファイルを "
+      + "scripts/import-knowledge-export.mjs で点検し、db/knowledge.json と1つにまとめた seed(db/seed_knowledge_all.sql)を作る(整理)",
+  },
+  {
     version: "2026-11-06a", date: "2026-11-06", areas: ["管理画面", "安全層", "DB", "テスト"],
     summary: "分類器・補助判定の思考の上限を、管理画面からデプロイし直さずに切り替えられるようにした(人が依頼。db/schema.sql 19節 app_settings。"
       + "動的(以前どおり)/上限128/上限512。30秒以内に反映。変えた記録を残す。決まる順は管理画面 > 環境変数 LITE_THINKING_BUDGET > 動的)。既定は変えていない(動的)",
