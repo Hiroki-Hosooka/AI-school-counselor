@@ -313,13 +313,17 @@ async function runScenario(name, sc, rep) {
   const failedWrites = db.writes.filter((w) => w.error).map((w) => `${w.table}.${w.op}: ${w.error}`);
   const sess = db.tables.sessions.find((x) => x.id === sessionId) ?? null;
   const events = db.tables.safety_events.filter((e) => e.session_id === sessionId)
-    .map((e) => ({ risk: e.risk ?? null, subject: e.subject ?? null, stage: e.stage ?? null, decided_by: e.decided_by ?? null, teacher_answer: e.teacher_answer ?? null, crisis_step: e.crisis_step ?? null }));
+    .map((e) => ({ risk: e.risk ?? null, subject: e.subject ?? null, stage: e.stage ?? null, decided_by: e.decided_by ?? null, teacher_answer: e.teacher_answer ?? null, crisis_step: e.crisis_step ?? null,
+      model_reason: e.model_reason ?? null, created_at: e.created_at ?? null }));
   const startDev = start.body.dev ?? null;
   return { name, rep, label, constraints, model: modelMode, turns, failedWrites, startDev, events,
     session: sess && { phase: sess.phase, intake_step: sess.intake_step, chief_complaint_category: sess.chief_complaint_category,
       chief_complaint_source: sess.chief_complaint_source, distress_level: sess.distress_level, user_goal: sess.user_goal,
       recommended_mode: sess.recommended_mode, onset_context: sess.onset_context },
-    stored: msgs.map((m) => ({ role: m.role, body: m.body, crisis: m.crisis, crisis_step: m.crisis_step ?? null, closing: m.closing ?? false, summarized: m.summarized ?? null, safety_card: m.safety_card ?? null, choices: m.choices ?? null, choice_id: m.choice_id ?? null, flags: m.flags, timings: m.timings ?? null, model: m.model ?? null, prompt_version: m.prompt_version ?? null, settings: m.settings ?? null, failure: m.failure ?? null })) };
+    stored: msgs.map((m) => ({ role: m.role, body: m.body, crisis: m.crisis, crisis_step: m.crisis_step ?? null, closing: m.closing ?? false, summarized: m.summarized ?? null, safety_card: m.safety_card ?? null, choices: m.choices ?? null, choice_id: m.choice_id ?? null, flags: m.flags, timings: m.timings ?? null, model: m.model ?? null, prompt_version: m.prompt_version ?? null, settings: m.settings ?? null, failure: m.failure ?? null,
+      // 会話ログの自動評価(scripts/eval/)のコードの指標に使う
+      choice_set: m.choice_set ?? null, mode: m.mode ?? null, safety: m.safety ?? null, referral: m.referral ?? null,
+      created_at: m.created_at ?? null, knowledge_version: m.knowledge_version ?? null })) };
 }
 
 function measure(run) {

@@ -68,6 +68,7 @@ Postgres(Supabase)
 │   ├── referral.mjs         人につなぐ印(仮。REFERRAL_FLAG=on のときだけ。5.22)
 │   ├── token-usage.mjs      トークンの台帳(測定用)
 │   ├── knowledge-admin.mjs  ナレッジ管理画面の入力の確かめ
+│   ├── eval-metrics.mjs     会話ログの自動評価のコードの指標(AI を使わない。docs/design-auto-eval.md)
 │   ├── version.mjs          版と変更の記録(6節)
 │   └── app/  layout.tsx / page.tsx / globals.css / icon.svg・apple-icon.png / api/chat/route.ts
 ├── public/  admin.html(ログのレビュー・設定。合言葉) / knowledge.html(ナレッジ管理。合言葉)
@@ -78,6 +79,8 @@ Postgres(Supabase)
 │   ├── knowledge.json       本番のナレッジの控え(テストが読む。同じスクリプトで作る)
 │   └── archive/             以前の seed
 ├── scripts/  テスト(test-*.mjs)・分析(analyze-*.mjs)・書き出し(export-*)・_lib/(共通部品)・archive/(役目を終えたもの)
+│            eval/(会話ログの自動評価: 評価専用のフォルダへの書き出し・採点の結果の取り込み)
+├── eval/batches/ 自動評価の束(対応表・ログの控え・コードの指標・採点の結果。合成の台本と開発メンバーのテストだけ)
 └── docs/     目次は docs/README.md。archive/ は役目を終えた文書、test-results/archive/ は古い結果
 ```
 
@@ -411,7 +414,9 @@ node scripts/test-output-check.mjs
 1. **文字相談の経験者にまだ聞けていない** — 嶋先生は LINE 相談を辞退、石田先生の電話相談は音声。**このプロダクトは文字相談**なのに、その領域の知見がない
 2. **失敗経験が採れていない** — 「この返し方はまずかった」という証言がゼロ。禁止リストの根拠が弱い
 3. **保護者面接** — ナレッジ0件。石田先生は担当しているので次回聞く
-4. **評価AIの較正** — 心理士の採点と突き合わせていない。スコアを信用しない
+4. **評価AIの較正** — 心理士の採点と突き合わせていない。スコアを信用しない。Claude で採点する仕組み(`docs/design-auto-eval.md`)は、
+   第4部で一致した項目(`docs/evaluation/rubric-v1-validated.json`。いまは空)だけを使う。採点は実装の会話とは別の会話で、評価専用のフォルダ(プロジェクトの外)で行う。
+   **実際の生徒の会話は、評価専用のフォルダに書き出さない**(DB からは「開発メンバーのテスト」の印のあるセッションだけ)
 5. **短文・沈黙への対応** — 文字では「乗ってこない」「言葉にできない」「帰りたい」の区別がつかない
 6. **`技` は取材による検証を経ていない** — CBT/SFBT 等の技法カタログ(26件)は一次資料のみ。実際の会話で使う前に、機会を見て検証する
 7. **仮の文面** — 危機の文・危機のあとの指示・待っていてねの一言など、`_PROVISIONAL` と付いたものは心理士さんの確認待ち(`docs/psychologist-review-texts.md`)

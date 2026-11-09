@@ -812,3 +812,13 @@ alter table app_settings_history enable row level security;
 -- ============================================================================
 alter table messages add column if not exists referral jsonb;
 create index if not exists messages_referral_idx on messages(session_id) where referral is not null and role = 'ai';
+
+-- ============================================================================
+-- 21. 開発メンバーのテストの印(2026年11月9日。会話ログの自動評価。docs/design-auto-eval.md 2-3)
+--
+--  sessions.dev_test  管理画面で人が付ける「開発メンバーのテスト」の印。会話ログの自動評価で DB のセッションを書き出すのは、
+--                     この印か is_synthetic(テストスクリプトが作ったセッション)のどちらかがあるものだけ(実際の生徒の会話を書き出さないため)
+--  この節が未実行の DB でも会話と管理画面は止まらない(印を付けられず、DB からの書き出しができないだけ)
+-- ============================================================================
+alter table sessions add column if not exists dev_test boolean not null default false;
+alter table sessions add column if not exists dev_test_at timestamptz;

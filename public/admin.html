@@ -55,6 +55,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
 .s-id{font-family:ui-monospace,monospace;font-size:12.5px;color:var(--ink-soft)}
 .s-card-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .s-card-time{font-size:11.5px;color:var(--ink-faint)}
+.dev-test-box{margin-top:6px;font-size:12px}.dev-test-note{margin-left:6px;color:var(--ink-faint)}
 .empty{text-align:center;color:var(--ink-faint);padding:40px 0;font-size:13.5px}
 
 .badge{display:inline-block;font-size:10.5px;letter-spacing:.03em;padding:2px 9px;border-radius:999px;
@@ -383,6 +384,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     sessionListEl.innerHTML = sorted.map(function (s) {
       var badges = "";
       if (s.is_synthetic) badges += '<span class="badge">テスト' + (s.persona_id ? "・" + esc(s.persona_id) : "") + '</span>';
+      // 開発メンバーのテストの印(21節。会話ログの自動評価で書き出せるのは、この印か合成データだけ)
+      if (s.dev_test) badges += '<span class="badge">開発メンバーのテスト</span>';
       if (s.has_crisis) badges += '<span class="badge warn">危機</span>';
       // 人につなぐ印(仮。点数と、会話の始まり→今の段階。段階 1 気づく / 2 思い浮かぶ / 3 決まる / 4 話す)
       if (s.referral && s.referral.flagged) badges += '<span class="badge warn" title="人につなぐ印(仮)。点数の内訳は会話の中に出ます">人につなぐ印 ' +
@@ -905,8 +908,24 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
         '<span class="tag">' + esc(WEIGHT_JA[s.weight] || s.weight || "—") + '</span>' +
       '</div>' +
       '<div class="s-card-time">' + esc(fmtDate(s.started_at)) + ' 〜 ' +
-        (s.closed_at ? esc(fmtDate(s.closed_at)) : "(継続中)") + '</div>'
+        (s.closed_at ? esc(fmtDate(s.closed_at)) : "(継続中)") + '</div>' +
+      // 開発メンバーのテストの印(21節。会話ログの自動評価で DB から書き出せるのは、この印のあるセッションだけ。
+      // 実際の生徒の会話には付けない)
+      '<div class="dev-test-box"><label><input type="checkbox" id="devTestToggle"' + (s.dev_test ? " checked" : "") +
+        (s.dev_test_available === false ? " disabled" : "") + '> 開発メンバーのテスト</label>' +
+        '<span class="dev-test-note">' + (s.dev_test_available === false
+          ? "(db/schema.sql 21節が未実行のため付けられません)"
+          : "(会話ログの自動評価で書き出せるようになります。実際の生徒の会話には付けないでください)") + '</span></div>'
     );
+    var tg = document.getElementById("devTestToggle");
+    if (tg) tg.addEventListener("change", function () {
+      var on = tg.checked;
+      if (on && !confirm("このセッションを「開発メンバーのテスト」にしますか?\n実際の生徒の会話ではないことを確かめてください。")) { tg.checked = false; return; }
+      tg.disabled = true;
+      api("admin_mark_dev_test", { session_id: s.id, on: on }).then(function () { s.dev_test = on; }, function (err) {
+        alert("保存に失敗しました: " + err.message); tg.checked = !on;
+      }).then(function () { tg.disabled = false; });
+    });
   }
 
   function openSession(id) {

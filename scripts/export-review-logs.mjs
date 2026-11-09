@@ -5,7 +5,8 @@
 //  ・内部の判定(関わりの型・重心・段階・問いの層・見立て・出力チェックの記録など)は書かない
 //  ・どの版の会話かがわからないようにする:ファイル名・本文に版・日付・セッションIDを書かない。会話の順番も混ぜる
 //  ・番号と版(セッションID・版・日時)の対応は、別のファイル(対応表)に残す。対応表は採点者に渡さない
-//  ・窓口のカード・選択肢(チップ)は、画面に出た形で書く(page.tsx の HOTLINES と同じ内容。変えたら合わせる)
+//  ・窓口のカード・選択肢(チップ)は、画面に出た形で書く(scripts/eval/_lib/conversation.mjs。page.tsx の HOTLINES と同じ内容。変えたら合わせる)
+//  ・発言ごとに「## 番号」を付ける(採点の根拠のターンの番号)
 //
 //  実行:
 //    DB から(読むだけ。.env.local の SUPABASE_URL・SUPABASE_SERVICE_ROLE_KEY):
@@ -25,16 +26,9 @@ const arg = (k, d) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k
 const outDir = path.resolve(arg("out", path.join(ROOT, "review-export")));
 const seed = Number(arg("seed", String(Date.now() % 100000)));
 
-// 画面と同じ窓口(src/app/page.tsx の HOTLINES・CLOSING_HOTLINES と同じ。変えたら合わせる)
-const HOTLINES = [
-  ["24時間子供SOSダイヤル", "0120-0-78310"],
-  ["チャイルドライン", "0120-99-7777"],
-  ["よりそいホットライン", "0120-279-338"],
-  ["こころの健康相談統一ダイヤル", "0570-064-556"],
-  ["いますぐ危ないとき", "119"],
-];
-const CLOSING_HOTLINES = HOTLINES.filter(([name]) => name !== "いますぐ危ないとき");
-const CARE_LINE = (await import(path.join(ROOT, "src/crisis-response.mjs"))).CARE_LINE_PROVISIONAL;
+// 画面に出た形の書き出し・窓口・順番の混ぜ方は、会話ログの自動評価と共通(scripts/eval/_lib/conversation.mjs。2026年11月9日)。
+// 心理士さんと Claude が同じ見た目のログを採点するため(docs/design-auto-eval.md 2-2)
+const { renderConversation, shuffle } = await import("./eval/_lib/conversation.mjs");
 
 // ---- 会話を読む(どちらも同じ形の行の配列にする)----
 // 行: { role: "user"|"ai", body, crisis, crisis_step, closing, safety_card, choices: [{id,label}], choice_id }
@@ -79,42 +73,7 @@ function fromJsonl(file) {
   }));
 }
 
-// ---- 画面に出た形の文 ----
-const quote = (t) => String(t ?? "").trim().split("\n").map((l) => `> ${l}`).join("\n");
-const hotlineList = (list) => list.map(([n, num]) => `${n} ${num}`).join(" ／ ");
-function cardText(m) {
-  const card = m.safety_card ?? (m.crisis && m.crisis_step == null ? "crisis" : null);
-  const out = [];
-  if (card === "crisis") out.push(`〔窓口のカード〕話せる窓口:${hotlineList(HOTLINES)}。どれも無料で、名前を言わなくても話せます。学校の先生や保健室の先生に、この画面を見せるだけでも伝わります。`);
-  if (card === "care") out.push(`〔気づかいのカード〕${CARE_LINE}(その下に、閉じた状態の「話せる窓口」)`);
-  if (card === "hotlines") out.push("〔閉じた状態の「話せる窓口」〕");
-  if (m.closing) out.push(`〔区切りのカード〕また話したくなったら:${hotlineList(CLOSING_HOTLINES)}。しんどくなったら、ここに書いたところにも頼っていいからね。もちろん、また続きをここで話しに来てくれてもいいよ。`);
-  return out;
-}
-function render(no, conv) {
-  const lines = [`# 会話 ${no}`, "",
-    "(生徒の画面に表示されたやり取りだけを、上から順に書いています。画面の下には、いつも「119」「24時間子供SOSダイヤル」が表示されています。)", ""];
-  let turn = 0;
-  for (const m of conv.rows) {
-    if (m.role === "user") {
-      turn++;
-      lines.push(`## ${turn}`, "", m.choice_id ? "**生徒**(選択肢から)" : "**生徒**", "", quote(m.body), "");
-    } else {
-      if (String(m.body ?? "").trim()) lines.push("**AI**", "", quote(m.body), "");
-      for (const c of cardText(m)) lines.push(`　${c}`, "");
-      if (Array.isArray(m.choices) && m.choices.length) lines.push(`　〔選択肢〕${m.choices.map((c) => `［${c.label}］`).join(" ")}`, "");
-    }
-  }
-  return lines.join("\n");
-}
-
-// ---- 順番を混ぜて番号を付ける(seed で再現できる)----
-function shuffle(arr, s) {
-  const a = [...arr]; let x = s || 1;
-  const rnd = () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648);
-  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
-  return a;
-}
+const render = (no, conv) => renderConversation(`会話 ${no}`, conv.rows).markdown;
 
 const jsonl = arg("from-jsonl", "");
 const convs = shuffle(jsonl ? fromJsonl(jsonl) : await fromDb(), seed);

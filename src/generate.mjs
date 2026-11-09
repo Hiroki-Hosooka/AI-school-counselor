@@ -804,6 +804,9 @@ ${know}
 notes には氏名・学校名・住所などの識別情報を書かないこと。わからない項目は空文字にする。`;
 }
 
+// 出力チェックの1回目に当たった表現の記録(2026年11月9日。会話ログの自動評価・第1部「秘密の約束を止めた回数」。記録だけ)。
+// 再生成で解消したときの flags は今までどおり ["1回目に検知→再生成で解消"] のまま(ほかの判定がこの形を見ている)なので、別の印にする
+export const NG_FIRST_FLAG = "記録のみ:出力チェックの1回目に当たった";
 export const checkOutput = (t) =>
   OUTPUT_NG.filter((re) => re.test(t)).map((re) => String(re).slice(0, 42));
 
@@ -1007,6 +1010,7 @@ export async function generateReply(
 
   // ---- 出力チェック ----
   let flags = checkAll(out.reply ?? "");
+  const ngFirstHits = generationFailed ? [] : [...flags];
   if (generationFailed) flags = [`生成失敗→固定応答で継続(${failureCause})`, ...flags];
   if (flags.length && !generationFailed) {
     const fix = system +
@@ -1085,7 +1089,7 @@ export async function generateReply(
   if (failureKind) flags = [...flags, `${GENERATION_FAILURE_FLAG}: ${failureKind}`];
   return {
     out, flags, generationFailed, failureCause, failureDetail, usedModel, usage, checkFailed, flowRegens, endRegens, attempts,
-    failures, failureKind, salvaged: salvagedReply,
+    failures, failureKind, salvaged: salvagedReply, ngFirstHits,
   };
 }
 

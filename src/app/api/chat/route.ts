@@ -71,7 +71,7 @@ import { MAX_TEXT_LENGTH, TOO_LONG_NOTICE, RATE_LIMIT_NOTICE, GENERATION_WAIT_NO
 import {
   loadKnowledge, clearKnowledgeCache, knowledgeVersion, retrieve, buildSystem, generateReply, updatePersonMemory,
   applyTurnUpdate, applyIntakeUpdate, applyModeUpdate, applyClosingUpdate, flowPhaseFor,
-  DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION, modelTrailFlag, modelHealth, GENERATION_FAILURE_FLAG,
+  DISTRESS_DECLINED_FLAG, distressDeclinedNote, PROMPT_VERSION, modelTrailFlag, modelHealth, GENERATION_FAILURE_FLAG, NG_FIRST_FLAG,
 } from "@/generate.mjs";
 import { validateKnowledgeInput } from "@/knowledge-admin.mjs";
 import { planIntakeTurn, finishIntakeTurn, topScreenChoice } from "@/intake.mjs";
@@ -436,6 +436,16 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error("人につなぐ印を読めませんでした:", e);
       }
+      // 開発メンバーのテストの印(21節。2026年11月9日。会話ログの自動評価)。21節が未実行の DB では読めないので付けない
+      try {
+        const dt = await db.from("sessions").select("id").eq("dev_test", true);
+        if (!dt.error) {
+          const marked = new Set(((dt.data ?? []) as { id: string }[]).map((x) => x.id));
+          for (const s of sessions as Record<string, unknown>[]) if (marked.has(s.id as string)) s.dev_test = true;
+        }
+      } catch (e) {
+        console.error("開発メンバーのテストの印を読めませんでした:", e);
+      }
       return json({ version: versionInfo(), sessions, model_health, key_guard, referral_metrics });
     }
 
@@ -564,6 +574,9 @@ export async function POST(req: Request) {
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing")
           .eq("session_id", sessionId).order("seq"),
       );
+      // 開発メンバーのテストの印(21節。未実行の DB では付けられない)
+      const dtRow = await db.from("sessions").select("dev_test").eq("id", sessionId).maybeSingle();
+      const devTest = { available: !dtRow.error, value: !dtRow.error && (dtRow.data as { dev_test?: boolean } | null)?.dev_test === true };
       // 安全判定の記録(段階・根拠・見守り・引き下がり・先生についての答え。列が無ければあるものだけ)
       const { data: events } = await db.from("safety_events").select("*").eq("session_id", sessionId).order("seq");
       const usedOf = (m: Row) => (Array.isArray(m.used) ? (m.used as string[]) : []);
@@ -589,12 +602,25 @@ export async function POST(req: Request) {
           physical_mental_symptoms: s.physical_mental_symptoms, user_goal: s.user_goal,
           ambivalence_detected: s.ambivalence_detected, recommended_mode: s.recommended_mode,
           closing_state: s.closing_state,
+          dev_test: devTest.value, dev_test_available: devTest.available,
         },
         messages,
         safety_events: events ?? [],
         flow_summary: annotated.flow_summary,
         discomfort_reasons: DISCOMFORT_REASONS,
       });
+    }
+
+    // 「開発メンバーのテスト」の印(2026年11月9日。db/schema.sql 21節。docs/design-auto-eval.md 2-3)。
+    // 会話ログの自動評価で DB のセッションを書き出せるのは、この印のあるセッション(か合成データ)だけ。実際の生徒の会話には付けない
+    if (action === "admin_mark_dev_test") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const sessionId = String(payload.session_id ?? "").trim();
+      if (!sessionId) return json({ error: "session_id が必要です" }, 400);
+      const on = payload.on === true;
+      const { error } = await db.from("sessions").update({ dev_test: on, dev_test_at: on ? new Date().toISOString() : null }).eq("id", sessionId);
+      if (error) return json({ error: "保存できませんでした(db/schema.sql 21節が未実行かもしれません)", detail: error.message }, 400);
+      return json({ ok: true, dev_test: on });
     }
 
     // 返事ごとの「違和感があった」の印(2026年10月11日。「他人事感」の修正 10-3。db/schema.sql 15節)。
@@ -1072,6 +1098,9 @@ export async function POST(req: Request) {
           : !skipReason ? crisisTypesOf(text, safety) : [];
       const typesFlag = crisisTypesFlag(crisisTypes);
       if (crisisTypes.length) eventReason = `${eventReason}(種類: ${crisisTypes.join(",")})`;
+      // 分類器の根拠の引用も残す(記録だけ。会話ログの自動評価の第1部「発言に根拠のない段階2」。docs/design-auto-eval.md)
+      const evidenceForLog = String((safety.model as { evidence?: string } | undefined)?.evidence ?? "").trim();
+      if (evidenceForLog) eventReason = `${eventReason}(根拠「${evidenceForLog.slice(0, 80)}」)`;
 
       if (plan) {
         // ---- 段階ごとの応答(第2段階・仮)----
@@ -1443,6 +1472,8 @@ export async function POST(req: Request) {
       if (typesFlag) flags.push(typesFlag);
       // あいまいな問い・前にした問いのくり返し(記録のみ。第3部 3-5・第4部)
       if (!generated.generationFailed) flags.push(...questionNotes(out.reply, prior));
+      // 出力チェックの1回目に当たった表現(記録だけ。会話ログの自動評価の第1部。docs/design-auto-eval.md)
+      if (generated.ngFirstHits?.length) flags.push(`${NG_FIRST_FLAG}: ${generated.ngFirstHits.join(" | ")}`);
       // 第三者だけの危機(本人の危機ではない)も、生成した返事に第三者向けの窓口のカードを添える(2026年11月1日・1-3。人が決めた)
       const thirdPartyCard = !plan && !fallbackCard && safety.risk === "crisis" && safety.subject === "other" ? "crisis" : null;
       // 本人の危機を生成で受けたターン(第3部): 種類ごとの窓口のカード(初めて・まだ出していない種類があるとき)と、

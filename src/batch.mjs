@@ -85,7 +85,9 @@ export function safetyToStore(s, extra = {}) {
     risk: s.risk ?? "none", subject: s.subject ?? "self", stage: s.stage ?? (s.risk === "crisis" ? 2 : s.risk === "watch" ? 1 : 0),
     decidedBy: s.decidedBy ?? [], keywords: s.keywords ?? [], patterns: s.patterns ?? [], idiomExempted: s.idiomExempted ?? [],
     floor: s.floor ?? [], hits: s.hits ?? [], keywordVersion: s.keywordVersion ?? null,
-    model: { risk: s.model?.risk ?? null, subject: s.model?.subject ?? null, reason: String(s.model?.reason ?? "").slice(0, 400) },
+    // evidence: 分類器の根拠の引用(2026年11月9日。会話ログの自動評価の第1部「発言に根拠のない段階2」を数えるため。記録だけ)
+    model: { risk: s.model?.risk ?? null, subject: s.model?.subject ?? null, reason: String(s.model?.reason ?? "").slice(0, 400),
+      ...(s.model?.evidence ? { evidence: String(s.model.evidence).slice(0, 200) } : {}) },
     classifierMode: s.classifierMode ?? null,
     ...extra,
   };

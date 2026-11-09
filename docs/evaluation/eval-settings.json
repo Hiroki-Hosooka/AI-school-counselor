@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read(./rubric.md)",
+      "Read(./logs/**)",
+      "Read(./results/**)",
+      "Edit(./results/**)",
+      "Glob"
+    ],
+    "deny": [
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "NotebookEdit",
+      "Read(./HOW-TO-RUN.md)",
+      "Read(./.claude/**)"
+    ]
+  }
+}
