@@ -10,6 +10,7 @@
 | `backlog.md` | 優先順位つきのタスク |
 | `changelog.md` | 版ごとの変更の記録(`src/version.mjs` から作る。手で直さない) |
 | `project-history.md` | 経緯のまとめ(中間発表用の素材。出典つき) |
+| `claude-md-history.md` | CLAUDE.md の2026年11月6日までの全文(日付つきの経緯・実測の数字)。CLAUDE.md から同じ節の番号で参照する |
 
 ## 心理士さんに見ていただくもの
 

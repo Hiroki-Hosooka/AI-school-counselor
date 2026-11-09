@@ -42,7 +42,7 @@
 
 | # | 何を | どこ |
 |---|---|---|
-| 10 | 技法カタログ26件(出典「技」)の言い回しが合っているか | `db/seed_knowledge_structured.sql`、CLAUDE.md 8節6 |
+| 10 | 技法カタログ26件(出典「技」)の言い回しが合っているか | `db/archive/seed_knowledge_structured.sql`、CLAUDE.md 8節6 |
 | 11 | 会話を採点する評価AIの点数を、心理士さんの採点と突き合わせる(それまで点数は信用しない) | `docs/backlog.md` 1-3、CLAUDE.md 8節4 |
 | 11b | 危機キーワード v3 の【要確認】の語(伏せ字・俗語。アムカ・レグカ 等) | `docs/crisis-keywords-v3.md`、CLAUDE.md 5.12 |
 

@@ -22,11 +22,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 
 // README.md「2. テーブルを作る」で流す順番
 export const SEED_FILES = [
-  "db/seed_knowledge.sql",
-  "db/seed_knowledge_structured.sql",
+  // 2026年11月9日: 本番の書き出しから1つにまとめた seed と、その時点で本番に無かった安全のナレッジ(D3〜D7)の2つ。
+  // 以前の seed_knowledge.sql・_structured・_shima3 は db/archive/ に移した(中身は seed_knowledge_all.sql に入っている)
+  "db/seed_knowledge_all.sql",
   "db/seed_knowledge_safety.sql",
   "db/seed_knowledge_boundaries.sql",
-  "db/seed_knowledge_shima3.sql",
 ];
 
 // seed の insert 文の各行(  ('ID', '出典', ...)から ID を取り出す

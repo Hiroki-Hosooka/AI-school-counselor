@@ -13,13 +13,13 @@
 (2026年9月にSupabase Edge Function構成からNext.js/Vercel構成へ移行済み。同時期に
 `person_memory` テーブルを追加したので、`db/schema.sql` を再実行すること。`create table if not exists`
 なので既存データに影響なし。構造化面接AI統合(structured-unstructured-merge.md)に伴い、
-`db/schema.sql` 実行後に `db/seed_knowledge_structured.sql`(手順3)→
+`db/schema.sql` 実行後に `db/archive/seed_knowledge_structured.sql`(手順3)→
 `db/seed_knowledge_safety.sql`(手順4)→ `db/seed_knowledge_boundaries.sql`(テスト4/5 2-1)の順に流すこと)
 
 **完了の条件**
 - `select src, count(*) from knowledge group by src;` が
   `理 54 / 石 42 / 嶋 40 / 嶋石 5 / 設 7 / 技 26` = 174件
-  (`db/seed_knowledge_structured.sql`/`db/seed_knowledge_safety.sql` を流す前は
+  (`db/archive/seed_knowledge_structured.sql`/`db/seed_knowledge_safety.sql` を流す前は
   嶋37・設2・技0の140件)。手元で `npm run check:knowledge` を打って、seed の欠けが無い(OK)ことでも確かめられる
   (2026年9月のペルソナテストの DB は169件で、D3〜D7 が欠けていた可能性がある。docs/project-history.md 7-8節)
 - ブラウザから1往復できる
@@ -267,7 +267,7 @@ route.ts(本番)とテスト2〜4が完全に同じ関数を使う(測定対象�
 
 ### 2-1. 逐語ナレッジの追加
 
-- 2026年10月10日: 嶋先生インタビュー3(10/7)の11件を `db/seed_knowledge_shima3.sql` で追加(V19〜V26・T33〜T35。T30 の書き直し)。
+- 2026年10月10日: 嶋先生インタビュー3(10/7)の11件を `db/archive/seed_knowledge_shima3.sql` で追加(V19〜V26・T33〜T35。T30 の書き直し)。
 
 次のインタビュー（文字相談経験者を優先）の逐語を `cat = 'verbatim'` で追加する。
 `docs/interview-guide.md` のシナリオ①〜⑦に対する回答を、要約せずそのまま。

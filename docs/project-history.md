@@ -29,7 +29,7 @@
 | インタビュー | 2026/5/28 と 2026/9 の2回(CLAUDE.md 3節)。2回目は試作機を触りながらのフィードバック(docs/archive/prompts/structured-unstructured-merge.md) | 日付はリポジトリに記録なし |
 | ナレッジの件数 | 出典「嶋」40件 | 出典「石」42件 |
 
-(件数は db/seed_knowledge.sql・db/seed_knowledge_structured.sql から集計。二者が一致した「嶋石」5件は「最も強い根拠」(CLAUDE.md 3節))
+(件数は db/archive/seed_knowledge.sql・db/archive/seed_knowledge_structured.sql から集計。二者が一致した「嶋石」5件は「最も強い根拠」(CLAUDE.md 3節))
 
 **2人から取り入れたこと(主なもの)**
 
@@ -44,17 +44,17 @@
   - 「敷居のないところで出会う」→ ログインを付けない(CLAUDE.md 5.4)
   - 「万策を講じてきた人に『そうは言わんと頑張りな』というような励ましは使いたくない」→「頑張って」を禁止(CLAUDE.md 5.5)
   - 「螺旋階段」の比喩(CLAUDE.md 9節)
-  - 2回目のインタビューから: 危機の応答は一度に詰め込まず分けて出す(T30)/深掘りしてよいのは「生身の人に言うことの方にどんな障壁があるか」だけ(T31)/AIが突然「これ以上はできない」と切ると見捨てられ感が生まれる(T32)(db/seed_knowledge_structured.sql)
+  - 2回目のインタビューから: 危機の応答は一度に詰め込まず分けて出す(T30)/深掘りしてよいのは「生身の人に言うことの方にどんな障壁があるか」だけ(T31)/AIが突然「これ以上はできない」と切ると見捨てられ感が生まれる(T32)(db/archive/seed_knowledge_structured.sql)
   - 「同じメッセージが2回来ると傷つく」(src/generate.mjs のコメント)
-- 二者共通(嶋石): こちらからアドバイスしない/話せたこと自体を評価する/境界を保つ/急がない/相手が主体(db/seed_knowledge.sql の X1〜X5)
+- 二者共通(嶋石): こちらからアドバイスしない/話せたこと自体を評価する/境界を保つ/急がない/相手が主体(db/archive/seed_knowledge.sql の X1〜X5)
 
 ### 1-3. ナレッジベース(知識はコードではなくDBに置く)
 
 - 合計174件(CLAUDE.md 3節)。出典の内訳(db/seed_knowledge*.sql の4ファイルから集計):
   - 理 54件(JILPT 資料シリーズ No.165)/石 42件/嶋 40件/嶋石 5件/設 7件(二者の証言をAI向けに読み替えた設計判断)/技 26件(技法の理論資料。取材での検証はまだ)
-- 実際のカウンセラーの発話をそのまま残した「逐語」は14件で、すべて石田先生のもの(db/seed_knowledge.sql から集計)。要約すると「原則の集合」に戻ってしまうので、言い回しを保つ(CLAUDE.md 3節)。
+- 実際のカウンセラーの発話をそのまま残した「逐語」は14件で、すべて石田先生のもの(db/archive/seed_knowledge.sql から集計)。要約すると「原則の集合」に戻ってしまうので、言い回しを保つ(CLAUDE.md 3節)。
 - 原則(principle)と禁止(ng)は検索に回さず、毎回すべてをプロンプトに載せる(CLAUDE.md 7節、src/generate.mjs の retrieve)。
-- 嶋先生インタビュー2の文字起こしは、固有名がマスキングされていなかったため、リポジトリに置いていない。内容は要約してナレッジ(T30〜T32)にした(docs/structured-source/README.md、db/seed_knowledge_structured.sql)。
+- 嶋先生インタビュー2の文字起こしは、固有名がマスキングされていなかったため、リポジトリに置いていない。内容は要約してナレッジ(T30〜T32)にした(docs/structured-source/README.md、db/archive/seed_knowledge_structured.sql)。
 
 ---
 
@@ -67,7 +67,7 @@
 ### フェーズ0: リポジトリより前(2026年5月〜8月)
 
 - 嶋先生へのインタビュー(2026/5/28)(CLAUDE.md 3節)。
-- ナレッジ140件は、もともと単一HTML(index.html v3)の JavaScript の配列に持っていたものをDBへ移した(db/seed_knowledge.sql の先頭コメント)。
+- ナレッジ140件は、もともと単一HTML(index.html v3)の JavaScript の配列に持っていたものをDBへ移した(db/archive/seed_knowledge.sql の先頭コメント)。
 - この時期の作業はリポジトリの履歴に入っていない。
 
 ### フェーズ1: 初期実装と安全層のテスト(2026-09-01)

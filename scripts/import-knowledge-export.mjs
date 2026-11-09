@@ -80,9 +80,13 @@ if (WRITE) {
   // mode は1つの値(text。db/schema.sql 9.1)
   const modeSql = (v) => q(Array.isArray(v) ? (v[0] ?? null) : v ?? null);
   const lines = all.map((k) => `  (${[q(k.id), q(k.src), q(k.school), q(k.cat), k.lv == null ? "NULL" : Number(k.lv), q(k.weight ?? "any"), arr(k.tags), q(k.body), q(k.note ?? null), modeSql(k.mode), k.active === false ? "false" : "true"].join(", ")})`);
+  const missingIds = seedRows.filter((r) => !ids.has(r.id));
+  const missingNote = missingIds.length
+    ? `\n-- ※書き出しの時点で本番に無かった seed の行(${missingIds.map((r) => r.id).join("・")})は入っていない。${[...new Set(missingIds.map((r) => r.file))].join("・")} を別に流す。`
+    : "";
   const sql = `-- ナレッジの全件(本番の DB の書き出しから作った。${raw.exported_at ?? ""}。件数 ${all.length}。使っていない行も含む)
 -- 作り方: ナレッジ管理画面の「JSONで書き出す」→ node scripts/import-knowledge-export.mjs <ファイル> --write(手で直さない)
--- 新しい DB には db/schema.sql のあとにこれだけを流せばよい(以前の seed_knowledge*.sql 5つの代わり)。同じ id があれば上書きする。
+-- 新しい DB には db/schema.sql のあとにこれを流す(同じ id があれば上書きする)。${missingNote}
 -- 唯一の情報源は本番の DB(CLAUDE.md 3節)。ここは控え。
 
 insert into knowledge (id, src, school, cat, lv, weight, tags, body, note, mode, active) values

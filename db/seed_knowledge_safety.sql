@@ -1,7 +1,7 @@
 -- ============================================================================
 --  構造化面接AI統合(2026年9月)手順4で追加するナレッジ
 --  structured-unstructured-merge.md 手順4(安全確認ルールの修正)。
---  db/seed_knowledge.sql(既存140件)・db/seed_knowledge_structured.sql(手順3・29件)
+--  db/archive/seed_knowledge.sql(既存140件)・db/archive/seed_knowledge_structured.sql(手順3・29件)
 --  とは別ファイルにして、どの手順で入った知識かを追いやすくしている。
 --
 --  内訳(すべて出典タグ '設'。D1/D2と同じ「二者の証言をAI向けに読み替えた設計判断」):

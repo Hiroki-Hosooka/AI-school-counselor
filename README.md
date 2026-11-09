@@ -28,12 +28,11 @@ Postgres(Supabase。データベースとしてのみ利用)
 | ファイル | 役割 |
 |---|---|
 | `db/schema.sql` | Supabase の SQL Editor に貼って実行(**スキーマ変更のたびに再実行が必要。下記参照**) |
-| `db/seed_knowledge.sql` | 同上(schema.sql の後) |
-| `db/seed_knowledge_structured.sql` | 同上(seed_knowledge.sql の後。構造化面接AI統合 手順3で追加した技法カタログ) |
-| `db/seed_knowledge_safety.sql` | 同上(seed_knowledge_structured.sql の後。構造化面接AI統合 手順4で追加した安全層のナレッジ) |
-| `db/seed_knowledge_boundaries.sql` | 同上(seed_knowledge_safety.sql の後。テスト4/5 2-1で追加した「秘密の約束をしない」ナレッジ) |
-| `db/seed_knowledge_shima3.sql` | 同上(seed_knowledge_boundaries.sql の後。嶋先生インタビュー3 で追加した11件と T30・T32 の修正) |
-| `db/knowledge.json` | バックアップ用。DB を作り直すとき用 |
+| `db/seed_knowledge_all.sql` | 同上(schema.sql の後)。本番の DB のナレッジ全件(2026年11月9日の書き出しから作った。180件) |
+| `db/seed_knowledge_safety.sql` | 同上(seed_knowledge_all.sql の後)。安全のナレッジ D3〜D6(書き出しの時点で本番に無かった) |
+| `db/seed_knowledge_boundaries.sql` | 同上(seed_knowledge_safety.sql の後)。「秘密の約束をしない」D7(同じく本番に無かった) |
+| `db/knowledge.json` | 本番のナレッジの控え(テストが読む)。ナレッジ管理画面の「JSONで書き出す」→ `node scripts/import-knowledge-export.mjs <ファイル> --write` で作り直す |
+| `db/archive/` | 以前の seed(seed_knowledge.sql・_structured・_shima3。中身は seed_knowledge_all.sql に入っている) |
 | `src/safety.mjs` | 安全層(CRISIS_WORDS/OUTPUT_NG)の共通モジュール |
 | `src/app/api/chat/route.ts` | バックエンド本体。Vercelにデプロイされる |
 | `src/app/page.tsx` / `layout.tsx` / `globals.css` | フロントエンド(表示のみ) |
@@ -49,11 +48,9 @@ Edge Function は使わないので、作るのはプロジェクトとテーブ
 
 ### 2. テーブルを作る
 
-SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge.sql` を実行 →
-続けて `db/seed_knowledge_structured.sql` を実行(構造化面接AI統合 手順3。技法カタログ) →
-続けて `db/seed_knowledge_safety.sql` を実行(構造化面接AI統合 手順4。安全層のナレッジ) →
-続けて `db/seed_knowledge_boundaries.sql` を実行(テスト4/5 2-1。秘密の約束をしないナレッジ) →
-続けて `db/seed_knowledge_shima3.sql` を実行(嶋先生インタビュー3。2026年10月7日)。
+SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge_all.sql` を実行(ナレッジ全件) →
+続けて `db/seed_knowledge_safety.sql`(D3〜D6)と `db/seed_knowledge_boundaries.sql`(D7)を実行。
+どれも同じ id があれば上書きするか何もしないので、2回流しても同じになる(2026年11月9日に一時的な Postgres で確かめた)。
 
 **既にSupabaseプロジェクトを作成済みの場合も、`db/schema.sql` は毎回必ず再実行してください。**
 このファイルは `create table if not exists` / `add column if not exists` / (ビューは

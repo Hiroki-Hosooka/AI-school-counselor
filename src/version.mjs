@@ -16,6 +16,12 @@
 // retro: true の版は、版を付ける仕組みができる前の変更に、さかのぼって付けた番号(記録の prompt_version には出てこない)
 export const VERSION_HISTORY = [
   {
+    version: "2026-11-09a", date: "2026-11-09", areas: ["DB", "テスト"],
+    summary: "整理: 本番のナレッジの書き出し(180件)を db/knowledge.json と1つにまとめた seed(db/seed_knowledge_all.sql)に取り込み、"
+      + "以前の seed 3つを db/archive/ へ。本番に D3〜D7(安全のナレッジ)が入っていなかったので、seed_knowledge_safety/boundaries は残す(本番で流すのは人の作業)。"
+      + "CLAUDE.md を「いまの決まりと理由」に縮め、経緯は docs/claude-md-history.md へ",
+  },
+  {
     version: "2026-11-06b", date: "2026-11-06", areas: ["管理画面"],
     summary: "ナレッジ管理画面に「JSONで書き出す」を足した(本番の DB の全件。使っていない行も含む)。書き出したファイルを "
       + "scripts/import-knowledge-export.mjs で点検し、db/knowledge.json と1つにまとめた seed(db/seed_knowledge_all.sql)を作る(整理)",

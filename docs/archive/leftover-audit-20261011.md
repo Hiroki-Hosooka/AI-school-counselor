@@ -37,7 +37,7 @@
 | merge | 確定④ クロージング(11章・18章) | 済 | `buildClosingBlock`・`applyClosingUpdate`。コミット `21578fc`(CLAUDE.md 5.15) | なし |
 | merge | 新規: 第三者の安全への懸念(7-5) | 済 | ナレッジ `D5`・`D6`、`subject` による分岐(CLAUDE.md 5.12)。コミット `ff37fcc` | なし |
 | merge | 新規: いじめ等の継続的な被害(7-6。拒否されたら一度引く) | 済 | ナレッジ `D4` | なし |
-| merge | データ: 新しい出典タグ `技`・出典URLを `note` に | 済 | `db/seed_knowledge_structured.sql`(コミット `e9bb644`) | なし |
+| merge | データ: 新しい出典タグ `技`・出典URLを `note` に | 済 | `db/archive/seed_knowledge_structured.sql`(コミット `e9bb644`) | なし |
 | merge | データ: モード(mode)の軸の設計 | 済 | `knowledge.mode`・`sessions.recommended_mode`(コミット `7d40864`、CLAUDE.md 5.14) | なし |
 | merge | データ: インテークの保持(sessions の列) | 済 | `db/schema.sql` 9節(コミット `7d40864`) | なし |
 | merge | 手順1 設計案の提示 | 済(推定) | 手順2以降が実装済み。設計案そのものは会話の中で、リポジトリには残っていない | なし |
@@ -101,7 +101,7 @@
 | crisis-flow | 4-1 AIから終わらせない・AIの限界で区切らない | 済 | `AFTER_CRISIS_BLOCK_PROVISIONAL`(本番の既定でも効く。CLAUDE.md 5.17)、`OUTPUT_NG` | 指示の文面は仮のまま本番で使う(人が決めた) |
 | crisis-flow | 4-2 段階ごとの終わり方(危機のあとは3案を回す) | 済(仮) | `CRISIS_ENDINGS_PROVISIONAL`、`STAGE1_CLOSING_LINE_PROVISIONAL`、`messages.ending_variant` | 心理士の確認 |
 | crisis-flow | 5.「大丈夫」を文字どおりに受け取らない(指示+記録のみ) | 済 | `DAIJOUBU_RULE_PROVISIONAL`、`daijoubuYokattaNote`(route.ts) | 指示の文面は仮 |
-| crisis-flow | 6. 知識ベースへの追加(提案→確認→DB) | 途中 | `db/seed_knowledge_shima3.sql`(V19〜V26・T33〜T35、T30 の書き直し。コミット `8cc4750`) | **Supabase での実行が必要**(`docs/archive/changes-since-shima3-interview.md` 5章・7章) |
+| crisis-flow | 6. 知識ベースへの追加(提案→確認→DB) | 途中 | `db/archive/seed_knowledge_shima3.sql`(V19〜V26・T33〜T35、T30 の書き直し。コミット `8cc4750`) | **Supabase での実行が必要**(`docs/archive/changes-since-shima3-interview.md` 5章・7章) |
 | crisis-flow | 7-1 オフラインの検証 | 済 | `scripts/test-staged-response.mjs` 389件通過(今回も確認) | なし |
 | crisis-flow | 7-2 無料枠の検証(否定の検出、A の語が危機キーワードに当たらない) | 済 | `docs/test-results/crisis-negation-20261010-summary.txt`(156/168) | なし |
 | crisis-flow | 7-3 有料のペルソナテスト(B6・B7・B8・B1・B5) | 未着手(予定どおり待ち) | ペルソナ B6〜B8 は `docs/test-sets/personas.json` に定義済み、判定は `test-persona-regression.mjs` 774行〜 | 心理士の確認で文面が決まってから1回だけ |
@@ -161,7 +161,7 @@
 1. **危機の通知を誰が見て何をするか(学校との取り決め)** — backlog 0-3、CLAUDE.md 10節。「AIが受け止めたのに誰にも届かない、が最悪の結果」。通知の宛先・`pending_safety` を見る人と時間帯・生徒向けの説明文が無い。
 2. **相談内容の保存期間・見られる人・削除の手順** — CLAUDE.md 10節「DBに書き始める前に確定させる」。リポジトリに決まった記録が無い。
 3. **本番の固定応答(`CRISIS_REPLY`)の「〜が、とても心配です」の文面の確認** — 「重い」を外した新しい文は本番の既定でも使う(CLAUDE.md 5.2)のに、まだ仮(`docs/psychologist-review-checklist.md` A-1)。あわせて危機のあとの指示・「大丈夫」の指示(A-1b・A-2・A-3)も仮のまま本番で使う。
-4. **本番への反映と DB の確認** — v3・新しい固定応答・出力チェックの追加が本番に出ているか不明(`main` ブランチが無い)。`db/seed_knowledge_shima3.sql` は Supabase で未実行。D3〜D7 が本番 DB にあるかも未確認(`npm run check:knowledge`)。backlog 0-1 の完了条件(1往復・キーがブラウザから見えない・person_memory の反映)の確認記録も無い。
+4. **本番への反映と DB の確認** — v3・新しい固定応答・出力チェックの追加が本番に出ているか不明(`main` ブランチが無い)。`db/archive/seed_knowledge_shima3.sql` は Supabase で未実行。D3〜D7 が本番 DB にあるかも未確認(`npm run check:knowledge`)。backlog 0-1 の完了条件(1往復・キーがブラウザから見えない・person_memory の反映)の確認記録も無い。
 5. **インテークで数字を答えない生徒が抜けられない**(persona-test-followup 2-7)— 敷居を下げる目的と正面からぶつかる。
 6. **生成失敗の定型文が3回目以降くり返される/本番で失敗の詳しい原因が残らない**(2-2)— 嶋先生「同じメッセージが2回来ると傷つく」への対処が途中。
 7. **ふだんの会話での「いつでも」の使いすぎ**(2-5)— 「いつでもここにいるよ」等が出力チェックを通る。依存を作らない(CLAUDE.md 1節)に関わる。
@@ -178,7 +178,7 @@
 - **2-2 の原因の記録**: `route.ts` で `generated.failureDetail` を `messages.flags`(または別の列)に残す。文面は変わらない。※エラー文に相談本文が入らないことを確かめてから。
 - **2-2 のくり返し(仕組みのほう)**: 3回目以降に同じ文を出さない仕組み(例: 2つを交互に出す、3回目以降は別の扱いにする)。ただし**新しい文を足すなら**心理士の確認が要る。
 - **docs の古い記述**: backlog 1-3 の「⬜ 実際のキー・DBでの実行と結果の確認」(実際には実行済み)、`docs/project-history.md` 7-5 の「引き下がりの判定(無料枠)はまだ」(`test:negation` に置き換えて実行済み)、同 7-8 の「CLAUDE.md 5.11 は暫定措置のまま」(2026年10月7日に実測値を記録済み)など。
-- **本番 DB の確認**: `npm run check:knowledge` で D3〜D7・嶋先生3回目の11件の欠けを確かめ、`db/seed_knowledge_shima3.sql` を Supabase で実行する(人の作業)。
+- **本番 DB の確認**: `npm run check:knowledge` で D3〜D7・嶋先生3回目の11件の欠けを確かめ、`db/archive/seed_knowledge_shima3.sql` を Supabase で実行する(人の作業)。
 - **テスト1の費用を usageMetadata で出す**(修正5 の残り。`test-crisis-detection.mjs`)。
 - 次のものは、文面の確認は要らないが **CLAUDE.md の「変えてはいけない設計判断」に関わるので人の確認が先**:
   - 2-5「いつでも」の正規表現を広げる(CLAUDE.md 5.6。広げるとクロージングの「いつでもどうぞ」を潰さないように)
