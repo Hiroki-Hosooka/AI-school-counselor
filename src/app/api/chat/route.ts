@@ -57,7 +57,7 @@ import { geminiKeyGuard } from "@/key-guard.mjs";
 import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES,
+  classify, classifyStaged, classifyLocal, crisisDetectionVersion, CLASSIFIER_CONTEXT_MESSAGES, isEmptyReply,
   setLiteThinkingOverride, liteThinkingBudget, liteThinkingSource, parseThinkingSetting, LITE_THINKING_CHOICES,
 } from "@/classify.mjs";
 import { categoryOfSafety } from "@/crisis-keywords-v3.mjs";
@@ -79,6 +79,9 @@ import {
   batchModeRequested, batchTiming, batchPostLimit, cleanId, batchOf, joinBatch, mergeUserRuns, safetyToStore,
   aggregateBatchSafety, notifiedInBatch, shouldSupersede,
 } from "@/batch.mjs";
+import {
+  referralEnabled, judgeReferralCues, referralState, referralSummary, referralFlagText, referralBlock, referralMetrics,
+} from "@/referral.mjs";
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
@@ -420,7 +423,20 @@ export async function POST(req: Request) {
       // 本番のキーの状態(テスト用・無料枠のキーを使っていないか。src/key-guard.mjs。CLAUDE.md 5.10)。キーの値は返さない
       const guard = geminiKeyGuard();
       const key_guard = guard.block || guard.warn ? { block: guard.block, reason: guard.reason, warn: guard.warn } : null;
-      return json({ version: versionInfo(), sessions, model_health, key_guard });
+      // 人につなぐ印(20節。2026年11月9日): 会話ごとの最新の点数と段階(AI の返事の行)と、研究の指標(印が付いた会話のうち段階を進めた割合)
+      let referral_metrics: unknown = null;
+      try {
+        const r = await db.from("messages").select("session_id,seq,referral").eq("role", "ai").not("referral", "is", null).order("seq").limit(20000);
+        if (!r.error) {
+          const latest: Record<string, Record<string, unknown>> = {};
+          for (const m of (r.data ?? []) as { session_id: string; referral: Record<string, unknown> }[]) latest[m.session_id] = m.referral;
+          for (const s of sessions as Record<string, unknown>[]) if (latest[s.id as string]) s.referral = latest[s.id as string];
+          referral_metrics = referralMetrics(Object.values(latest));
+        }
+      } catch (e) {
+        console.error("人につなぐ印を読めませんでした:", e);
+      }
+      return json({ version: versionInfo(), sessions, model_health, key_guard, referral_metrics });
     }
 
     // ------------------------------------------------------------------
@@ -514,6 +530,10 @@ export async function POST(req: Request) {
         : withSource.data) as Record<string, unknown> | null;
       if (!s) return json({ error: "セッションが見つかりません" }, 404);
       const msgs = await selectRowsWithFallback(
+        // 20節(人につなぐ印。2026年11月9日)の列
+        () => db.from("messages")
+          .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings,batch_id,safety,failure,referral")
+          .eq("session_id", sessionId).order("seq"),
         // 18節(生成の失敗の記録。2026年11月4日。管理画面だけで見る)の列
         () => db.from("messages")
           .select("seq,role,body,weight,relation,question_level,role_kind,summarized,hypothesis,why,used,flags,crisis,rating,rating_comment,created_at,distress_level,mode,ambivalence_detected,closing,safety_stage,crisis_step,safety_card,crisis_generated,choices,choice_set,choice_id,choice_input,ending_variant,discomfort,discomfort_reason,model,prompt_version,settings,batch_id,safety,failure")
@@ -917,8 +937,11 @@ export async function POST(req: Request) {
         seq?: number; role: string; body: string; crisis?: boolean; flags?: unknown; crisis_step?: number | null;
         question_level?: string | null; summarized?: boolean | null; mode?: string[] | null;
         choices?: unknown; choice_set?: string | null; choice_id?: string | null;
+        referral?: { cues?: unknown[]; stage?: string; watch?: boolean } | null;
       };
       const histRead = (await selectRowsWithFallback(
+        // 20節(人につなぐ印。2026年11月9日)の列
+        () => db.from("messages").select("seq,role,body,crisis,flags,crisis_step,question_level,summarized,mode,choices,choice_set,choice_id,referral").eq("session_id", sessionId).order("seq"),
         () => db.from("messages").select("seq,role,body,crisis,flags,crisis_step,question_level,summarized,mode,choices,choice_set,choice_id").eq("session_id", sessionId).order("seq"),
         () => db.from("messages").select("seq,role,body,crisis,flags,crisis_step,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
         () => db.from("messages").select("seq,role,body,crisis,flags,question_level,summarized,mode").eq("session_id", sessionId).order("seq"),
@@ -976,6 +999,12 @@ export async function POST(req: Request) {
       let plan: Plan | null = null;
       // 分類器にかけないターン(チップ・インテークの数字。2026年10月14日)
       const skipReason = picked ? (picked.set === FLOW_CHOICE_SET ? "flow_choice" : "choice") : intakeAnswer ? "intake_answer" : null;
+      // 人につなぐ印(2026年11月9日。src/referral.mjs。設定 REFERRAL_FLAG=on のときだけ。仮)。本人が書いたターンだけ判定する
+      // (チップ・インテークの数字・中身の無い短い返事では判定しない)。危機の判定と同時に走らせる(待ち時間を増やさない)
+      const referralOn = referralEnabled();
+      const referralPromise = referralOn && !skipReason && !isEmptyReply(text)
+        ? judgeReferralCues(text, prior.slice(-4).map((m) => ({ role: m.role === "ai" ? "ai" : "user", text: String(m.body ?? "") })))
+        : null;
       // このターンで使う「断った相手」(3通目への答えの判定が返した相手も、このターンから足す)
       let declinedNow: string[] = declined;
       // 本番の既定(段階ごとの応答が無効)で、本人の危機を指示つきの生成で受けるターン(2回目の短い1通も出し終えた・
@@ -1234,6 +1263,31 @@ export async function POST(req: Request) {
       (sess as Record<string, unknown>).distress_declined = hist.some((h) => Array.isArray(h.flags)
         && (h.flags as string[]).includes(DISTRESS_DECLINED_FLAG));
 
+      // 人につなぐ印: このターンの判定を足して、会話全体の点数と段階を数える(20節の列が無い DB では、このターンの分だけ)
+      let referralSt: ReturnType<typeof referralState> | null = null;
+      let referralText = "";
+      if (referralOn) {
+        const judged = referralPromise ? await referralPromise : null;
+        const currentStart = (batchReply ? batchRows[0]?.seq : replyOnly ? replyOnlySeq : userMsg?.seq) ?? Number.MAX_SAFE_INTEGER;
+        const earlier = histRead.filter((h) => h.role === "user" && (h.seq ?? 0) < currentStart && h.referral)
+          .map((h) => h.referral as { cues?: unknown[]; stage?: string; watch?: boolean });
+        const record = judged
+          ? { cues: judged.cues, stage: judged.stage, stage_evidence: judged.stage_evidence, watch: safety.risk === "watch", ok: judged.ok,
+            ...(judged.dropped?.length ? { dropped: judged.dropped } : {}), ...(judged.error ? { error: judged.error } : {}) }
+          : null;
+        referralSt = referralState([...earlier, ...(record ? [record] : [])] as never, { distressLevel: sess.distress_level ?? null });
+        const recordSeq = (batchReply ? batchRows[batchRows.length - 1]?.seq : replyOnly ? replyOnlySeq : userMsg?.seq) ?? null;
+        if (record && recordSeq != null) {
+          // 記録だけ(書けなくても会話は止めない。20節が未実行なら列が無い)
+          const w = await db.from("messages").update({ referral: record }).eq("seq", recordSeq);
+          if (w.error) turnFlags.push("記録のみ:人につなぐ印の判定を保存できなかった(db/schema.sql 20節)");
+        }
+        // 危機の流れ(本人の危機のターン・危機のあと・段階ごとの応答)のときは指示を足さない(危機が先)。
+        // インテーク中も足さない(台本に自由な進め方を混ぜない。CLAUDE.md 5.13。インテークは話を聞く時間でもある)。記録は続ける
+        if (!inCrisisFlow && !plan && !defaultCrisisGen && flowPhase === "phase2") referralText = referralBlock(referralSt, { declinedPeople: declinedNow });
+        if (referralSt.flagged) turnFlags.push(referralFlagText(referralSt));
+      }
+
       const { data: memory } = await db.from("person_memory")
         .select("summary").eq("client_id", clientId).maybeSingle();
       // sessをそのままintake引数として渡す(phase/chief_complaint_category等の列名が
@@ -1248,6 +1302,8 @@ export async function POST(req: Request) {
           crisisTurn: crisisTurnInfo,
           confidants: inCrisisFlow ? confidants : [],
           connectAsk: inCrisisFlow && !crisisTurnInfo?.first && connectAskDue(hist, declinedNow),
+          // 人につなぐ印が付いた会話の指示(仮。src/referral.mjs)
+          referralBlock: referralText,
         },
       );
 
@@ -1451,25 +1507,28 @@ export async function POST(req: Request) {
         ...(failureRecord ? { failure: [failureRecord] } : {}),
         // 連投のまとまり(db/schema.sql 17節)。まとまりの最初の発言の番号にそろえる(下で発言の行も同じ番号に付け直す)
         ...(batchReply ? { batch_id: batchRows[0]?.batch_id ?? null } : {}),
+        // 人につなぐ印の点数と段階(20節。REFERRAL_FLAG=on のときだけ)
+        ...(referralSt ? { referral: referralSummary(referralSt) } : {}),
       };
       // 連投: 返事と状態を保存する直前に、新しい発言が届いていないか(届いていたら、何も保存せずに捨てる)
       const stopBeforeSave = await batchCheck();
       if (stopBeforeSave) return batchStop(stopBeforeSave);
       let aiSave = await checkedWrite("AIの返事", () => db.from("messages").insert(aiRow).select("seq").single());
       // 18節が未実行の DB では、失敗の記録の列を外して書き直す
-      if (!aiSave.ok && failureRecord) {
+      // 20節(人につなぐ印)・18節が未実行の DB では、その列を外して書き直す
+      if (!aiSave.ok && (failureRecord || referralSt)) {
         aiSave = await checkedWrite("AIの返事(18節の列なし)", () => db.from("messages")
-          .insert(withoutKeys(aiRow, ["failure"])).select("seq").single());
+          .insert(withoutKeys(aiRow, ["failure", "referral"])).select("seq").single());
       }
       // 16節が未実行の DB では、その列を外して書き直す
       if (!aiSave.ok) {
         aiSave = await checkedWrite("AIの返事(16節の列なし)", () => db.from("messages")
-          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "failure", "batch_id"])).select("seq").single());
+          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "failure", "batch_id", "referral"])).select("seq").single());
       }
       // 11節・14節が未実行の DB で safety_card・choices が無いときも、返事そのものは必ず保存する(カード・チップは画面にだけ出す)
       if (!aiSave.ok && (fallbackCard || thirdPartyCard || selfCrisisCard || flowChoices) && !plan) {
         aiSave = await checkedWrite("AIの返事(カード・チップの列なし)", () => db.from("messages")
-          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set", "failure", "batch_id"])).select("seq").single());
+          .insert(withoutKeys(aiRow, [...SECTION16_MESSAGE_COLUMNS, "safety_card", "choices", "choice_set", "failure", "batch_id", "referral"])).select("seq").single());
       }
       const aiMsg = aiSave.data as { seq?: number } | null;
       // 連投: このまとまりの発言の行を、返事と同じまとまりの番号にそろえる(画面は返事を待つあいだに次の番号で送ることがあるため)

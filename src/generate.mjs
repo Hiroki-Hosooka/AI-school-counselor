@@ -661,7 +661,9 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
     + confidantBlock(flow?.confidants)
     + (flow?.connectAsk ? connectAskBlock(flow?.confidants) : "")
     // 問いの立て方・「どうすればいい?」・戸惑い(どの場面でも。第4部)
-    + (flow ? leadBlock(flow.text) : "");
+    + (flow ? leadBlock(flow.text) : "")
+    // 人につなぐ印が付いた会話の指示(2026年11月9日。src/referral.mjs。REFERRAL_FLAG=on のときだけ route.ts が渡す。仮)
+    + (flow?.referralBlock ?? "");
   // phase: intake(Turn1〜4のスロットフィリング) | phase2(それ以降)。
   // intakeが未指定(既存のテストスクリプト等)の場合はphase2として扱い、これまでの
   // 自由な進め方をそのまま維持する(構造化面接AI統合 手順5で新規追加した分岐)。

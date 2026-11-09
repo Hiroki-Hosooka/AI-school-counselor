@@ -16,6 +16,13 @@
 // retro: true の版は、版を付ける仕組みができる前の変更に、さかのぼって付けた番号(記録の prompt_version には出てこない)
 export const VERSION_HISTORY = [
   {
+    version: "2026-11-09b", date: "2026-11-09", areas: ["プロンプト", "管理画面", "DB", "テスト"],
+    summary: "「人につなぐ必要がある」印(人の案。設定 REFERRAL_FLAG=on のときだけ。数値と文面は仮。docs/design-referral-flag.md):"
+      + "本人が書いたターンごとに軽いモデルで手がかりを根拠の引用つきで抜き出し、会話全体の点数(4点以上・領域と程度が1つ以上、またはそれだけで付く手がかり)で印。"
+      + "印が付いた会話では、まず聞いてから、気づく→思い浮かぶ→決まる→話すの段階で人につなぐ方へ(本人の言葉の引用で進む・1返事1歩・断ったら勧めない)。"
+      + "危機の流れとインテーク中は指示を付けない。管理画面に点数の内訳・段階・研究の指標(db/schema.sql 20節)",
+  },
+  {
     version: "2026-11-09a", date: "2026-11-09", areas: ["DB", "テスト"],
     summary: "整理: 本番のナレッジの書き出し(180件)を db/knowledge.json と1つにまとめた seed(db/seed_knowledge_all.sql)に取り込み、"
       + "以前の seed 3つを db/archive/ へ。本番に D3〜D7(安全のナレッジ)が入っていなかったので、seed_knowledge_safety/boundaries は残す(本番で流すのは人の作業)。"

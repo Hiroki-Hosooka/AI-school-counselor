@@ -801,3 +801,14 @@ create table if not exists app_settings_history (
 );
 alter table app_settings enable row level security;
 alter table app_settings_history enable row level security;
+
+-- ============================================================================
+-- 20. 人につなぐ印(2026年11月9日。docs/design-referral-flag.md。設定 REFERRAL_FLAG=on のときだけ使う。仮)
+--
+--  messages.referral  生徒の発言の行: そのターンの判定(手がかり kind・根拠の引用 evidence・一時的か・段階の合図・気がかりか)
+--                     AI の返事の行: 会話全体の点数と段階(印が付いたか・合計・領域・程度・支え・それだけで付く手がかり・
+--                     始まりの段階・今の段階・断ったか)。管理画面の内訳・研究の指標(段階を進めた割合)に使う
+--  診断ではない(病名は書かない)。この節が未実行の DB でも会話は止まらない(その会話の前のターンの判定を数えられないだけ)
+-- ============================================================================
+alter table messages add column if not exists referral jsonb;
+create index if not exists messages_referral_idx on messages(session_id) where referral is not null and role = 'ai';
