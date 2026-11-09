@@ -31,6 +31,7 @@
 | `design-echo-opening.md` | 返事の冒頭の言い直しを減らす(閾値の決め方) |
 | `design-batch-messages.md` | 連投と、まとめての返事(試行中。`BATCH_MODE=on` のときだけ) |
 | `design-referral-flag.md` | 人につなぐ印(仮。`REFERRAL_FLAG=on` のときだけ。心理士さんへの確認つき) |
+| `design-auto-eval.md` | 会話ログの自動評価(Claude Code で採点する版)の設計(案。確認待ち) |
 | `crisis-keywords-v3.md` / `crisis-keywords-v3-diff.md` | 危機キーワード v3(根拠つきの表)と v2 との差分 |
 | `design/` | トップ画面のデザインの元 |
 
