@@ -82,6 +82,7 @@ import {
 import {
   referralEnabled, judgeReferralCues, referralState, referralSummary, referralFlagText, referralBlock, referralMetrics,
 } from "@/referral.mjs";
+import { conversationMetricsForEval, readFirstScore } from "@/eval-metrics.mjs";
 import {
   stagedResponseEnabled, assessSafetyTurn, CARE_LINE_PROVISIONAL,
   CRISIS_GENERATION_EXTRA_NG, CRISIS_GENERATION_FIX_HINT, CRISIS_FALLBACK_FLAG, finalizeCrisisGeneration,
@@ -227,6 +228,18 @@ async function selectRowsWithFallback(...attempts: SelectAttempt[]): Promise<Row
     lastError = r.error.message;
   }
   throw new Error(lastError);
+}
+// 会話ログの自動評価のコードの指標(src/eval-metrics.mjs。AI を使わない。docs/design-auto-eval.md 3-3)を、管理画面に出す形にする。
+// 実際の生徒の会話にも使う(数だけ。人が決めた)。本文の引用は返さない(気になったことの短い説明だけ)
+function evalMetricsSummary(rows: Row[], events: Row[]) {
+  const m = conversationMetricsForEval(rows, events);
+  return {
+    read_first: readFirstScore(m), receive_only_max: m.receive_only_max, echo_rate: m.echo.rate, generic_repeats: m.generic_repeats,
+    multi_question: m.multi_question, same_text_repeats: m.same_text_repeats, stage2: m.stage2, recommend_after_declined: m.recommend_after_declined,
+    secret_promise: { stopped: m.secret_promise.stopped, remained: m.secret_promise.remained, candidates: m.secret_promise.candidates.length },
+    ai_ending_regens: m.ai_ending_regens, length_ratio: m.length_ratio, generation_failures: m.generation_failures, referral: m.referral,
+    notes: m.details.map((d: string) => d.replace(/[:：].*$/, "")).slice(0, 6),
+  };
 }
 // 画面に返すとき、気づかいのカード(safety_card = care)には仮の一言を添える
 // (文面はサーバ側の src/crisis-response.mjs にだけ置く。クライアントは表示だけ)
@@ -607,8 +620,36 @@ export async function POST(req: Request) {
         messages,
         safety_events: events ?? [],
         flow_summary: annotated.flow_summary,
+        eval_metrics: evalMetricsSummary(msgs, (events ?? []) as Row[]),
         discomfort_reasons: DISCOMFORT_REASONS,
       });
+    }
+
+    // 会話ログの自動評価のコードの指標(2026年11月10日。docs/design-auto-eval.md 3-3。人が先に読む一覧に使う)。
+    // 一覧を開いたあとに画面が別に呼ぶ(一覧の表示を遅くしないため)。新しい順に最大200セッション
+    if (action === "admin_eval_metrics") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const { data: ss, error: se } = await db.from("sessions").select("id").order("started_at", { ascending: false }).limit(200);
+      if (se) throw new Error(se.message);
+      const ids = ((ss ?? []) as { id: string }[]).map((x) => x.id);
+      const out: Record<string, unknown> = {};
+      for (let i = 0; i < ids.length; i += 20) {
+        const chunk = ids.slice(i, i + 20);
+        const msgs = await selectRowsWithFallback(
+          () => db.from("messages").select("session_id,seq,role,body,choices,choice_id,choice_set,flags,crisis,referral,created_at").in("session_id", chunk).order("seq").limit(5000),
+          () => db.from("messages").select("session_id,seq,role,body,choices,choice_id,choice_set,flags,crisis,created_at").in("session_id", chunk).order("seq").limit(5000),
+          () => db.from("messages").select("session_id,seq,role,body,flags,crisis,created_at").in("session_id", chunk).order("seq").limit(5000),
+        );
+        const evs = await selectRowsWithFallback(
+          () => db.from("safety_events").select("session_id,seq,risk,stage,decided_by,model_reason,created_at").in("session_id", chunk).order("seq").limit(5000),
+          () => db.from("safety_events").select("session_id,seq,risk,model_reason,created_at").in("session_id", chunk).order("seq").limit(5000),
+        ).catch(() => [] as Row[]);
+        for (const id of chunk) {
+          const rows = msgs.filter((m) => m.session_id === id);
+          if (rows.length) out[id] = evalMetricsSummary(rows, evs.filter((e) => e.session_id === id));
+        }
+      }
+      return json({ metrics: out });
     }
 
     // 「開発メンバーのテスト」の印(2026年11月9日。db/schema.sql 21節。docs/design-auto-eval.md 2-3)。

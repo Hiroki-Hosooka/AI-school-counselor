@@ -150,6 +150,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       <div class="sort-tabs">
         <button type="button" class="sort-tab on" data-sort="new">新しい順</button>
         <button type="button" class="sort-tab" data-sort="unrated">未評価が多い順</button>
+        <button type="button" class="sort-tab" data-sort="readfirst" title="コードの指標(AI を使わない数)で、気になる数が多い順">先に読む順</button>
       </div>
       <span id="listCount" class="count"></span>
     </div>
@@ -363,6 +364,8 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
     });
     var sorted = visible.slice().sort(function (a, b) {
       if (sortMode === "unrated") return (b.unrated_count || 0) - (a.unrated_count || 0);
+      // 先に読む順(会話ログの自動評価のコードの指標。AI の点は使わない。docs/design-auto-eval.md 3-3)
+      if (sortMode === "readfirst") return ((b.eval && b.eval.read_first) || 0) - ((a.eval && a.eval.read_first) || 0) || new Date(b.started_at) - new Date(a.started_at);
       return new Date(b.started_at) - new Date(a.started_at);
     });
     var hiddenNote = [];
@@ -393,6 +396,9 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       if (!s.closed_at) badges += '<span class="badge open">進行中</span>';
       if (s.phase === "intake") badges += '<span class="badge">インテーク中</span>';
       if (s.unrated_count > 0) badges += '<span class="badge">未評価 ' + esc(s.unrated_count) + '</span>';
+      // コードの指標で気になる数(先に読む目安。内訳は title と会話の中)
+      if (s.eval && s.eval.read_first > 0) badges += '<span class="badge' + (s.eval.read_first >= 5 ? " warn" : "") + '" title="' +
+        esc((s.eval.notes || []).join(" / ") || "コードの指標") + '">気になる ' + esc(s.eval.read_first) + '</span>';
       return (
         '<div class="s-card' + (s.has_crisis ? " crisis" : "") + '" data-id="' + esc(s.id) + '">' +
           '<div class="s-card-top"><span class="s-id">#' + esc(s.client_id_short) + '</span>' + badges + '</div>' +
@@ -446,6 +452,12 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       loadSettings();
       listView.hidden = false;
       renderList();
+      // コードの指標(先に読む一覧)は別に読む(一覧の表示を遅くしないため。読めなくても一覧はそのまま)
+      api("admin_eval_metrics", {}).then(function (mb) {
+        var mm = (mb && mb.metrics) || {};
+        sessions.forEach(function (x) { if (mm[x.id]) x.eval = mm[x.id]; });
+        renderList();
+      }, function () { /* 読めなくても一覧はそのまま */ });
     }, function (e) {
       if (e.message !== "unauthorized") showLoadError(e.message);
     });
@@ -676,6 +688,30 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       (fs.echo && fs.echo.replies ? "<dt>冒頭の言い直し</dt><dd>" + esc(fs.echo.echoes) + " / " + esc(fs.echo.replies) + "件(" +
         esc(Math.round(fs.echo.rate * 100)) + "%。目安 25%以下)</dd>" : "") +
       "</dl>";
+    flowBlockEl.hidden = false;
+  }
+  // 会話ログの自動評価のコードの指標(2026年11月10日。AI を使わない数。docs/design-auto-eval.md 3章)。会話の流れの下に足す
+  function renderEvalMetrics(m) {
+    if (!m) return;
+    if (flowBlockEl.hidden) flowBlockEl.innerHTML = "";   // 前に開いたセッションの表示を残さない
+    var fails = Object.keys((m.generation_failures && m.generation_failures.final) || {}).map(function (k) { return k + " " + m.generation_failures.final[k]; }).join("・");
+    var rows = [
+      ["先に読む目安", m.read_first + "(大きいほど先に読む)"],
+      ["受け止めのみの最大連続", m.receive_only_max + "回(続けて2回まで)"],
+      ["冒頭の言い直しの割合", m.echo_rate == null ? "—" : Math.round(m.echo_rate * 100) + "%(目安 25%以下)"],
+      ["汎用の言葉の2回目", m.generic_repeats + "回"],
+      ["問いが2つ以上", m.multi_question + "回"],
+      ["同じ固定の文の繰り返し", m.same_text_repeats + "回"],
+      ["発言に根拠のない段階2", m.stage2.no_evidence + "件(段階2の記録 " + m.stage2.total + "件・根拠の記録なし " + m.stage2.no_record + "件)"],
+      ["断ったあとの再度の勧め", m.recommend_after_declined + "回"],
+      ["秘密の約束", "止めた " + m.secret_promise.stopped + "・残った " + m.secret_promise.remained + "・すり抜けの候補 " + m.secret_promise.candidates + "(候補は人が確かめる)"],
+      ["AIから終える形の作り直し", m.ai_ending_regens + "回"],
+      ["長さの比(返事 ÷ 相談者の発言)", (m.length_ratio.median == null ? "—" : "中央値 " + m.length_ratio.median + "・最大 " + m.length_ratio.max)],
+      ["生成の失敗", fails || "なし"],
+    ];
+    if (m.referral) rows.push(["人につなぐ段階", (m.referral.start == null ? "-" : m.referral.start) + " → " + m.referral.end + (m.referral.declined ? "(断った)" : "")]);
+    flowBlockEl.insertAdjacentHTML("beforeend", "<h4>コードの指標(会話ログの自動評価。AI を使わない数)</h4><dl>" +
+      rows.map(function (r) { return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>");
     flowBlockEl.hidden = false;
   }
   // 返事ごとの「違和感があった」の印(開発メンバー・心理士用。生徒の画面には出さない。db/schema.sql 15節)
@@ -937,6 +973,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       renderNotes(body.session.notes);
       renderSafetyEvents(body.safety_events || []);
       renderFlowSummary(body.flow_summary);
+      renderEvalMetrics(body.eval_metrics);
       renderMessages(body.messages || []);
       listView.hidden = true;
       detailView.hidden = false;

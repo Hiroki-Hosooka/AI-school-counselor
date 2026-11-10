@@ -9,7 +9,7 @@
 //    rows   messages の行(古い順)。role・body・choices・choice_id・choice_set・flags・crisis・failure・referral・created_at
 //    events safety_events の行(古い順)。stage・decided_by・model_reason・created_at(無くてもよい)
 // ============================================================================
-import { flowSummaryOfSession, hasQuestion, AI_ENDING_FLAG } from "./flow.mjs";
+import { flowSummaryOfSession, AI_ENDING_FLAG } from "./flow.mjs";
 import { declineChangesIn, declinedNg, PEOPLE_LABELS } from "./declined.mjs";
 import { evidenceSupportsCrisis } from "./classify.mjs";
 import { NG_FIRST_FLAG, GENERATION_FAILURE_FLAG } from "./generate.mjs";

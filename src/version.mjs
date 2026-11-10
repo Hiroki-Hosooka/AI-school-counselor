@@ -16,6 +16,12 @@
 // retro: true の版は、版を付ける仕組みができる前の変更に、さかのぼって付けた番号(記録の prompt_version には出てこない)
 export const VERSION_HISTORY = [
   {
+    version: "2026-11-10a", date: "2026-11-10", areas: ["管理画面", "テスト"],
+    summary: "管理画面に、会話ログの自動評価のコードの指標(AI を使わない数。docs/design-auto-eval.md 3-3)を出した: "
+      + "一覧に「先に読む順」の並べ方と「気になる N」のバッジ(一覧を開いたあとに別に読む。新しい順に200セッションまで)、"
+      + "会話の詳細に指標の表。実際の生徒の会話にも使う(数だけ。本文は返さない。人が決めた)",
+  },
+  {
     version: "2026-11-09d", date: "2026-11-09", areas: ["管理画面", "DB", "テスト"],
     summary: "会話ログの自動評価(Claude Code で採点する版)の段階A(docs/design-auto-eval.md): コードの指標(src/eval-metrics.mjs)・"
       + "評価専用のフォルダへの書き出し(scripts/eval/export-bundle.mjs。プロジェクトの中に書かない・期間の指定を断る・DB は印のあるセッションだけ)・"
