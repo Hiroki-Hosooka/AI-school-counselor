@@ -426,6 +426,11 @@ for (const [name, sc] of Object.entries(SCENARIOS)) {
     const run = await runScenario(name, sc, rep);
     const m = measure(run);
     results.push({ ...run, metrics: m });
+    // 1本ごとに書く(2026年11月10日。実際のモデルで長く流すと時間切れ・上限で途中で止まり、最後にまとめて書く形では全部失われたため)
+    if (outPath) {
+      fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
+      fs.appendFileSync(path.resolve(outPath), JSON.stringify(results.at(-1)) + "\n");
+    }
     console.log(`\n[${label}・制約 ${constraints}・${modelMode}] ${name} #${rep}`);
     console.log(`  同じ固定の文 ${m.dup_fixed} / 返事なし ${m.empty_replies} / AIから終える ${m.ai_ended} / 断った相手を勧めた ${m.recommend_declined}` +
       ` / チップを分類器に ${m.chip_classified} / インテークの数字を分類器に ${m.intake_classified}` +
@@ -436,8 +441,4 @@ for (const [name, sc] of Object.entries(SCENARIOS)) {
     if (run.failedWrites.length) console.log(`    書き込みの失敗: ${[...new Set(run.failedWrites)].slice(0, 3).join(" | ")}`);
   }
 }
-if (outPath) {
-  fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
-  fs.appendFileSync(path.resolve(outPath), results.map((r) => JSON.stringify(r)).join("\n") + "\n");
-  console.log(`\n記録: ${outPath}`);
-}
+if (outPath) console.log(`\n記録: ${outPath}`);
