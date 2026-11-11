@@ -300,6 +300,7 @@ console.log("\n■ 冒頭の言い直し");
   check("「腹をくくったんだね」も印", questionNotes("今日言おうって思えるくらい、腹をくくったんだね。", []).includes(DECIDED_FLAG));
   check("相談者の言葉の引用の中は数えない", !questionNotes("「覚悟を決めた」って言ってたけど、いまはどう?", []).includes(DECIDED_FLAG));
   check("「確かめてくれてありがとう」は記録のみの印", questionNotes("確かめてくれてありがとう。何か感じたことってある?", []).includes(THANKS_FOR_CONFIRM_FLAG));
+  check("「受け止めてくれてありがとう」も記録のみの印", questionNotes("受け止めてくれてありがとう。ここまで話してみて、感じたことってある?", []).includes(THANKS_FOR_CONFIRM_FLAG));
   // まとめの形と、まとめのあと
   check("まとめは誘いの形(「一回まとめてみようか」)", /一回まとめてみようか/.test(FLOW_RULES_BLOCK) && !/「一回まとめてみるね」と断る/.test(FLOW_RULES_BLOCK));
   check("まとめのあとは、この先の問いか気づきの問いのどちらか", /この先、どうなっていけたらいいかな/.test(FLOW_RULES_BLOCK));

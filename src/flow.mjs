@@ -115,7 +115,8 @@ export const ASK_AI_OPINION_RE = /(あなた|AI|そっち)(なら|だったら|�
 export const DECIDED_RE = /覚悟(を|が)?(決め|でき|固め)|腹を?くく|決心(した|できた|がつい)|決意(した|できた)|心(を|が)決ま?(め|っ)/;
 export const DECIDED_FLAG = "記録のみ:決断を先取りする言葉(完了形)";
 // まとめを確かめたあとのお礼(違和感がある。SH5-5。記録のみ)
-export const THANKS_FOR_CONFIRM_RE = /確かめて(くれて|もらって)ありがとう|確認して(くれて|もらって)ありがとう/;
+// 「受け止めてくれてありがとう」も同じ(2026年11月11日の実際のモデルでの確かめで、まとめのあとに出た)
+export const THANKS_FOR_CONFIRM_RE = /(確かめて|確認して|受け止めて)(くれて|もらって)ありがとう/;
 export const THANKS_FOR_CONFIRM_FLAG = "記録のみ:まとめを確かめてくれたことへのお礼";
 // 長文で聞きたいことを並べた発言(インテークと同じ条件。src/intake.mjs)
 export const isLongMessage = isLongStructuredMessage;
