@@ -19,6 +19,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadJsonl, loadDbSessions, renderConversation, shuffle, versionsOf } from "./_lib/conversation.mjs";
 import { conversationMetricsForEval, EVAL_METRICS_VERSION } from "../../src/eval-metrics.mjs";
+import { GENERATION_FAILURE_REPLIES } from "../../src/generate.mjs";
+import { GENERATION_STUCK_NOTICE } from "../../src/notices.mjs";
+
+// 生成に失敗したときの文(返事の代わりに出る文)を含む会話か(2026年11月11日。無料枠の上限で作り直しても届かず、
+// 「仕組みの調子が悪く」が3回入った会話を書き出していた。採点の対象にしても意味が無いので、書き出さない)
+const FAILURE_TEXTS = [...GENERATION_FAILURE_REPLIES, GENERATION_STUCK_NOTICE];
+export const hasFailureText = (rows) => (rows ?? []).some((r) => r?.role === "ai" && FAILURE_TEXTS.some((t) => String(r.body ?? "").includes(t)));
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const RUBRIC_VERSION = "rubric-v1";
@@ -47,7 +54,7 @@ export function assignIds(convs, { seed, perPart = 10 }) {
 }
 
 // 評価専用のフォルダとプロジェクトの控えを書く(テストからも呼ぶ)
-export function writeBundle({ out, batch, convs, seed, perPart = 10, root = ROOT, batchesDir = path.join(root, "eval/batches") }) {
+export function writeBundle({ out, batch, convs, seed, perPart = 10, root = ROOT, batchesDir = path.join(root, "eval/batches"), allowFailureTexts = false }) {
   if (insideProject(out, root)) throw new Error(`評価専用のフォルダは、プロジェクトの外に作ってください(${out})`);
   if (fs.existsSync(path.join(out, "logs")) && fs.readdirSync(path.join(out, "logs")).length) {
     throw new Error(`${out}/logs にすでにログがあります。別の束と混ざらないよう、空のフォルダを指定してください`);
@@ -56,6 +63,11 @@ export function writeBundle({ out, batch, convs, seed, perPart = 10, root = ROOT
   const bdir = path.join(batchesDir, batch);
   if (fs.existsSync(path.join(bdir, "mapping.json"))) throw new Error(`束 ${batch} はすでにあります`);
   if (!convs.length) throw new Error("書き出す会話がありません");
+  const failed = convs.filter((c) => hasFailureText(c.rows));
+  if (failed.length && !allowFailureTexts) {
+    throw new Error(`生成に失敗したときの文を含む会話が${failed.length}件あります(${failed.map((c) => c.source?.scenario ?? c.id ?? "?").join(", ")})。`
+      + "外して書き出すか、わざと含めるときは --allow-failure-texts を付けてください");
+  }
 
   const items = assignIds(convs, { seed, perPart });
   fs.mkdirSync(path.join(out, ".claude"), { recursive: true });
@@ -114,7 +126,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     for (const c of await loadDbSessions(db, ids)) convs.push({ ...c, side });
   }
   try {
-    const { items, bdir } = writeBundle({ out, batch, convs, seed, perPart });
+    const { items, bdir } = writeBundle({ out, batch, convs, seed, perPart, allowFailureTexts: process.argv.includes("--allow-failure-texts") });
     const parts = [...new Set(items.map((i) => i.part))];
     console.log(`${items.length}件を書き出しました(${parts.join("・")})。seed ${seed}`);
     console.log(`  評価専用のフォルダ: ${out}(手順は HOW-TO-RUN.md)`);

@@ -1,0 +1,219 @@
+{
+  "batch": "eval-20261111-base",
+  "created": "2026-11-11T06:24:05.615Z",
+  "rubric_version": "rubric-v1",
+  "metrics_version": "metrics-v1",
+  "seed": 45600,
+  "per_part": 10,
+  "runs": 3,
+  "count": 8,
+  "note": "通し番号と元の記録・版の対応。評価専用のフォルダ(採点の会話)には渡さない",
+  "logs": [
+    {
+      "log_id": "L001",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 6,
+        "scenario": "log-1d0a0511-1541",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.8-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L002",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 8,
+        "scenario": "log-86130eef-default",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.7-flash",
+          "gemini-3.8-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L003",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 1,
+        "scenario": "chips-b2",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10a"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L004",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 7,
+        "scenario": "intake-K1",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.8-flash",
+          "gemini-3.7-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L005",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 3,
+        "scenario": "default-repeat",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.7-flash",
+          "gemini-3.8-flash",
+          "gemini-3.6-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L006",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 5,
+        "scenario": "intake-K3",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.8-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L007",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 4,
+        "scenario": "log-16f362dd",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.8-flash",
+          "gemini-3.5-flash",
+          "gemini-3.6-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    },
+    {
+      "log_id": "L008",
+      "part": "part-a",
+      "side": "base",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 2,
+        "scenario": "chips-b1",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10a"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      }
+    }
+  ]
+}

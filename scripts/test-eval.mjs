@@ -118,6 +118,13 @@ check("順番を混ぜている(1件目が元の1件目と違う、または対�
 const cm = JSON.parse(fs.readFileSync(path.join(bdir, "code-metrics.json"), "utf8"));
 check("コードの指標をログごとに計算した", Object.keys(cm.logs).length === convs.length && Object.values(cm.logs).every((x) => typeof x.receive_only_max === "number"));
 threw = "";
+{
+  const { GENERATION_STUCK_NOTICE } = await import("../src/notices.mjs");
+  const bad = [{ ...convs[0], rows: [...convs[0].rows, a(GENERATION_STUCK_NOTICE)] }];
+  try { writeBundle({ out: path.join(tmp, "sc-fail"), batch: "test-batch-fail", convs: bad, seed: 1, batchesDir }); } catch (e) { threw = String(e.message); }
+  check("生成に失敗したときの文を含む会話は書き出さない", /生成に失敗したときの文/.test(threw) && !fs.existsSync(path.join(batchesDir, "test-batch-fail")), threw || "(投げなかった)");
+}
+threw = "";
 try { writeBundle({ out, batch: "test-batch-2", convs, seed: 1, batchesDir }); } catch (e) { threw = String(e.message); }
 check("同じ評価専用のフォルダに別の束を混ぜない", /すでにログ/.test(threw), threw);
 let cli = "";

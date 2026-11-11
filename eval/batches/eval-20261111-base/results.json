@@ -1,0 +1,567 @@
+{
+  "batch": "eval-20261111-base",
+  "rubric_version": "rubric-v1",
+  "metrics_version": "metrics-v1",
+  "rater_model": null,
+  "imported_at": "2026-11-11T06:24:05.717Z",
+  "validated_items": [],
+  "missing": [
+    "run1/L001",
+    "run2/L001",
+    "run3/L001",
+    "run1/L002",
+    "run2/L002",
+    "run3/L002",
+    "run1/L003",
+    "run2/L003",
+    "run3/L003",
+    "run1/L004",
+    "run2/L004",
+    "run3/L004",
+    "run1/L005",
+    "run2/L005",
+    "run3/L005",
+    "run1/L006",
+    "run2/L006",
+    "run3/L006",
+    "run1/L007",
+    "run2/L007",
+    "run3/L007",
+    "run1/L008",
+    "run2/L008",
+    "run3/L008"
+  ],
+  "logs": {
+    "L001": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 6,
+        "scenario": "log-1d0a0511-1541",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.8-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 4,
+        "ai_replies": 4,
+        "generated_replies": 4,
+        "receive_only_max": 0,
+        "echo": {
+          "count": 3,
+          "replies": 3,
+          "rate": 1
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 1,
+          "no_evidence": 0,
+          "no_record": 0
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 0,
+        "length_ratio": {
+          "median": 1.53,
+          "max": 7.43
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {
+            "利用上限(429)": 1
+          }
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L002": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 8,
+        "scenario": "log-86130eef-default",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.7-flash",
+          "gemini-3.8-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 16,
+        "ai_replies": 18,
+        "generated_replies": 16,
+        "receive_only_max": 1,
+        "echo": {
+          "count": 4,
+          "replies": 15,
+          "rate": 0.27
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 3,
+          "no_evidence": 0,
+          "no_record": 0
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 1,
+        "length_ratio": {
+          "median": 12,
+          "max": 52.5
+        },
+        "generation_failures": {
+          "final": {
+            "利用上限": 1
+          },
+          "recovered": {
+            "混雑(503)": 2
+          }
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L003": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 1,
+        "scenario": "chips-b2",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10a"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 15,
+        "ai_replies": 20,
+        "generated_replies": 9,
+        "receive_only_max": 2,
+        "echo": {
+          "count": 1,
+          "replies": 5,
+          "rate": 0.2
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 7,
+          "no_evidence": 0,
+          "no_record": 3
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 1,
+        "length_ratio": {
+          "median": 10,
+          "max": 34
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {
+            "混雑(503)": 2,
+            "利用上限(429)": 1
+          }
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L004": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 7,
+        "scenario": "intake-K1",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.8-flash",
+          "gemini-3.7-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 5,
+        "ai_replies": 7,
+        "generated_replies": 5,
+        "receive_only_max": 1,
+        "echo": {
+          "count": 1,
+          "replies": 2,
+          "rate": 0.5
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 0,
+          "no_evidence": 0,
+          "no_record": 0
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 0,
+        "length_ratio": {
+          "median": 2.07,
+          "max": 3
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {}
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L005": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 3,
+        "scenario": "default-repeat",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.7-flash",
+          "gemini-3.8-flash",
+          "gemini-3.6-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 7,
+        "ai_replies": 7,
+        "generated_replies": 7,
+        "receive_only_max": 0,
+        "echo": {
+          "count": 1,
+          "replies": 7,
+          "rate": 0.14
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 3,
+          "no_evidence": 0,
+          "no_record": 0
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 2,
+        "length_ratio": {
+          "median": 18.5,
+          "max": 32.5
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {
+            "混雑(503)": 2
+          }
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L006": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 5,
+        "scenario": "intake-K3",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.8-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 5,
+        "ai_replies": 7,
+        "generated_replies": 5,
+        "receive_only_max": 1,
+        "echo": {
+          "count": 1,
+          "replies": 2,
+          "rate": 0.5
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 0,
+          "no_evidence": 0,
+          "no_record": 0
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 0,
+        "length_ratio": {
+          "median": 4.24,
+          "max": 7.25
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {}
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L007": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 4,
+        "scenario": "log-16f362dd",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10b"
+        ],
+        "models": [
+          "gemini-3.8-flash",
+          "gemini-3.5-flash",
+          "gemini-3.6-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 12,
+        "ai_replies": 14,
+        "generated_replies": 12,
+        "receive_only_max": 1,
+        "echo": {
+          "count": 3,
+          "replies": 12,
+          "rate": 0.25
+        },
+        "generic_repeats": 2,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 0,
+          "no_evidence": 0,
+          "no_record": 0
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 2,
+        "length_ratio": {
+          "median": 4.58,
+          "max": 52
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {
+            "混雑(503)": 1
+          }
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    },
+    "L008": {
+      "side": "base",
+      "part": "part-a",
+      "source": {
+        "kind": "jsonl",
+        "file": "../../../tmp/claude-0/-home-user-AI-school-counselor/0266747f-9d03-544b-9cbf-12c1523b4462/scratchpad/base8.jsonl",
+        "line": 2,
+        "scenario": "chips-b1",
+        "rep": 1,
+        "label": "base"
+      },
+      "versions": {
+        "app_version": [
+          "2026-11-10a"
+        ],
+        "models": [
+          "gemini-3.6-flash",
+          "gemini-3.5-flash"
+        ],
+        "knowledge_version": [
+          "180件 / 2026-10-01T00:00:00"
+        ]
+      },
+      "code_metrics": {
+        "metrics_version": "metrics-v1",
+        "user_turns": 8,
+        "ai_replies": 12,
+        "generated_replies": 5,
+        "receive_only_max": 3,
+        "echo": {
+          "count": 1,
+          "replies": 2,
+          "rate": 0.5
+        },
+        "generic_repeats": 0,
+        "multi_question": 0,
+        "same_text_repeats": 0,
+        "stage2": {
+          "total": 4,
+          "no_evidence": 0,
+          "no_record": 3
+        },
+        "recommend_after_declined": 0,
+        "secret_promise": {
+          "stopped": 0,
+          "remained": 0,
+          "candidates": []
+        },
+        "output_check_stopped": 0,
+        "ai_ending_regens": 0,
+        "length_ratio": {
+          "median": 6.84,
+          "max": 11
+        },
+        "generation_failures": {
+          "final": {},
+          "recovered": {}
+        },
+        "referral": null,
+        "details": []
+      },
+      "ai": null,
+      "problems": {}
+    }
+  }
+}
