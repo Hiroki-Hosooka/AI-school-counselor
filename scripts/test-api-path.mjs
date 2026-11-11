@@ -112,7 +112,20 @@ function read16f() {
   const md = fs.readFileSync(path.join(ROOT, "docs/review-logs/2026-10-11-16f362dd.md"), "utf8");
   return [...md.matchAll(/^\| (\d+) \| 生徒 \| (.*?) \|/gm)].map((m) => m[2].replace(/<br>/g, "\n"));
 }
+// 嶋先生のログレビュー5回目のログ(2026年11月11日)。「生徒(選択肢から)」の行はチップを押す(出ていなければ同じ文字を書いて送る)
+const CHIP_BY_LABEL = { "1 少し気になる": "D1", "2 まあまあモヤモヤする": "D2", "3 かなりつらい": "D3", "4 限界に近い": "D4", "5 もう耐えられない": "D5",
+  "吐き出したい": "H1", "一緒に整理したい": "H2", "どっちも": "H3", "まだわからない": "H4", "もう少しこのまま話したい": "G1", "一緒に整理してみたい": "G2" };
+function readReviewLog(file) {
+  const md = fs.readFileSync(path.join(ROOT, "docs/review-logs", file), "utf8");
+  return [...md.matchAll(/^\| (\d+) \| 生徒(\(選択肢から\))? \| (.*?) \|/gm)].map((m) => {
+    const body = m[3].replace(/<br>/g, "\n");
+    return m[2] && CHIP_BY_LABEL[body] ? CHIP(CHIP_BY_LABEL[body]) : body;
+  });
+}
 const SCENARIOS = {
+  // 嶋先生のログレビュー5回目(docs/design-shima5-review.md 6章): 親のカード(37ターン)・高2のグループ(長文)
+  "log-55932e90-card": { staged: false, turns: readReviewLog("2026-11-04-55932e90-card.md") },
+  "log-1d0a0511-1544": { staged: false, turns: readReviewLog("2026-11-04-1d0a0511-1544.md") },
   // 指示書 1-1〜1-3 の操作の並び(仲間外れと一人になる怖さの相談)。ログ 86130eef が届いたら、そのままの台本に置き換える
   "chips-b2": {
     staged: true,

@@ -649,7 +649,7 @@ export function buildSystem(rows, chunks, weight, notes, sinceSummary, personSum
   // 区切りのまとめ(2026年11月1日・危機の作り直し 第4部): 以前の「区切りから6ターンで提案」は外した(まとめが多すぎる)。
   // まとめてよいかはサーバが数えて決める(src/flow.mjs の summaryAllowed: 20往復を超えた・本人が望んだ・話に行き詰まった)
   const sum = flow?.stats?.summaryAllowed
-    ? "まとめてよい時期です(20往復を超えた、または本人が望んだ・話に行き詰まった)。必要なら「一回まとめてみるね」と断ってまとめる。"
+    ? "まとめてよい時期です(20往復を超えた、または本人が望んだ・話に行き詰まった)。必要なら「一回まとめてみようか」と誘ってまとめる。"
     : "いまはまとめの時期ではありません(まとめは20往復を超えてから。本人が望んだとき・話に行き詰まったときは別)。まとめの提案もしない。";
   const contexts = toSafetyContexts(safetyContext);
   const safetyBlock = contexts.map((c) => {

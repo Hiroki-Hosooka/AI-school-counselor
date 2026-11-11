@@ -31,6 +31,7 @@ Postgres(Supabase。データベースとしてのみ利用)
 | `db/seed_knowledge_all.sql` | 同上(schema.sql の後)。本番の DB のナレッジ全件(2026年11月9日の書き出しから作った。180件) |
 | `db/seed_knowledge_safety.sql` | 同上(seed_knowledge_all.sql の後)。安全のナレッジ D3〜D6(書き出しの時点で本番に無かった) |
 | `db/seed_knowledge_boundaries.sql` | 同上(seed_knowledge_safety.sql の後)。「秘密の約束をしない」D7(同じく本番に無かった) |
+| `db/seed_knowledge_shima5.sql` | 嶋先生のログレビュー5回目のナレッジ SH5-1〜15(2026年11月11日) |
 | `db/knowledge.json` | 本番のナレッジの控え(テストが読む)。ナレッジ管理画面の「JSONで書き出す」→ `node scripts/import-knowledge-export.mjs <ファイル> --write` で作り直す |
 | `db/archive/` | 以前の seed(seed_knowledge.sql・_structured・_shima3。中身は seed_knowledge_all.sql に入っている) |
 | `src/safety.mjs` | 安全層(CRISIS_WORDS/OUTPUT_NG)の共通モジュール |
@@ -49,7 +50,7 @@ Edge Function は使わないので、作るのはプロジェクトとテーブ
 ### 2. テーブルを作る
 
 SQL Editor で `db/schema.sql` を実行 → 続けて `db/seed_knowledge_all.sql` を実行(ナレッジ全件) →
-続けて `db/seed_knowledge_safety.sql`(D3〜D6)と `db/seed_knowledge_boundaries.sql`(D7)を実行。
+続けて `db/seed_knowledge_safety.sql`(D3〜D6)・`db/seed_knowledge_boundaries.sql`(D7)・`db/seed_knowledge_shima5.sql`(SH5-1〜15)を実行。
 どれも同じ id があれば上書きするか何もしないので、2回流しても同じになる(2026年11月9日に一時的な Postgres で確かめた)。
 
 **既にSupabaseプロジェクトを作成済みの場合も、`db/schema.sql` は毎回必ず再実行してください。**

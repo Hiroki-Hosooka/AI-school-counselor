@@ -95,7 +95,7 @@ function intakeSteps(sys) {
 // ---------------------------------------------------------------------------
 // ナレッジ(db/seed_knowledge*.sql の本文。DB で直した場合は DB の方が新しい)
 // ---------------------------------------------------------------------------
-const seedSql = ["db/seed_knowledge_all.sql", "db/seed_knowledge_safety.sql", "db/seed_knowledge_boundaries.sql"]
+const seedSql = ["db/seed_knowledge_all.sql", "db/seed_knowledge_safety.sql", "db/seed_knowledge_boundaries.sql", "db/seed_knowledge_shima5.sql"]
   .map((f) => readFileSync(path.join(ROOT, f), "utf8")).join("\n");
 function knowledgeBody(id) {
   const re = new RegExp(`\\('${id}',\\s*'[^']*',\\s*'[^']*',\\s*'[^']*',\\s*(?:NULL|\\d+),\\s*'[^']*',\\s*`

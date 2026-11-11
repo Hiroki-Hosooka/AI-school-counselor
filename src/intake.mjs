@@ -105,6 +105,21 @@ export function buildIntakeStepBlock(turn) {
 - 書かれた内容に、きっかけ・背景(いつ頃から・どんなことがあったか)がすでに含まれているなら、"background_present" を true にし、
   "onset_context" に短く要約する。このときは問いを書かず、相談者の言葉を一つ拾った短い受け止め(1文)だけにする
 - 含まれていなければ "background_present" は false。受け止め(1文)のあと、きっかけ・背景を言葉で1つだけ聞く`;
+    case "afterLongMessage":
+      return `${COMMON}
+
+## このターンですること(長文の相談。これで最初の受付は終わりです)
+相談者は、状況を長く詳しく書き、聞きたいことを並べています。つらさ・なりたい姿の問いはシステムが出しません(この返事でフェーズ2に入ります)。
+- 詳しく話してくれたことを短く受け止め、**聞かれていることを短く言葉にする**(例:「聞きたいことはこの3つなんだね」)。全部を受け流さない
+- どれから見ていくかを一緒に決める問いを1つ置く。問いどうしのつながりがあれば短く示す(「これは2つ目とも重なってるね」)
+- 問いの書き方から腹づもり(「〜した方がいいのかも」)が読み取れるなら、言い切らずに「〜って気持ちもあるのかな」と1つだけ確かめてよい
+- 相談者のまわりの人(友達など)の本当の気持ち・理由を、推測して言い切らない
+${turn.category ? "" : `- 出力の "intake" の "chief_complaint_category" に主訴を推定して入れる(1 友達・人間関係 / 2 勉強・進路・部活 /
+  3 家族・家のこと / 4 自分の気持ちや性格 / 5 うまく言えない・なんとなくしんどい / 6 どれにも当てはまらない)
+`}- "onset_context" に、時期・きっかけを短く要約する
+- 出力の "intake" の "recommended_mode" に、書かれた内容から合いそうな進め方を入れる(複合可)。名前は相談者に出さない
+  LISTEN_ONLY(ただ聞いてほしい・つらさが高い)/ CBT(捉え方の整理)/ SFBT(工夫や一歩を本人の資源から)/ ASSERTION(伝え方)/
+  NARRATIVE(自己否定が強い)/ PROBLEM_SOLVING(具体的・実務的な問題)/ PSYCHOEDUCATION(心身の反応の理解)`;
     case "afterBackground":
       return `${COMMON}
 
@@ -171,11 +186,29 @@ export const INTAKE_STEP_OUTPUT_SCHEMA = `,
 // ---------------------------------------------------------------------------
 export const INTAKE_DISTRESS_TEXT_FLAG = "記録のみ:つらさを数字ではなく言葉で答えた";
 export const INTAKE_ESTIMATED_FLAG = "記録のみ:主訴はAIの推定";
+export const INTAKE_LONG_MESSAGE_FLAG = "記録のみ:長文の相談なので、つらさ・なりたい姿の問いを飛ばした";
+// 長文で聞きたいことを並べた相談か(コードで決める。200字以上 かつ 「?」2つ以上・「聞きたいのは」等・行頭の箇条が2行以上 のどれか)
+export const LONG_MESSAGE_MIN_CHARS = 200;
+const ASKING_WORDS_RE = /聞きたいの(は|が)|聞きたいこと|質問(は|が|です)|教えて(ほしい|欲しい|ください)|相談したいの(は|が)|知りたいの(は|が)/;
+export function isLongStructuredMessage(text) {
+  const t = String(text ?? "");
+  if (t.replace(/\s/g, "").length < LONG_MESSAGE_MIN_CHARS) return false;
+  const questions = (t.match(/[?？]/g) ?? []).length;
+  const bullets = t.split(/\n/).filter((l) => /^\s*([・\-*•●○◯]|[①-⑳]|[0-9０-９]+[.．)）、])/.test(l)).length;
+  return questions >= 2 || ASKING_WORDS_RE.test(t) || bullets >= 2;
+}
 
 export function planIntakeTurn({ sess, picked, text, lastOffered }) {
   const step = INTAKE_STEPS.includes(sess?.intake_step) ? sess.intake_step : null;
   if (!step || step === "done" || sess?.phase !== "intake") return null;
   const base = { step, patch: {}, contexts: [], flags: [], after: null };
+  // 長文で聞きたいことを並べた相談(嶋先生のログレビュー5回目。docs/design-shima5-review.md 4章・人が確認):
+  // 主訴・背景の段で書かれたら、つらさ・なりたい姿のチップを出さずにフェーズ2へ。
+  // 聞きたいことが並んでいない長文は、これまでどおり受け止めてからインテークを進める
+  if ((step === "category" || step === "background") && !picked && isLongStructuredMessage(text)) {
+    return { ...base, prompt: "afterLongMessage", category: sess?.chief_complaint_category ?? null, flags: [INTAKE_LONG_MESSAGE_FLAG],
+      patch: { intake_step: "done", phase: "phase2", intake_completed_at: new Date().toISOString() } };
+  }
   if (step === "category") {
     if (picked?.set === CATEGORY_SET) {
       const n = Number(picked.id.slice(1));
@@ -248,6 +281,18 @@ export function finishIntakeTurn(turn, out) {
     } else {
       patch.intake_step = "background";
     }
+  }
+  if (turn.prompt === "afterLongMessage") {
+    if (!turn.category) {
+      const n = Number.isInteger(i.chief_complaint_category) && i.chief_complaint_category >= 1 && i.chief_complaint_category <= 6
+        ? i.chief_complaint_category : 6;
+      patch.chief_complaint_category = n;
+      patch.chief_complaint_source = "estimated";
+      flags.push(`${INTAKE_ESTIMATED_FLAG}(${CATEGORY_JA[n]})`);
+    }
+    patch.onset_context = String(i.onset_context ?? "").trim().slice(0, 300) || "(記録なし)";
+    patch.recommended_mode = modesFromGoal(null, i.recommended_mode);
+    if (typeof i.ambivalence_detected === "boolean") patch.ambivalence_detected = i.ambivalence_detected;
   }
   if (turn.prompt === "afterBackground") {
     patch.onset_context = String(i.onset_context ?? "").trim().slice(0, 300) || "(記録なし)";

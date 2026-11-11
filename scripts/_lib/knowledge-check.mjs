@@ -27,6 +27,8 @@ export const SEED_FILES = [
   "db/seed_knowledge_all.sql",
   "db/seed_knowledge_safety.sql",
   "db/seed_knowledge_boundaries.sql",
+  // 2026年11月11日: 嶋先生のログレビュー5回目(SH5-1〜15)
+  "db/seed_knowledge_shima5.sql",
 ];
 
 // seed の insert 文の各行(  ('ID', '出典', ...)から ID を取り出す

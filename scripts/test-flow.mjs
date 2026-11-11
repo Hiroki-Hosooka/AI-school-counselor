@@ -12,7 +12,9 @@ import { fileURLToPath } from "node:url";
 import { echoOf, echoRate,
   flowStats, flowCheck, finalizeFlow, buildFlowBlock, genericGroupsIn, endingClass, isValidSummary, addedWords,
   flowChoiceOf, canOfferOrganize, flowSummaryOfSession, FLOW_RULES_BLOCK, moveFlag, FIRST_MOVE_FLAG, annotateForAdmin,
+  leadBlock, questionNotes, DECIDED_FLAG, THANKS_FOR_CONFIRM_FLAG,
 } from "../src/flow.mjs";
+import { isLongStructuredMessage, planIntakeTurn, finishIntakeTurn, INTAKE_LONG_MESSAGE_FLAG } from "../src/intake.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 let passed = 0, failed = 0;
@@ -246,6 +248,71 @@ console.log("\n■ 冒頭の言い直し");
     { role: "ai", body: "そっか。", flags: [] }, { role: "ai", body: "つらさは?", flags: ["記録のみ:インテークの決まった問い(コード)"] }]).replies === 1);
   // 10/11 のログ(16f362dd)の返事の言い直し(記録のための確かめ。作り直しの当たり方は上の節の決まりとは別)
   check("16f362dd の再生で、言い直しの作り直しはいくつかのターンに当たる", Object.values(echoHits16f).some((x) => x.length));
+}
+
+// ---- 嶋先生のログレビュー5回目(2026年11月11日。docs/design-shima5-review.md)----
+{
+  console.log("\n■ 嶋先生のログレビュー5回目");
+  const readLogUsers = (f) => [...fs.readFileSync(path.join(ROOT, f), "utf8").matchAll(/^\| (\d+) \| 生徒[^|]* \| (.*?) \|/gm)].map((m) => m[2].replace(/<br>/g, "\n"));
+  const g1 = readLogUsers("docs/review-logs/2026-11-04-1d0a0511-1544.md");
+  // 長文
+  check("1d0a0511 の1ターン目は長文の相談", isLongStructuredMessage(g1[0]));
+  check("1d0a0511 の4ターン目(①②③を並べた)も長文の相談", isLongStructuredMessage(g1[3]));
+  check("短い発言は長文の相談ではない", !isLongStructuredMessage("部活の先輩がこわくて、行きたくない。どうしたらいい?"));
+  check("長いだけで聞きたいことが並んでいない発言は当たらない", !isLongStructuredMessage("最近ずっと眠れなくて、".repeat(30) + "疲れてる。"));
+  const sessC = { phase: "intake", intake_step: "category" };
+  const t1 = planIntakeTurn({ sess: sessC, picked: null, text: g1[0], lastOffered: null });
+  check("インテークの最初に長文 → つらさ・なりたい姿を飛ばしてフェーズ2へ", t1?.prompt === "afterLongMessage" && t1.patch.intake_step === "done" && t1.patch.phase === "phase2" && t1.flags.includes(INTAKE_LONG_MESSAGE_FLAG), JSON.stringify(t1?.patch));
+  const f1 = finishIntakeTurn(t1, { intake: { chief_complaint_category: 1, onset_context: "高2のクラス替え", recommended_mode: ["CBT"] } });
+  check("主訴・背景・進め方は AI の推定で記録し、決まった問いを続けない", f1.patch.chief_complaint_category === 1 && f1.patch.chief_complaint_source === "estimated"
+    && f1.patch.recommended_mode.includes("CBT") && f1.question === null, JSON.stringify(f1));
+  const tBtn = planIntakeTurn({ sess: sessC, picked: { set: "K", id: "K1", label: "友達・人間関係" }, text: "友達・人間関係", lastOffered: null });
+  check("ボタンを押したターンは長文の扱いにしない", tBtn?.prompt === "afterCategoryButton");
+  const tBg = planIntakeTurn({ sess: { phase: "intake", intake_step: "background", chief_complaint_category: 1 }, picked: null, text: g1[0], lastOffered: null });
+  const fBg = finishIntakeTurn(tBg, { intake: { chief_complaint_category: 3, onset_context: "x", recommended_mode: [] } });
+  check("背景の段で長文 → 主訴はボタンの記録のまま・フェーズ2へ", tBg?.prompt === "afterLongMessage" && fBg.patch.chief_complaint_category === undefined && fBg.patch.recommended_mode.length >= 1);
+  const tShort = planIntakeTurn({ sess: { phase: "intake", intake_step: "background", chief_complaint_category: 1 }, picked: null, text: "4月から", lastOffered: null });
+  check("長文でなければ、これまでどおりつらさの問いへ", tShort?.prompt === "afterBackground" && tShort.after === "distress");
+  // 答えにくい問いに謝らない(作り直し K)
+  const hist = [
+    { role: "user", body: "無理" },
+    { role: "ai", body: "無理って思うくらい怖いんだね。その怖さに名前をつけるとしたら、どんな感じがする?", mode: ["NARRATIVE"], flags: [] },
+    { role: "user", body: "そんなこと考えてる余裕なんてない" },
+  ];
+  const st = flowStats(hist, { phase: "phase2" }, {});
+  check("問いのあとの「余裕なんてない」は答えにくさ", st.cantAnswer === true);
+  check("答えにくさに「ごめんね」と返すと作り直す(K)", flowCheck({ reply: "余裕なんてないよね、ごめんね。今は頭の中がパニックな感じかな?" }, st).some((r) => r.startsWith("K")));
+  check("謝らずに意図を伝えれば作り直さない", !flowCheck({ reply: "名前をつけるとしたらっていうのは、少し離れて見られたらと思ったんだけど、今はそれどころじゃない感じだよね。" }, st).some((r) => r.startsWith("K")));
+  const stHow = flowStats([...hist.slice(0, 2), { role: "user", body: "どうしたらいいかわからない" }], { phase: "phase2" }, {});
+  check("「どうしたらいいかわからない」は答えにくさではなく「どうすればいい?」", stHow.cantAnswer === false);
+  const stCrisis = flowStats(hist, { phase: "phase2" }, { stage: 2 });
+  check("危機の状態では K を当てない", !flowCheck({ reply: "ごめんね、話してくれてありがとう。" }, stCrisis).some((r) => r.startsWith("K")));
+  const lbCant = leadBlock("そんなこと考えてる余裕なんてない");
+  check("答えにくさの指示: 謝らず意図を伝える", /謝らない/.test(lbCant) && /意図/.test(lbCant));
+  // 「どうすればいい?」と「あなたならどっち?」
+  const lbHow = leadBlock("どうしたらいいかわからない");
+  check("「どうすればいい?」: 方向性が先か具体的な一歩か、を場合で分ける指示", /方向性を一言/.test(lbHow) && /具体的な一歩を1つ/.test(lbHow) && !/謝らない/.test(lbHow));
+  const lbOp = leadBlock("あなたはどっちから先に言うのがいいと思う？\nあなたならどう話す？");
+  check("「あなたならどっち?」: 良いところと気になるところを一緒に整理", /良いところと気になるところ/.test(lbOp) && !/方向性を一言/.test(lbOp));
+  check("長文の発言には、聞かれていることを言葉にする指示", /聞きたいことはこの3つなんだね/.test(leadBlock(g1[0])));
+  // 記録のみ: 完了形・確かめてくれてありがとう
+  check("「覚悟を決めているんだね」は記録のみの印", questionNotes("直接話すって覚悟を決めているんだね。どっちが話しやすそう?", []).includes(DECIDED_FLAG));
+  check("「腹をくくったんだね」も印", questionNotes("今日言おうって思えるくらい、腹をくくったんだね。", []).includes(DECIDED_FLAG));
+  check("相談者の言葉の引用の中は数えない", !questionNotes("「覚悟を決めた」って言ってたけど、いまはどう?", []).includes(DECIDED_FLAG));
+  check("「確かめてくれてありがとう」は記録のみの印", questionNotes("確かめてくれてありがとう。何か感じたことってある?", []).includes(THANKS_FOR_CONFIRM_FLAG));
+  // まとめの形と、まとめのあと
+  check("まとめは誘いの形(「一回まとめてみようか」)", /一回まとめてみようか/.test(FLOW_RULES_BLOCK) && !/「一回まとめてみるね」と断る/.test(FLOW_RULES_BLOCK));
+  check("まとめのあとは、この先の問いか気づきの問いのどちらか", /この先、どうなっていけたらいいかな/.test(FLOW_RULES_BLOCK));
+  const sumHist = [
+    { role: "user", body: "一緒に整理してみたい" },
+    { role: "ai", body: "一回まとめてみようか。カードを使ったこと、早く言いたいこと、失望されるのが怖いこと、合ってるかな?", summarized: true, mode: ["NARRATIVE"], flags: [] },
+    { role: "user", body: "うん" },
+    { role: "ai", body: "ここまで言葉にしてみて、何か感じたことってある?", mode: ["NARRATIVE"], flags: [] },
+    { role: "user", body: "どうしたらいいかわからない" },
+  ];
+  const stIns = flowStats(sumHist, { phase: "phase2" }, {});
+  const fbIns = buildFlowBlock(stIns, { recommended_mode: ["NARRATIVE"] }, "どうしたらいいかわからない");
+  check("気づきの問いに「わからない」→ 次は この先の問い", stIns.lastWasInsightQ && /この先、どうなっていけたらいいかな/.test(fbIns), fbIns.slice(0, 200));
 }
 
 console.log(`\n${failed === 0 ? "全件通過" : `失敗 ${failed}件`}(${passed + failed}件中)`);
