@@ -399,6 +399,21 @@ export async function POST(req: Request) {
       return json({ ok: true });
     }
 
+    // 管理画面(ログのレビュー)からの評価(2026年11月11日)。以前は生徒の画面と同じ "rate" を使っていたが、
+    // "rate" は開発用の表示のときだけ・その会話の引き継ぎコードのときだけ受け付けるため(2026年10月13日)、
+    // 管理画面からは本番でも Preview でも保存できなかった。合言葉で確かめる別の入口にする(CLAUDE.md 5.9)
+    if (action === "admin_rate") {
+      if (!checkAdminToken(payload)) return json({ error: "認証に失敗しました" }, 401);
+      const { seq, rating, comment } = payload as { seq: number; rating: number; comment?: string };
+      if (!Number.isInteger(seq) || !(Number.isInteger(rating) && rating >= 1 && rating <= 5)) return json({ error: "パラメータが不正です" }, 400);
+      const { data: target } = await db.from("messages").select("role").eq("seq", seq).maybeSingle();
+      if (!target || target.role !== "ai") return json({ error: "評価できない返答です" }, 404);
+      const saved = await checkedWrite("評価", () => db.from("messages")
+        .update({ rating, rating_comment: comment ? String(comment).slice(0, 2000) : null }).eq("seq", seq));
+      if (!saved.ok) return json({ error: "評価を保存できませんでした" }, 500);
+      return json({ ok: true });
+    }
+
     // ------------------------------------------------------------------
     // 管理画面(admin.html)
     // ログイン画面は作らず、admin.html が自分のURLのクエリ文字列から

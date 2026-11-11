@@ -71,6 +71,23 @@ async function talk(db, cid) {
   ok(d2.body.session.dev_test === true, "詳細に印が出る");
   const off = await call({ action: "admin_mark_dev_test", admin_token: TOKEN, session_id: sid, on: false });
   ok(off.status === 200 && db.tables.sessions.find((x) => x.id === sid).dev_test === false, "印を外せる");
+
+  // 管理画面からの返事の評価(admin_rate。2026年11月11日。以前は "rate" を使っていて保存できなかった)
+  console.log("■ 管理画面からの評価");
+  const aiRow = db.tables.messages.find((x) => x.session_id === sid && x.role === "ai");
+  const userRow = db.tables.messages.find((x) => x.session_id === sid && x.role === "user");
+  const oldPath = await call({ action: "rate", admin_token: TOKEN, seq: aiRow.seq, rating: 4 });
+  ok(oldPath.status === 403 && aiRow.rating == null, "生徒の画面の rate は、開発用の表示が無ければ断る(変えていない)");
+  const rNo = await call({ action: "admin_rate", admin_token: "wrong", seq: aiRow.seq, rating: 4 });
+  ok(rNo.status === 401 && aiRow.rating == null, "合言葉が違えば評価を保存しない");
+  const rOk = await call({ action: "admin_rate", admin_token: TOKEN, seq: aiRow.seq, rating: 4, comment: "問いが具体的" });
+  ok(rOk.status === 200 && aiRow.rating === 4 && aiRow.rating_comment === "問いが具体的", "評価とコメントを保存できる", JSON.stringify(rOk.body));
+  const rAgain = await call({ action: "admin_rate", admin_token: TOKEN, seq: aiRow.seq, rating: 2, comment: "" });
+  ok(rAgain.status === 200 && aiRow.rating === 2 && aiRow.rating_comment === null, "評価を付け直せる");
+  const rBad = await call({ action: "admin_rate", admin_token: TOKEN, seq: aiRow.seq, rating: 6 });
+  ok(rBad.status === 400 && aiRow.rating === 2, "1〜5以外は断る");
+  const rUser = await call({ action: "admin_rate", admin_token: TOKEN, seq: userRow.seq, rating: 3 });
+  ok(rUser.status === 404 && userRow.rating == null, "生徒の発言には付けない");
 }
 
 // ---- 3. 21節が未実行の DB ----

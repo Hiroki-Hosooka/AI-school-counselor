@@ -924,7 +924,7 @@ main{max-width:920px;margin:0 auto;padding:22px 20px 60px}
       if (!rating) { alert("評価(1〜5)を選んでください"); return; }
       var comment = row.querySelector(".rate-comment").value;
       e.target.disabled = true;
-      api("rate", { seq: seq, rating: rating, comment: comment }).then(function () {
+      api("admin_rate", { seq: seq, rating: rating, comment: comment }).then(function () {
         var saved = row.querySelector(".rate-saved");
         saved.hidden = false;
         setTimeout(function () { saved.hidden = true; }, 1500);
