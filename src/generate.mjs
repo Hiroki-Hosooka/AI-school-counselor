@@ -17,7 +17,7 @@ import { OUTPUT_NG } from "./safety.mjs";
 import { GENERATION_STUCK_NOTICE } from "./notices.mjs";
 import { callGemini, parseJSON, salvageReply, LITE_MODELS, MEMORY_THINKING_BUDGET } from "./classify.mjs";
 // 会話の流れ(会話が展開しない問題・他人事感の修正。2026年10月11日)
-import { leadBlock } from "./flow.mjs";
+import { leadBlock, stripApologySentences, APOLOGY_STRIPPED_FLAG } from "./flow.mjs";
 import { FLOW_RULES_BLOCK, FLOW_OUTPUT_SCHEMA, buildFlowBlock, AI_ENDING_FIX_HINT, AI_ENDING_FLAG, AI_ENDING_TAIL_PROVISIONAL } from "./flow.mjs";
 import {
   AFTER_CRISIS_BLOCK_PROVISIONAL, CRISIS_GENERATION_BLOCK_PROVISIONAL, AFTER_CRISIS_CLOSING_LINE_PROVISIONAL,
@@ -1058,6 +1058,11 @@ export async function generateReply(
         note = `会話の流れで作り直し(${reasons.join("・")})→作り直しに失敗したので1回目を採用`;
       }
       flags = [...flags, note];
+      // 答えにくい問いへの謝罪(K)が残ったら、謝罪の文だけを消す(2026年11月13日・人が決めた。src/flow.mjs の stripApologySentences)
+      if (flowCheckFn(out).some((r) => String(r).startsWith("K"))) {
+        const s2 = stripApologySentences(out.reply);
+        if (s2.stripped) { out = { ...out, reply: s2.reply }; flags = [...flags, APOLOGY_STRIPPED_FLAG]; }
+      }
     }
   }
 

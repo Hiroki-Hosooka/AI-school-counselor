@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { echoOf, echoRate,
   flowStats, flowCheck, finalizeFlow, buildFlowBlock, genericGroupsIn, endingClass, isValidSummary, addedWords,
   flowChoiceOf, canOfferOrganize, flowSummaryOfSession, FLOW_RULES_BLOCK, moveFlag, FIRST_MOVE_FLAG, annotateForAdmin,
-  leadBlock, questionNotes, DECIDED_FLAG, THANKS_FOR_CONFIRM_FLAG,
+  leadBlock, questionNotes, DECIDED_FLAG, THANKS_FOR_CONFIRM_FLAG, stripApologySentences,
 } from "../src/flow.mjs";
 import { isLongStructuredMessage, planIntakeTurn, finishIntakeTurn, INTAKE_LONG_MESSAGE_FLAG } from "../src/intake.mjs";
 
@@ -287,6 +287,11 @@ console.log("\n■ 冒頭の言い直し");
   check("「どうしたらいいかわからない」は答えにくさではなく「どうすればいい?」", stHow.cantAnswer === false);
   const stCrisis = flowStats(hist, { phase: "phase2" }, { stage: 2 });
   check("危機の状態では K を当てない", !flowCheck({ reply: "ごめんね、話してくれてありがとう。" }, stCrisis).some((r) => r.startsWith("K")));
+  // 作り直しても残った謝罪の文を消す(案2)
+  const sa = stripApologySentences("余裕がないときに、いろいろ聞いちゃってごめんね。伝えなきゃと思うほど焦ってしまって、今はそれどころじゃないんだよね。\n\n親御さん以外で、頼れそうな大人は誰か思い浮かぶ?");
+  check("謝罪の文だけを消す", sa.stripped && !/ごめん/.test(sa.reply) && sa.reply.startsWith("伝えなきゃ") && /思い浮かぶ\?$/.test(sa.reply), sa.reply);
+  check("問いが残らないなら消さない", !stripApologySentences("ごめんね、急かしちゃった。今はそれどころじゃないよね。").stripped);
+  check("謝罪の入った問いしかないなら消さない", !stripApologySentences("今はそれどころじゃないよね。ごめんね、どんなことが一番気になる?").stripped);
   const lbCant = leadBlock("そんなこと考えてる余裕なんてない");
   check("答えにくさの指示: 謝らず意図を伝える", /謝らない/.test(lbCant) && /意図/.test(lbCant));
   // 「どうすればいい?」と「あなたならどっち?」

@@ -32,6 +32,7 @@
 | `design-batch-messages.md` | 連投と、まとめての返事(試行中。`BATCH_MODE=on` のときだけ) |
 | `design-referral-flag.md` | 人につなぐ印(仮。`REFERRAL_FLAG=on` のときだけ。心理士さんへの確認つき) |
 | `design-auto-eval.md` | 会話ログの自動評価(Claude Code で採点する版)の設計。段階Aまで実装 |
+| `work-queue.md` | 自動で進める作業の一覧(1時間ごとの予定の作業が読む。人が頼んだ作業だけ) |
 | `design-shima5-review.md` | 嶋先生のログレビュー5回目の反映(謝らず問いの意図を伝える・方向性を先に・完了形にしない・長文の相談) |
 | `evaluation/` | 採点基準 rubric-v1・採点の会話への指示・採点の手順(HOW-TO-RUN)・評価専用のフォルダの設定・使ってよい項目の一覧 |
 | `crisis-keywords-v3.md` / `crisis-keywords-v3-diff.md` | 危機キーワード v3(根拠つきの表)と v2 との差分 |

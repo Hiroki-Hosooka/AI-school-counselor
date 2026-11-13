@@ -109,6 +109,18 @@ export const CONFUSED_RE = /どういうこと|どういう意味|詳しくっ�
 export const CANT_ANSWER_RE = /余裕(なんて|とか)?(が|は)?(ない|無い|なし)|(わから|わかん|分から|分かん)(ない|ねー|ん$)|^\s*(無理|むり)\s*[。!！]?\s*$|考えられ(ない|へん)|考え(る|てる)(余裕|暇)|思いつかない|そんなこと(言われても|聞かれても)/;
 // 謝罪(相談者が答えられなかったことに謝ると、相談者も「こちらこそごめん」となり距離ができる。SH5-3)
 export const APOLOGY_RE = /ごめん|すみません|すまない|申し訳/;
+// 作り直しても謝罪が残ったとき(K)、謝罪を含む文だけを消す(2026年11月13日・人が決めた。docs/test-results/shima5-before-after-20261111.md 3章の案2)。
+// 残りが2文以上で、問いを含むとき(受け止めと問いになっているとき)だけ消す。そうでなければ消さずに返す(記録だけ)
+export const APOLOGY_STRIPPED_FLAG = "記録のみ:作り直しても残った謝罪の文を消した";
+export function stripApologySentences(reply) {
+  const text = String(reply ?? "");
+  const pieces = text.split(/(?<=[。！？!?])/);
+  const kept = pieces.filter((p) => !APOLOGY_RE.test(p));
+  if (kept.length === pieces.length) return { reply: text, stripped: false };
+  const rest = kept.join("").replace(/^\s+/, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (sentencesOf(rest).length < 2 || !hasQuestion(rest)) return { reply: text, stripped: false };
+  return { reply: rest, stripped: true };
+}
 // 「あなたならどっち?」(答えを決めず・突き返さず、選択肢ごとの良いところと気になるところを一緒に整理する。SH5-10)
 export const ASK_AI_OPINION_RE = /(あなた|AI|そっち)(なら|だったら|やったら|は)[^。\n]{0,12}(どっち|どう(する|話す|言う|思う)|どれ)|どっちが(いい|良い)と思う|どうしたらいいと思う|どう思う[?？]/;
 // 相談者の状態を完了形で言う(決断の先取り。記録のみ。SH5-8)

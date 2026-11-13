@@ -48,3 +48,5 @@ next-env.d.ts
 # Claude Code の作業用(エージェントの作業コピー・手元の設定。コミットしない)
 /.claude/worktrees/
 /.claude/settings.local.json
+eval/runs/*/raw.jsonl
+eval/runs/*/*.tmp
