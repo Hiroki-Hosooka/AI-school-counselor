@@ -82,7 +82,9 @@ Postgres(Supabase)
 ├── scripts/  テスト(test-*.mjs)・分析(analyze-*.mjs)・書き出し(export-*)・_lib/(共通部品)・archive/(役目を終えたもの)
 │            eval/(会話ログの自動評価: 評価専用のフォルダへの書き出し・採点の結果の取り込み)
 ├── eval/batches/ 自動評価の束(対応表・ログの控え・コードの指標・採点の結果。合成の台本と開発メンバーのテストだけ)
-├── eval/runs/   自動評価の材料(無料枠で流した合成の台本の会話。scripts/eval/run-scenarios.mjs。途中で止まっても続きから)
+├── eval/runs/   自動評価の材料(無料枠で流した合成の台本の会話と読める会話ログ。scripts/eval/run-scenarios.mjs。途中で止まっても続きから)
+│               会話・会話ログ・採点用の束の zip は、できたそばから自動でコミットしてプッシュする(手元に残さない。GitHub からいつでもダウンロードできる)。
+│               本番のデプロイは vercel.json の ignoreCommand で、eval/・docs/ だけの変更なら作り直さない
 └── docs/     目次は docs/README.md。自動で進める作業の一覧は docs/work-queue.md(1時間ごとの予定の作業が読む)。archive/ は役目を終えた文書、test-results/archive/ は古い結果
 ```
 

@@ -21,6 +21,8 @@ import { loadJsonl, loadDbSessions, renderConversation, shuffle, versionsOf } fr
 import { conversationMetricsForEval, EVAL_METRICS_VERSION } from "../../src/eval-metrics.mjs";
 import { GENERATION_FAILURE_REPLIES } from "../../src/generate.mjs";
 import { GENERATION_STUCK_NOTICE } from "../../src/notices.mjs";
+import { execFileSync } from "node:child_process";
+import { autoCommit } from "./_lib/autocommit.mjs";
 
 // 生成に失敗したときの文(返事の代わりに出る文)を含む会話か(2026年11月11日。無料枠の上限で作り直しても届かず、
 // 「仕組みの調子が悪く」が3回入った会話を書き出していた。採点の対象にしても意味が無いので、書き出さない)
@@ -131,6 +133,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`${items.length}件を書き出しました(${parts.join("・")})。seed ${seed}`);
     console.log(`  評価専用のフォルダ: ${out}(手順は HOW-TO-RUN.md)`);
     console.log(`  対応表・控え・コードの指標: ${path.relative(ROOT, bdir)}/`);
+    // 採点用の束を zip にして束の中に置き、コミットしてプッシュする(2026年11月13日。手元に残さず、GitHub からいつでもダウンロードできるように)。
+    // 中身は評価専用のフォルダと同じ(採点基準・手順・ログ・読み取りを絞る設定)。合成の台本と開発メンバーのテストだけ
+    const zip = path.join(bdir, `sc-eval-${batch}.zip`);
+    try {
+      execFileSync("zip", ["-qr", zip, path.basename(out)], { cwd: path.dirname(out) });
+      console.log(`  採点用の zip: ${path.relative(ROOT, zip)}`);
+    } catch (e) { console.error(`  zip を作れませんでした(${String(e.message).slice(0, 80)})`); }
+    if (!process.argv.includes("--no-commit")) {
+      const r = await autoCommit(ROOT, [path.relative(ROOT, bdir)], `採点用の束 ${batch}(${items.length}件)`);
+      console.log(r.pushed ? "  コミットしてプッシュしました" : `  コミット・プッシュ: ${r.reason ?? "コミットのみ"}`);
+    }
   } catch (e) {
     console.error(String(e.message ?? e));
     process.exit(1);

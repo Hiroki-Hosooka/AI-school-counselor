@@ -1,5 +1,6 @@
 # 自動で進める作業の一覧(Claude Code のセッションが定期的に読む)
 
+会話・会話ログ・採点用の束の zip は、スクリプトが1本ごとに自動でコミットしてプッシュする(`eval/runs/<組>/`・`eval/batches/<束>/sc-eval-<束>.zip`)。
 1時間ごとの予定の作業がこのファイルを読み、上から順に「未完了」のものを進める(2026年11月13日に人が頼んだ)。
 Claude の利用の上限や Gemini の無料枠の1日の上限で止まっても、次の回に続きから進む。終わったら「完了」に書き換えてコミットする。
 **ここに書いてよいのは、人がすでに頼んだ作業だけ**(新しい判断が要るものは、人に聞くために止める)。
@@ -16,7 +17,7 @@ Claude の利用の上限や Gemini の無料枠の1日の上限で止まって�
 
 - `node scripts/eval/run-scenarios.mjs --set=after-20261113 --label=after`
 - 「完了」になったら: `node scripts/eval/export-bundle.mjs --out=<scratchpad>/sc-eval-after --batch=eval-20261113-after --jsonl=after:eval/runs/after-20261113/clean.jsonl`
-  (10本ずつ part に分かれる)→ zip にして人に送る。`import-results.mjs --batch=eval-20261113-after --metrics-only` の報告も添える
+  (10本ずつ part に分かれる。zip は `eval/batches/eval-20261113-after/` に置かれ、自動でプッシュされる)→ 人に知らせる。`import-results.mjs --batch=eval-20261113-after --metrics-only` の報告も添える
 - 採点(Claude Code で採点する会話)は**人が手元で行う**(実装の会話とは別の会話・評価専用のフォルダ。docs/design-auto-eval.md)。ここでは採点しない
 
 ## 3. 採点の結果の取り込み — 人の結果待ち

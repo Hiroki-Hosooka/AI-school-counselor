@@ -8,6 +8,8 @@
 //    (clean.jsonl にある台本は流さない)
 //  - 採点に回せる = 返事なし 0・生成に失敗したときの文が無い。外れたら、そのキーは1日の上限とみなして止め、台本は次回に回す
 //  - すべてそろったら「完了」と表示する。書き出しは scripts/eval/export-bundle.mjs --jsonl=<set>:eval/runs/<set>/clean.jsonl
+//  - **1本ごとに、会話(jsonl)と読める会話ログ(logs/<台本>.md)をコミットしてプッシュする**(手元に残さない。GitHub からいつでもダウンロードできる。
+//    scripts/eval/_lib/autocommit.mjs。EVAL_AUTOCOMMIT=off で止める)
 //  - --root: 修正前の版と比べるとき、その版の作業コピー(git worktree)で流す(台本はこのリポジトリの test-api-path.mjs を写して使う)
 // ============================================================================
 import fs from "node:fs";
@@ -15,6 +17,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { hasFailureText } from "./export-bundle.mjs";
+import { renderConversation, versionsOf } from "./_lib/conversation.mjs";
+import { autoCommit } from "./_lib/autocommit.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const arg = (k, d = null) => process.argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
@@ -69,6 +73,19 @@ async function main() {
   const keys = model === "mock" ? ["(模擬)"] : Object.keys(process.env).filter((k) => /^TEST_GEMINI_API_KEY\d+$/.test(k)).sort().map((k) => process.env[k]).filter(Boolean);
   if (!keys.length) { console.error("TEST_GEMINI_API_KEY1.. がありません(無料枠のテスト用のキーだけを使う。CLAUDE.md 5.10)"); process.exit(1); }
   console.log(`[${set}] 済み ${done.size} / 残り ${queue.length}(キー ${keys.length}本)`);
+  // コミットは1つずつ(並べて流しているキーどうしで重ならないように)
+  let commitChain = Promise.resolve();
+  const save = (run, sc, clean) => {
+    fs.mkdirSync(path.join(dir, "logs"), { recursive: true });
+    const v = versionsOf(run.stored ?? []);
+    const head = `<!-- 台本 ${sc} / ${label} / ${clean ? "採点に回せる" : "返事が届かないターンあり(採点に回さない)"} / 版 ${v.app_version?.join("・") ?? "-"} / モデル ${v.models?.join("・") ?? "-"} -->\n`;
+    if (clean) fs.rmSync(path.join(dir, "logs", `${sc}.incomplete.md`), { force: true });
+    fs.writeFileSync(path.join(dir, "logs", `${sc}${clean ? "" : ".incomplete"}.md`), head + renderConversation(`${set} / ${sc}`, run.stored ?? []).markdown);
+    commitChain = commitChain.then(async () => {
+      const r = await autoCommit(ROOT, [path.relative(ROOT, dir)], `自動評価の材料: ${set} / ${sc}(${clean ? "採点に回せる" : "途中まで"})`);
+      if (r.committed && !r.pushed) console.log(`  (コミットはしたがプッシュできなかった: ${r.reason})`);
+    });
+  };
   const worker = async (key, i) => {
     while (queue.length) {
       const sc = queue.shift();
@@ -76,8 +93,10 @@ async function main() {
       if (run) fs.appendFileSync(rawFile, JSON.stringify(run) + "\n");
       if (run && isClean(run)) {
         fs.appendFileSync(cleanFile, JSON.stringify(run) + "\n");
+        save(run, sc, true);
         console.log(`  キー${i + 1}: ${sc} … 採点に回せる`);
       } else {
+        if (run) save(run, sc, false);
         queue.push(sc);
         console.log(`  キー${i + 1}: ${sc} … 返事が届かないターンがあった(上限とみなしてこのキーを止める)`);
         return;
@@ -85,6 +104,7 @@ async function main() {
     }
   };
   await Promise.all(keys.map((k, i) => worker(k, i)));
+  await commitChain;
   const nowDone = new Set(readJsonl(cleanFile).map((r) => r.name));
   const left = scenarios.filter((s) => !nowDone.has(s));
   console.log(left.length ? `[${set}] 未完了: 残り ${left.length}(${left.join(", ")})。上限が戻ったらもう一度流す` : `[${set}] 完了: ${nowDone.size}本`);
