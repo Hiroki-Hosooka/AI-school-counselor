@@ -3,7 +3,7 @@
 //
 //    node scripts/eval/run-scenarios.mjs --set=base --label=base [--scenarios=a,b] [--root=<修正前の作業コピー>]
 //
-//  - 台本は scripts/test-api-path.mjs のもの(合成。CLAUDE.md 5.10 の無料枠だけ)。キー TEST_GEMINI_API_KEY1..N ごとに並べて流す
+//  - 台本は scripts/test-api-path.mjs のもの(合成。CLAUDE.md 5.10 の無料枠だけ)。1本ずつ流し、上限が返ったらキー TEST_GEMINI_API_KEY1..N の次へ替える
 //  - 結果は eval/runs/<set>/clean.jsonl(採点に回せる会話)と raw.jsonl(すべて)。**途中で止まっても、次に流すと続きから**
 //    (clean.jsonl にある台本は流さない)
 //  - 採点に回せる = 返事なし 0・生成に失敗したときの文が無い。外れたら、そのキーは1日の上限とみなして止め、台本は次回に回す
@@ -38,7 +38,7 @@ const readJsonl = (f) => (fs.existsSync(f) ? fs.readFileSync(f, "utf8").split("\
 function runOne(root, key, scenario, label, out, model = "free") {
   return new Promise((resolve) => {
     const tmp = `${out}.${process.pid}.${scenario}.tmp`;
-    const child = spawn(process.execPath, [path.join(root, "scripts/test-api-path.mjs"), `--model=${model}`, `--label=${label}`, `--scenarios=${scenario}`, `--out=${tmp}`],
+    const child = spawn(process.execPath, [path.join(root, "scripts/test-api-path.mjs"), `--model=${model}`, `--label=${label}`, `--scenarios=${scenario}`, `--out=${tmp}`, ...(model === "free" ? ["--rotate-keys"] : [])],
       { cwd: root, env: { ...process.env, TEST_GEMINI_API_KEY: key }, stdio: ["ignore", "ignore", "ignore"] });
     child.on("close", () => {
       const runs = readJsonl(tmp);
@@ -70,9 +70,12 @@ async function main() {
   const queue = scenarios.filter((s) => !done.has(s));
   // --model=mock は確かめ用(模擬のモデル。キーを使わない)
   const model = arg("model", "free") === "mock" ? "mock" : "free";
-  const keys = model === "mock" ? ["(模擬)"] : Object.keys(process.env).filter((k) => /^TEST_GEMINI_API_KEY\d+$/.test(k)).sort().map((k) => process.env[k]).filter(Boolean);
+  // 1本ずつ順に流し、上限(429)が返ったら次のキーに替える(--rotate-keys。2026年11月13日)。
+  // 以前はキーごとに並べて流していたが、1本のキーの1日の上限では長い台本を最後まで流せなかった
+  const allKeys = Object.keys(process.env).filter((k) => /^TEST_GEMINI_API_KEY\d+$/.test(k)).sort().map((k) => process.env[k]).filter(Boolean);
+  const keys = model === "mock" ? ["(模擬)"] : allKeys.slice(0, 1);
   if (!keys.length) { console.error("TEST_GEMINI_API_KEY1.. がありません(無料枠のテスト用のキーだけを使う。CLAUDE.md 5.10)"); process.exit(1); }
-  console.log(`[${set}] 済み ${done.size} / 残り ${queue.length}(キー ${keys.length}本)`);
+  console.log(`[${set}] 済み ${done.size} / 残り ${queue.length}(キー ${model === "mock" ? 0 : allKeys.length}本を順に使う)`);
   // コミットは1つずつ(並べて流しているキーどうしで重ならないように)
   let commitChain = Promise.resolve();
   const save = (run, sc, clean) => {

@@ -44,6 +44,26 @@ if (modelMode === "free") {
   const { requireTestGeminiKey } = await import("./_lib/test-env.mjs");
   requireTestGeminiKey(ROOT);   // GEMINI_API_KEY にテスト用キーを入れる(戻り値は使わない)
   if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "undefined") throw new Error("テスト用キーがありません");
+  // --rotate-keys(2026年11月13日): 429(上限)が返ったら、テスト用のキー(TEST_GEMINI_API_KEY1..N。無料枠の合成テスト専用)の次のキーで送り直す。
+  // 1本のキーの1日の上限では、長い台本(37ターン)を最後まで流せなかったため。上限に当たったキーはこの実行では使わない
+  if (process.argv.includes("--rotate-keys")) {
+    const pool = [...new Set([process.env.GEMINI_API_KEY, ...Object.keys(process.env).filter((k) => /^TEST_GEMINI_API_KEY\d+$/.test(k)).sort().map((k) => process.env[k])].filter(Boolean))];
+    const spent = new Set();
+    let cur = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (!String(url).includes("generativelanguage.googleapis.com")) return realFetch(url, init);
+      for (let tries = 0; ; tries++) {
+        const key = pool[cur];
+        const res = await realFetch(url, { ...init, headers: { ...(init?.headers ?? {}), "x-goog-api-key": key } });
+        if (res.status !== 429 || tries >= pool.length - 1) return res;
+        spent.add(key);
+        const next = pool.findIndex((k, i) => i !== cur && !spent.has(k));
+        if (next < 0) return res;
+        cur = next;
+      }
+    };
+  }
 } else {
   process.env.GEMINI_API_KEY = "mock";
   installMockGemini();
